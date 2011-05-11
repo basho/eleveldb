@@ -8,7 +8,7 @@ CC = g++
 #OPT = -O2 -DNDEBUG
 OPT = -g2
 
-CFLAGS = -c -DLEVELDB_PLATFORM_POSIX -I. -I./include -std=c++0x $(OPT)
+CFLAGS = -c -DLEVELDB_PLATFORM_STD -I. -I./include $(OPT)
 
 LDFLAGS=-lpthread
 
@@ -26,7 +26,7 @@ LIBOBJECTS = \
 	./db/version_edit.o \
 	./db/version_set.o \
 	./db/write_batch.o \
-	./port/port_posix.o \
+	./port/port_std.o \
 	./table/block.o \
 	./table/block_builder.o \
 	./table/format.o \
@@ -69,7 +69,10 @@ TESTS = \
 
 PROGRAMS = db_bench $(TESTS)
 
-all: $(PROGRAMS)
+all: build/build_config.h $(PROGRAMS)
+
+build/build_config.h:
+	sh ./platform.env
 
 check: $(TESTS)
 	for t in $(TESTS); do echo "***** Running $$t"; ./$$t || exit 1; done
