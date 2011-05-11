@@ -6,6 +6,8 @@
 #include <unordered_set>
 #elif defined(LEVELDB_PLATFORM_CHROMIUM)
 #include "base/hash_tables.h"
+#elif defined(LEVELDB_PLATFORM_STD)
+#include <ext/hash_set>
 #else
 #include <hash_set> // TODO(sanjay): Switch to unordered_set when possible.
 #endif
