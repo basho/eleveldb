@@ -6,7 +6,7 @@ CC = g++
 
 # Uncomment one of the following to switch between debug and opt mode
 #OPT = -O2 -DNDEBUG
-OPT = -g2
+OPT = -g2 -fPIC
 
 CFLAGS = -c -DLEVELDB_PLATFORM_STD -I. -I./include $(OPT)
 
@@ -69,16 +69,19 @@ TESTS = \
 
 PROGRAMS = db_bench $(TESTS)
 
-all: build/build_config.h $(PROGRAMS)
+all: build/build_config.h libleveldb.a $(PROGRAMS)
 
 build/build_config.h:
 	sh ./platform.env
+
+libleveldb.a: $(LIBOBJECTS)
+	ar rcs $@ $(LIBOBJECTS)
 
 check: $(TESTS)
 	for t in $(TESTS); do echo "***** Running $$t"; ./$$t || exit 1; done
 
 clean:
-	rm -f $(PROGRAMS) */*.o
+	rm -f $(PROGRAMS) */*.o */*.a
 
 db_bench: db/db_bench.o $(LIBOBJECTS) $(TESTUTIL)
 	$(CC) $(LDFLAGS) db/db_bench.o $(LIBOBJECTS) $(TESTUTIL) -o $@
