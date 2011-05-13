@@ -1,0 +1,5 @@
+build/build_config.h
+*.o
+*.a
+*_test
+db_bench
