@@ -40,76 +40,93 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-spec init() -> ok | {error, any()}.
 init() ->
-    case code:priv_dir(?MODULE) of
-        {error, bad_name} ->
-            case code:which(?MODULE) of
-                Filename when is_list(Filename) ->
-                    SoName = filename:join([filename:dirname(Filename),"../priv", ?MODULE]);
-                _ ->
-                    SoName = filename:join("../priv", ?MODULE)
-            end;
-        Dir ->
-            SoName = filename:join(Dir, ?MODULE)
-    end,
+    SoName = case code:priv_dir(?MODULE) of
+                 {error, bad_name} ->
+                     case code:which(?MODULE) of
+                         Filename when is_list(Filename) ->
+                             filename:join([filename:dirname(Filename),"../priv", "e_leveldb"]);
+                         _ ->
+                             filename:join("../priv", "e_leveldb")
+                     end;
+                 Dir ->
+                     filename:join(Dir, "e_leveldb")
+             end,
     erlang:load_nif(SoName, 0).
 
-%% Open options
-%% * {create_if_missing, false}
-%% * {error_if_exists, false}
-%% * {write_buffer_sz, 4194304}
-%% * {max_open_files, 1000}
-%% * {block_size, 4096}
-%% * {block_restart_interval, 16}
+-type open_options() :: [{create_if_missing, boolean()} |
+                         {error_if_exists, boolean()} |
+                         {write_buffer_size, pos_integer()} |
+                         {max_open_files, pos_integer()} |
+                         {block_size, pos_integer()} |
+                         {block_restart_interval, pos_integer()}].
 
-%% Unsupported
-%% * {info_log, Filename}
-%% * {paranoid_checks, false}
-%% * {block_cache, Megabytes} (default is 8MB)
+-type read_options() :: [{verify_checksums, boolean()} |
+                         {fill_cache, boolean()}].
 
-open(Name, Opts) ->
-    ok.
+-type write_options() :: [{sync, boolean()}].
 
-get(Ref,Key, Opts) ->
-    ok.
+-type write_actions() :: [{put, Key::binary(), Value::binary()} |
+                          {delete, Key::binary()} |
+                          clear].
 
+-type iterator_action() :: first | last | next | prev | binary().
+
+-opaque db_ref() :: binary().
+
+-opaque itr_ref() :: binary().
+
+-spec open(string(), open_options()) -> {ok, db_ref()} | {error, any()}.
+open(_Name, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec get(db_ref(), binary(), read_options()) -> {ok, binary()} | not_found | {error, any()}.
+get(_Ref, _Key, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec put(db_ref(), binary(), binary(), write_options()) -> ok | {error, any()}.
 put(Ref, Key, Value, Opts) ->
     write(Ref, [{put, Key, Value}], Opts).
 
+-spec delete(db_ref(), binary(), write_options()) -> ok | {error, any()}.
 delete(Ref, Key, Opts) ->
     write(Ref, [{delete, Key}], Opts).
 
-write(Ref, Updates, Opts) ->
-    ok.
+-spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
+write(_Ref, _Updates, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
 
-iterator(Ref, Opts) ->
-    %% [first, {key, Key}, last] -> {ok, IRef}
-    ok.
+-spec iterator(db_ref(), read_options()) -> {ok, itr_ref()}.
+iterator(_Ref, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
 
-iterator_move(IRef, Loc) ->
-    %% Loc = [first, next, prev, last, BinKey]
-    %% {ok, K, V} | {error, Reason}
-    ok.
+-spec iterator_move(itr_ref(), iterator_action()) -> {ok, Key::binary(), Value::binary()} |
+                                                     {error, invalid_iterator} |
+                                                     {error, iterator_closed}.
+iterator_move(_IRef, _Loc) ->
+    erlang:nif_error({error, not_loaded}).
 
-iterator_close(IRef) ->
-    ok.
 
+-spec iterator_close(itr_ref()) -> ok.
+iterator_close(_IRef) ->
+    erlang:nif_error({error, not_loaded}).
+
+-type fold_fun() :: fun(({Key::binary(), Value::binary()}, any()) -> any()).
+
+-spec fold(db_ref(), fold_fun(), any(), read_options()) -> any().
 fold(Ref, Fun, Acc0, Opts) ->
-    case iterator(Ref, Opts) of
-        {ok, Itr} ->
-            try
-                fold_loop(iterator_move(Itr, first), Itr, Fun, Acc0)
-            after
-                iterator_close(Itr)
-            end;
-         {error, Reason} ->
-            {error, Reason}
+    {ok, Itr} = iterator(Ref, Opts),
+    try
+        fold_loop(iterator_move(Itr, first), Itr, Fun, Acc0)
+    after
+        iterator_close(Itr)
     end.
 
-destroy(Name, Opts) ->
+destroy(_Name, _Opts) ->
     ok.
 
-repair(Name, Opts) ->
+repair(_Name, _Opts) ->
     ok.
 
 %% ===================================================================
