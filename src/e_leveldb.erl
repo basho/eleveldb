@@ -27,6 +27,7 @@
          delete/3,
          write/3,
          fold/4,
+         status/2,
          destroy/2,
          repair/2]).
 
@@ -127,6 +128,10 @@ fold(Ref, Fun, Acc0, Opts) ->
     after
         iterator_close(Itr)
     end.
+
+-spec status(db_ref(), Key::binary()) -> {ok, binary()} | error.
+status(_Ref, _Key) ->
+    erlang:nif_error({error, not_loaded}).
 
 destroy(_Name, _Opts) ->
     ok.

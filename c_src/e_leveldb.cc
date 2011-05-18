@@ -80,6 +80,7 @@ static ErlNifFunc nif_funcs[] =
     {"iterator", 2, e_leveldb_iterator},
     {"iterator_move", 2, e_leveldb_iterator_move},
     {"iterator_close", 1, e_leveldb_iterator_close},
+    {"status", 2, e_leveldb_status},
 /*    {"destroy", 2, e_leveldb_destroy},
     {"repair", 2, e_leveldb_repair} */
 };
@@ -439,6 +440,33 @@ ERL_NIF_TERM e_leveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TE
 
         enif_mutex_unlock(itr_handle->itr_lock);
         return ATOM_OK;
+    }
+    else
+    {
+        return enif_make_badarg(env);
+    }
+}
+
+ERL_NIF_TERM e_leveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    e_leveldb_db_handle* db_handle;
+    ErlNifBinary name_bin;
+    if (enif_get_resource(env, argv[0], e_leveldb_db_RESOURCE, (void**)&db_handle) &&
+        enif_inspect_binary(env, argv[1], &name_bin))
+    {
+        leveldb::Slice name((const char*)name_bin.data, name_bin.size);
+        std::string value;
+        if (db_handle->db->GetProperty(name, &value))
+        {
+            ERL_NIF_TERM result;
+            unsigned char* result_buf = enif_make_new_binary(env, value.size(), &result);
+            memcpy(result_buf, value.c_str(), value.size());
+            return enif_make_tuple2(env, ATOM_OK, result);
+        }
+        else
+        {
+            return ATOM_ERROR;
+        }
     }
     else
     {
