@@ -448,7 +448,9 @@ ERL_NIF_TERM e_leveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
             // we got an already-created snapshot, keep a reference for the 
             // lifetime of the iterator.
             enif_keep_resource(snapshot_handle);
-        
+
+        enif_mutex_lock(snapshot_handle->snapshot_lock);
+
         opts.snapshot = snapshot_handle->snapshot;
         
         // Setup handle
@@ -464,6 +466,7 @@ ERL_NIF_TERM e_leveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
 
         ERL_NIF_TERM result = enif_make_resource(env, itr_handle);
         enif_release_resource(itr_handle);
+        enif_mutex_unlock(snapshot_handle->snapshot_lock);
         return enif_make_tuple2(env, ATOM_OK, result);
     }
     else
