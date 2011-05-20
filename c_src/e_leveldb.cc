@@ -24,9 +24,11 @@
 #include "leveldb/db.h"
 #include "leveldb/comparator.h"
 #include "leveldb/write_batch.h"
+#include "leveldb/cache.h"
 
 static ErlNifResourceType* e_leveldb_db_RESOURCE;
 static ErlNifResourceType* e_leveldb_itr_RESOURCE;
+static ErlNifResourceType* e_leveldb_snapshot_RESOURCE;
 
 typedef struct
 {
@@ -34,12 +36,19 @@ typedef struct
     leveldb::Options options;
 } e_leveldb_db_handle;
 
+typedef struct 
+{
+    const leveldb::Snapshot* snapshot;
+    ErlNifMutex*         snapshot_lock;
+    e_leveldb_db_handle* db_handle;
+
+} e_leveldb_snapshot_handle;
+
 typedef struct
 {
     leveldb::Iterator*   itr;
     ErlNifMutex*         itr_lock;
-    const leveldb::Snapshot*   snapshot;
-    e_leveldb_db_handle* db_handle;
+    e_leveldb_snapshot_handle* snapshot_handle;
 } e_leveldb_itr_handle;
 
 // Atoms (initialized in on_load)
@@ -71,6 +80,10 @@ static ERL_NIF_TERM ATOM_LAST;
 static ERL_NIF_TERM ATOM_NEXT;
 static ERL_NIF_TERM ATOM_PREV;
 static ERL_NIF_TERM ATOM_INVALID_ITERATOR;
+static ERL_NIF_TERM ATOM_RETURN_SNAPSHOT;
+static ERL_NIF_TERM ATOM_ERROR_READ_ONLY_SNAPSHOT;
+static ERL_NIF_TERM ATOM_CACHE_SIZE;
+static ERL_NIF_TERM ATOM_PARANOID_CHECKS;
 
 static ErlNifFunc nif_funcs[] =
 {
@@ -80,6 +93,8 @@ static ErlNifFunc nif_funcs[] =
     {"iterator", 2, e_leveldb_iterator},
     {"iterator_move", 2, e_leveldb_iterator_move},
     {"iterator_close", 1, e_leveldb_iterator_close},
+    {"snapshot", 1, e_leveldb_snapshot},
+    {"snapshot_close", 1, e_leveldb_snapshot_close},
     {"status", 2, e_leveldb_status},
 /*    {"destroy", 2, e_leveldb_destroy},
     {"repair", 2, e_leveldb_repair} */
@@ -95,6 +110,34 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             opts.create_if_missing = (option[1] == ATOM_TRUE);
         else if (option[0] == ATOM_ERROR_IF_EXISTS)
             opts.error_if_exists = (option[1] == ATOM_TRUE);
+        else if (option[0] == ATOM_PARANOID_CHECKS) 
+            opts.paranoid_checks = (option[1] == ATOM_TRUE);
+        else if (option[0] == ATOM_MAX_OPEN_FILES) {
+            int max_open_files;
+            if (enif_get_int(env, option[1], &max_open_files))
+                opts.max_open_files = max_open_files;
+        }
+        else if (option[0] == ATOM_WRITE_BUFFER_SIZE) { 
+            size_t write_buffer_sz;
+            if (enif_get_ulong(env, option[1], &write_buffer_sz))
+                opts.write_buffer_size = write_buffer_sz;
+        }
+        else if (option[0] == ATOM_BLOCK_SIZE) { 
+            size_t block_sz;
+            if (enif_get_ulong(env, option[1], &block_sz)) 
+                opts.block_size = block_sz;
+        }
+        else if (option[0] == ATOM_BLOCK_RESTART_INTERVAL) { 
+            int block_restart_interval;
+            if (enif_get_int(env, option[1], &block_restart_interval))
+                opts.block_restart_interval = block_restart_interval;
+        }
+        else if (option[0] == ATOM_CACHE_SIZE) {
+            size_t cache_sz;
+            if (enif_get_ulong(env, option[1], &cache_sz)) 
+                if (cache_sz != 0) 
+                    opts.block_cache = leveldb::NewLRUCache(cache_sz);
+        }
     }
 
     return ATOM_OK;
@@ -123,6 +166,10 @@ ERL_NIF_TERM parse_write_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Writ
     {
         if (option[0] == ATOM_SYNC)
             opts.sync = (option[1] == ATOM_TRUE);
+        else if (option[0] == ATOM_RETURN_SNAPSHOT) 
+            // pointer abuse:  e_leveldb_write uses a non-zero value here as a flag
+            // to return a snapshot;
+            opts.post_write_snapshot += 1;
     }
 
     return ATOM_OK;
@@ -192,6 +239,43 @@ ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Status& st
                             enif_make_tuple2(env, error, reason));
 }
 
+
+/* make_snapshot_handle retains the db_handle argument, and does no ownership
+   transfer of the handle it returns, so it must be released before returning
+   to erlang 
+*/
+e_leveldb_snapshot_handle* make_snapshot_handle(e_leveldb_db_handle* db_handle,
+                                                const leveldb::Snapshot* snapshot) 
+{ 
+    enif_keep_resource(db_handle);
+    e_leveldb_snapshot_handle* snapshot_handle = 
+        (e_leveldb_snapshot_handle*) enif_alloc_resource(e_leveldb_snapshot_RESOURCE,
+                                                         sizeof(e_leveldb_snapshot_handle));    
+    memset(snapshot_handle, '\0', sizeof(e_leveldb_snapshot_handle));
+
+    // Initialize snapshot handle
+    snapshot_handle->snapshot_lock = enif_mutex_create((char*)"e_leveldb_snapshot_lock");
+    snapshot_handle->db_handle = db_handle;
+    snapshot_handle->snapshot = snapshot;
+    if (snapshot == NULL)
+        snapshot_handle->snapshot = db_handle->db->GetSnapshot();
+    return snapshot_handle;
+}
+
+int extract_handles(ErlNifEnv *env, ERL_NIF_TERM term, e_leveldb_db_handle **db_handle,
+                    e_leveldb_snapshot_handle **snapshot_handle) { 
+    *db_handle = 0;
+    *snapshot_handle = 0;
+    if (enif_get_resource(env, term, e_leveldb_db_RESOURCE, (void**)db_handle))
+        return 1;
+    else if (enif_get_resource(env, term, e_leveldb_snapshot_RESOURCE, 
+                               (void **)snapshot_handle)) { 
+        *db_handle = (*snapshot_handle)->db_handle;
+        return 1;
+    }
+    return 0;
+}
+
 ERL_NIF_TERM e_leveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     char name[4096];
@@ -229,19 +313,25 @@ ERL_NIF_TERM e_leveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 ERL_NIF_TERM e_leveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    e_leveldb_db_handle* handle;
+    e_leveldb_db_handle* db_handle;
+    e_leveldb_snapshot_handle* snapshot_handle;
     ErlNifBinary key;
-    if (enif_get_resource(env, argv[0], e_leveldb_db_RESOURCE, (void**)&handle) &&
+    if (extract_handles(env, argv[0], &db_handle, &snapshot_handle) &&
         enif_inspect_binary(env, argv[1], &key) &&
         enif_is_list(env, argv[2]))
     {
-        leveldb::DB* db = handle->db;
+        leveldb::DB* db = db_handle->db;
         leveldb::Slice key_slice((const char*)key.data, key.size);
 
         // Parse out the read options
         leveldb::ReadOptions opts;
         fold(env, argv[2], parse_read_option, opts);
 
+        if (snapshot_handle != 0) { 
+            enif_mutex_lock(snapshot_handle->snapshot_lock);
+            opts.snapshot = snapshot_handle->snapshot;
+        }
+        
         // The DB* does provide a Get() method, but that requires us to copy the
         // value first to a string value and then into an erlang binary. A
         // little digging reveals that Get() is (currently) a convenience
@@ -249,7 +339,7 @@ ERL_NIF_TERM e_leveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         // unnecessary alloc/copy/free of the value
         leveldb::Iterator* itr = db->NewIterator(opts);
         itr->Seek(key_slice);
-        if (itr->Valid() && handle->options.comparator->Compare(key_slice, itr->key()) == 0)
+        if (itr->Valid() && db_handle->options.comparator->Compare(key_slice, itr->key()) == 0)
         {
             // Exact match on our key. Allocate a binary for the result
             leveldb::Slice v = itr->value();
@@ -258,6 +348,8 @@ ERL_NIF_TERM e_leveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
             memcpy(value, v.data(), v.size());
 
             delete itr;
+            if (snapshot_handle != 0) 
+                enif_mutex_unlock(snapshot_handle->snapshot_lock);
             return enif_make_tuple2(env, ATOM_OK, value_bin);
         }
         else
@@ -265,6 +357,9 @@ ERL_NIF_TERM e_leveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
             // Either iterator was invalid OR comparison was not exact. Either way,
             // we didn't find the value
             delete itr;
+            
+            if (snapshot_handle != 0)
+                enif_mutex_unlock(snapshot_handle->snapshot_lock);                
             return ATOM_NOT_FOUND;
         }
     }
@@ -290,13 +385,26 @@ ERL_NIF_TERM e_leveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
 
             // Parse out the write options
             leveldb::WriteOptions opts;
+            const leveldb::Snapshot* snapshot = 0;
+            opts.post_write_snapshot = 0;
             fold(env, argv[2], parse_write_option, opts);
 
+            if (opts.post_write_snapshot != 0) 
+                opts.post_write_snapshot = &snapshot;
+            
             // TODO: Why does the API want a WriteBatch* versus a ref?
             leveldb::Status status = handle->db->Write(opts, &batch);
             if (status.ok())
             {
-                return ATOM_OK;
+                if (snapshot != 0) { 
+                    e_leveldb_snapshot_handle *snapshot_handle = make_snapshot_handle(handle, snapshot);
+                    ERL_NIF_TERM snap_ref = enif_make_resource(env, snapshot_handle);
+                    enif_release_resource(snapshot_handle);
+                    return enif_make_tuple2(env, ATOM_OK, snap_ref);
+                }
+                else { 
+                    return ATOM_OK;
+                }
             }
             else
             {
@@ -313,23 +421,36 @@ ERL_NIF_TERM e_leveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
     }
     else
     {
-        return enif_make_badarg(env);
+        e_leveldb_snapshot_handle* snapshot_handle;
+        if (enif_get_resource(env, argv[0], e_leveldb_snapshot_RESOURCE, 
+                              (void **)&snapshot_handle)) 
+            return enif_make_tuple2(env, ATOM_ERROR, ATOM_ERROR_READ_ONLY_SNAPSHOT);
+        else 
+            return enif_make_badarg(env);
     }
 }
 
 ERL_NIF_TERM e_leveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     e_leveldb_db_handle* db_handle;
-    if (enif_get_resource(env, argv[0], e_leveldb_db_RESOURCE, (void**)&db_handle) &&
+    e_leveldb_snapshot_handle* snapshot_handle;
+    if (extract_handles(env, argv[0], &db_handle, &snapshot_handle) &&
         enif_is_list(env, argv[1])) // Options
     {
-        // Increment references to db_handle for duration of the iterator
-        enif_keep_resource(db_handle);
-
         // Parse out the read options
         leveldb::ReadOptions opts;
         fold(env, argv[1], parse_read_option, opts);
 
+        // If no snapshot specified, create one.
+        if (snapshot_handle == 0) 
+            snapshot_handle = make_snapshot_handle(db_handle, 0); 
+        else 
+            // we got an already-created snapshot, keep a reference for the 
+            // lifetime of the iterator.
+            enif_keep_resource(snapshot_handle);
+        
+        opts.snapshot = snapshot_handle->snapshot;
+        
         // Setup handle
         e_leveldb_itr_handle* itr_handle =
             (e_leveldb_itr_handle*) enif_alloc_resource(e_leveldb_itr_RESOURCE,
@@ -337,11 +458,8 @@ ERL_NIF_TERM e_leveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
         memset(itr_handle, '\0', sizeof(e_leveldb_itr_handle));
 
         // Initialize itr handle
-        // TODO: Should it be possible to iterate WITHOUT a snapshot?
         itr_handle->itr_lock = enif_mutex_create((char*)"e_leveldb_itr_lock");
-        itr_handle->db_handle = db_handle;
-        itr_handle->snapshot = db_handle->db->GetSnapshot();
-        opts.snapshot = itr_handle->snapshot;
+        itr_handle->snapshot_handle = snapshot_handle;
         itr_handle->itr = db_handle->db->NewIterator(opts);
 
         ERL_NIF_TERM result = enif_make_resource(env, itr_handle);
@@ -367,12 +485,15 @@ ERL_NIF_TERM e_leveldb_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TER
     e_leveldb_itr_handle* itr_handle;
     if (enif_get_resource(env, argv[0], e_leveldb_itr_RESOURCE, (void**)&itr_handle))
     {
+        // acquire locks - first itr_lock, then snapshot_lock
         enif_mutex_lock(itr_handle->itr_lock);
+        enif_mutex_lock(itr_handle->snapshot_handle->snapshot_lock);
 
         leveldb::Iterator* itr = itr_handle->itr;
 
         if (itr == NULL)
         {
+            enif_mutex_unlock(itr_handle->snapshot_handle->snapshot_lock);
             enif_mutex_unlock(itr_handle->itr_lock);
             return enif_make_tuple2(env, ATOM_ERROR, ATOM_ITERATOR_CLOSED);
         }
@@ -413,6 +534,7 @@ ERL_NIF_TERM e_leveldb_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TER
             result = enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
         }
 
+        enif_mutex_unlock(itr_handle->snapshot_handle->snapshot_lock);
         enif_mutex_unlock(itr_handle->itr_lock);
         return result;
     }
@@ -432,13 +554,56 @@ ERL_NIF_TERM e_leveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TE
 
         if (itr_handle->itr != 0)
         {
+            enif_mutex_lock(itr_handle->snapshot_handle->snapshot_lock);
             delete itr_handle->itr;
             itr_handle->itr = 0;
-            itr_handle->db_handle->db->ReleaseSnapshot(itr_handle->snapshot);
-            enif_release_resource(itr_handle->db_handle);
+            enif_mutex_unlock(itr_handle->snapshot_handle->snapshot_lock);
+            enif_release_resource(itr_handle->snapshot_handle);
+            itr_handle->snapshot_handle = 0;
         }
 
         enif_mutex_unlock(itr_handle->itr_lock);
+        return ATOM_OK;
+    }
+    else
+    {
+        return enif_make_badarg(env);
+    }
+}
+
+ERL_NIF_TERM e_leveldb_snapshot(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    e_leveldb_db_handle* db_handle;
+    if (enif_get_resource(env, argv[0], e_leveldb_db_RESOURCE, (void**)&db_handle))
+    {
+        // Setup handle
+        e_leveldb_snapshot_handle* snapshot_handle = make_snapshot_handle(db_handle, NULL);
+        ERL_NIF_TERM result = enif_make_resource(env, snapshot_handle);
+        enif_release_resource(snapshot_handle);
+        return enif_make_tuple2(env, ATOM_OK, result);
+    }
+    else
+    {
+        return enif_make_badarg(env);
+    }
+
+}
+
+ERL_NIF_TERM e_leveldb_snapshot_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    e_leveldb_snapshot_handle* snapshot_handle;
+    if (enif_get_resource(env, argv[0], e_leveldb_snapshot_RESOURCE, (void**)&snapshot_handle))
+    {
+        enif_mutex_lock(snapshot_handle->snapshot_lock);
+
+        if (snapshot_handle->snapshot != 0)
+        {
+            snapshot_handle->db_handle->db->ReleaseSnapshot(snapshot_handle->snapshot);
+            snapshot_handle->snapshot = 0;
+            enif_release_resource(snapshot_handle->db_handle);
+        }
+
+        enif_mutex_unlock(snapshot_handle->snapshot_lock);
         return ATOM_OK;
     }
     else
@@ -478,6 +643,8 @@ static void e_leveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
 {
     // Delete any dynamically allocated memory stored in e_leveldb_db_handle
     e_leveldb_db_handle* handle = (e_leveldb_db_handle*)arg;
+    if (handle->options.block_cache != 0)
+        delete handle->options.block_cache;
     delete handle->db;
 }
 
@@ -489,11 +656,23 @@ static void e_leveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
     {
         delete itr_handle->itr;
         itr_handle->itr = 0;
-        itr_handle->db_handle->db->ReleaseSnapshot(itr_handle->snapshot);
-        enif_release_resource(itr_handle->db_handle);
+        enif_release_resource(itr_handle->snapshot_handle);
     }
 
     enif_mutex_destroy(itr_handle->itr_lock);
+}
+
+static void e_leveldb_snapshot_resource_cleanup(ErlNifEnv* env, void* arg)
+{
+    // Delete any dynamically allocated memory stored in e_leveldb_itr_handle
+    e_leveldb_snapshot_handle* snapshot_handle = (e_leveldb_snapshot_handle*)arg;
+    if (snapshot_handle->snapshot != 0)
+    {
+        snapshot_handle->db_handle->db->ReleaseSnapshot(snapshot_handle->snapshot);
+        snapshot_handle->snapshot = 0;
+        enif_release_resource(snapshot_handle->db_handle);
+    }
+    enif_mutex_destroy(snapshot_handle->snapshot_lock);
 }
 
 #define ATOM(Id, Value) { Id = enif_make_atom(env, Value); }
@@ -507,6 +686,9 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     e_leveldb_itr_RESOURCE = enif_open_resource_type(env, NULL, "e_leveldb_itr_resource",
                                                      &e_leveldb_itr_resource_cleanup,
                                                      flags, NULL);
+    e_leveldb_snapshot_RESOURCE = enif_open_resource_type(env, NULL, "e_leveldb_snapshot_resource",
+                                                          &e_leveldb_snapshot_resource_cleanup,
+                                                          flags, NULL);
 
     // Initialize common atoms
     ATOM(ATOM_OK, "ok");
@@ -537,6 +719,10 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_NEXT, "next");
     ATOM(ATOM_PREV, "prev");
     ATOM(ATOM_INVALID_ITERATOR, "invalid_iterator");
+    ATOM(ATOM_RETURN_SNAPSHOT, "return_snapshot");
+    ATOM(ATOM_ERROR_READ_ONLY_SNAPSHOT, "read_only_snapshot");
+    ATOM(ATOM_CACHE_SIZE, "cache_size");
+    ATOM(ATOM_PARANOID_CHECKS, "paranoid_checks");
 
     return 0;
 }

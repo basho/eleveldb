@@ -31,6 +31,9 @@
          destroy/2,
          repair/2]).
 
+-export([snapshot/1,
+         snapshot_close/1]).
+
 -export([iterator/2,
          iterator_move/2,
          iterator_close/1]).
@@ -66,12 +69,15 @@ init() ->
                          {write_buffer_size, pos_integer()} |
                          {max_open_files, pos_integer()} |
                          {block_size, pos_integer()} |
-                         {block_restart_interval, pos_integer()}].
+                         {block_restart_interval, pos_integer()} |
+                         {cache_size, pos_integer()} |
+                         {paranoid_checks, boolean()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()}].
 
--type write_options() :: [{sync, boolean()}].
+-type write_options() :: [{sync, boolean()} |
+                          {return_snapshot, boolean()}].
 
 -type write_actions() :: [{put, Key::binary(), Value::binary()} |
                           {delete, Key::binary()} |
@@ -83,27 +89,33 @@ init() ->
 
 -opaque itr_ref() :: binary().
 
+-opaque snapshot_ref() :: binary().
+
+-type read_ref() :: db_ref() | snapshot_ref().
+
+-type write_result() :: ok | {ok, snapshot_ref()} | {error, any()}.
+
 -spec open(string(), open_options()) -> {ok, db_ref()} | {error, any()}.
 open(_Name, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
--spec get(db_ref(), binary(), read_options()) -> {ok, binary()} | not_found | {error, any()}.
+-spec get(read_ref(), binary(), read_options()) -> {ok, binary()} | not_found | {error, any()}.
 get(_Ref, _Key, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
--spec put(db_ref(), binary(), binary(), write_options()) -> ok | {error, any()}.
+-spec put(db_ref(), binary(), binary(), write_options()) -> write_result().
 put(Ref, Key, Value, Opts) ->
     write(Ref, [{put, Key, Value}], Opts).
 
--spec delete(db_ref(), binary(), write_options()) -> ok | {error, any()}.
+-spec delete(db_ref(), binary(), write_options()) -> write_result().
 delete(Ref, Key, Opts) ->
     write(Ref, [{delete, Key}], Opts).
 
--spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
+-spec write(db_ref(), write_actions(), write_options()) -> write_result().
 write(_Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
--spec iterator(db_ref(), read_options()) -> {ok, itr_ref()}.
+-spec iterator(read_ref(), read_options()) -> {ok, itr_ref()}.
 iterator(_Ref, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
@@ -118,9 +130,17 @@ iterator_move(_IRef, _Loc) ->
 iterator_close(_IRef) ->
     erlang:nif_error({error, not_loaded}).
 
+-spec snapshot(db_ref()) -> {ok, snapshot_ref()}.
+snapshot(_DBRef) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec snapshot_close(snapshot_ref()) -> ok.
+snapshot_close(_SRef) ->
+    erlang:nif_error({error, not_loaded}).    
+
 -type fold_fun() :: fun(({Key::binary(), Value::binary()}, any()) -> any()).
 
--spec fold(db_ref(), fold_fun(), any(), read_options()) -> any().
+-spec fold(read_ref(), fold_fun(), any(), read_options()) -> any().
 fold(Ref, Fun, Acc0, Opts) ->
     {ok, Itr} = iterator(Ref, Opts),
     try
@@ -160,6 +180,20 @@ open_test() ->
     {ok, <<"123">>} = ?MODULE:get(Ref, <<"abc">>, []),
     not_found = ?MODULE:get(Ref, <<"def">>, []).
 
+snapshot_test() ->
+    os:cmd("rm -rf /tmp/eleveldb.snapshot.test"),
+    {ok, Ref} = open("/tmp/eleveldb.snapshot.test", [{create_if_missing, true}]),
+    ok = ?MODULE:put(Ref, <<"1">>, <<"1">>, []),
+    {ok, Snapshot} = ?MODULE:snapshot(Ref),
+    ok = ?MODULE:put(Ref, <<"2">>, <<"2">>, []),   
+    {ok, _} = ?MODULE:get(Ref, <<"2">>, []),
+    not_found = ?MODULE:get(Snapshot, <<"2">>, []),
+    {ok, WriteSnapshot} = ?MODULE:put(Ref, <<"3">>, <<"4">>, [{return_snapshot, true}]),
+    {ok, _} = ?MODULE:get(WriteSnapshot, <<"3">>, []),
+    {error, read_only_snapshot} = ?MODULE:put(WriteSnapshot, <<"4">>, <<"5">>, []),
+    ?MODULE:snapshot_close(Snapshot),
+    ?MODULE:snapshot_close(WriteSnapshot).
+
 fold_test() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.test"),
     {ok, Ref} = open("/tmp/eleveldb.fold.test", [{create_if_missing, true}]),
@@ -169,8 +203,14 @@ fold_test() ->
     [{<<"abc">>, <<"123">>},
      {<<"def">>, <<"456">>},
      {<<"hij">>, <<"789">>}] = lists:reverse(fold(Ref, fun({K, V}, Acc) -> [{K, V} | Acc] end,
+                                                  [], [])),
+    {ok, Snapshot} = ?MODULE:snapshot(Ref),
+    ok = ?MODULE:put(Ref, <<"klm">>, <<"012">>, []),
+    [{<<"abc">>, <<"123">>},
+     {<<"def">>, <<"456">>},
+     {<<"hij">>, <<"789">>}] = lists:reverse(fold(Snapshot, fun({K, V}, Acc) -> [{K, V} | Acc] end,
                                                   [], [])).
-
+    
 -ifdef(EQC).
 
 qc(P) ->
@@ -210,7 +250,7 @@ prop_put_delete() ->
                                  ?assertEqual({ok, V}, e_leveldb:get(Ref, K, []))
                          end,
                      lists:map(F, Model),
-
+                     
                      %% Validate that a fold returns sorted values
                      Actual = lists:reverse(fold(Ref, fun({K, V}, Acc) -> [{K, V} | Acc] end,
                                                  [], [])),
