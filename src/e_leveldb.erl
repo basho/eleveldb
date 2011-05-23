@@ -66,7 +66,9 @@ init() ->
                          {write_buffer_size, pos_integer()} |
                          {max_open_files, pos_integer()} |
                          {block_size, pos_integer()} |
-                         {block_restart_interval, pos_integer()}].
+                         {block_restart_interval, pos_integer()} |
+                         {cache_size, pos_integer()} | 
+                         {paranoid_checks, boolean()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()}].
