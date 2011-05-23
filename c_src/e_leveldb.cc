@@ -325,6 +325,7 @@ ERL_NIF_TERM e_leveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     e_leveldb_db_handle* db_handle;
     e_leveldb_snapshot_handle* snapshot_handle;
     ErlNifBinary key;
+    ERL_NIF_TERM result = ATOM_NOT_FOUND;
     if (extract_handles(env, argv[0], &db_handle, &snapshot_handle) &&
         enif_inspect_binary(env, argv[1], &key) &&
         enif_is_list(env, argv[2]))
@@ -356,22 +357,12 @@ ERL_NIF_TERM e_leveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
             ERL_NIF_TERM value_bin;
             unsigned char* value = enif_make_new_binary(env, v.size(), &value_bin);
             memcpy(value, v.data(), v.size());
-
-            delete itr;
-            if (snapshot_handle != 0) 
-                enif_mutex_unlock(snapshot_handle->snapshot_lock);
-            return enif_make_tuple2(env, ATOM_OK, value_bin);
+            result = enif_make_tuple2(env, ATOM_OK, value_bin);
         }
-        else
-        {
-            // Either iterator was invalid OR comparison was not exact. Either way,
-            // we didn't find the value
-            delete itr;
-            
-            if (snapshot_handle != 0)
-                enif_mutex_unlock(snapshot_handle->snapshot_lock);                
-            return ATOM_NOT_FOUND;
-        }
+        delete itr;
+        if (snapshot_handle != 0) 
+            enif_mutex_unlock(snapshot_handle->snapshot_lock);
+        return result;
     }
     else
     {
@@ -406,7 +397,7 @@ ERL_NIF_TERM e_leveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
             leveldb::Status status = handle->db->Write(opts, &batch);
             if (status.ok())
             {
-                if (snapshot != 0) 
+                if (opts.post_write_snapshot != 0) 
                 { 
                     e_leveldb_snapshot_handle *snapshot_handle = make_snapshot_handle(handle, snapshot);
                     ERL_NIF_TERM snap_ref = enif_make_resource(env, snapshot_handle);
