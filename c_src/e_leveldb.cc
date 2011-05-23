@@ -267,8 +267,8 @@ static e_leveldb_snapshot_handle* make_snapshot_handle(e_leveldb_db_handle* db_h
     return snapshot_handle;
 }
 
-int extract_handles(ErlNifEnv *env, ERL_NIF_TERM term, e_leveldb_db_handle **db_handle,
-                    e_leveldb_snapshot_handle **snapshot_handle) 
+static int extract_handles(ErlNifEnv *env, ERL_NIF_TERM term, e_leveldb_db_handle **db_handle,
+                           e_leveldb_snapshot_handle **snapshot_handle) 
 { 
     *db_handle = 0;
     *snapshot_handle = 0;
@@ -277,7 +277,9 @@ int extract_handles(ErlNifEnv *env, ERL_NIF_TERM term, e_leveldb_db_handle **db_
     else if (enif_get_resource(env, term, e_leveldb_snapshot_RESOURCE, 
                                (void **)snapshot_handle)) 
     { 
+        enif_mutex_lock((*snapshot_handle)->snapshot_lock);
         *db_handle = (*snapshot_handle)->db_handle;
+        enif_mutex_unlock((*snapshot_handle)->snapshot_lock);        
         return 1;
     }
     return 0;
