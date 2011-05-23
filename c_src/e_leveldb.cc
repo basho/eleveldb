@@ -244,7 +244,7 @@ ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Status& st
    transfer of the handle it returns, so it must be released before returning
    to erlang 
 */
-e_leveldb_snapshot_handle* make_snapshot_handle(e_leveldb_db_handle* db_handle,
+static e_leveldb_snapshot_handle* make_snapshot_handle(e_leveldb_db_handle* db_handle,
                                                 const leveldb::Snapshot* snapshot) 
 { 
     enif_keep_resource(db_handle);
