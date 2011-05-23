@@ -372,8 +372,9 @@ ERL_NIF_TERM e_leveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 ERL_NIF_TERM e_leveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    e_leveldb_db_handle* handle;
-    if (enif_get_resource(env, argv[0], e_leveldb_db_RESOURCE, (void**)&handle) &&
+    e_leveldb_db_handle* db_handle;
+    e_leveldb_snapshot_handle* snapshot_handle;
+    if (enif_get_resource(env, argv[0], e_leveldb_db_RESOURCE, (void**)&db_handle) &&
         enif_is_list(env, argv[1]) && // Actions
         enif_is_list(env, argv[2]))   // Opts
     {
@@ -394,12 +395,12 @@ ERL_NIF_TERM e_leveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
                 opts.post_write_snapshot = &snapshot;
             
             // TODO: Why does the API want a WriteBatch* versus a ref?
-            leveldb::Status status = handle->db->Write(opts, &batch);
+            leveldb::Status status = db_handle->db->Write(opts, &batch);
             if (status.ok())
             {
                 if (opts.post_write_snapshot != 0) 
                 { 
-                    e_leveldb_snapshot_handle *snapshot_handle = make_snapshot_handle(handle, snapshot);
+                    snapshot_handle = make_snapshot_handle(db_handle, snapshot);
                     ERL_NIF_TERM snap_ref = enif_make_resource(env, snapshot_handle);
                     enif_release_resource(snapshot_handle);
                     return enif_make_tuple2(env, ATOM_OK, snap_ref);
@@ -422,15 +423,11 @@ ERL_NIF_TERM e_leveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
                                                      result));
         }
     }
-    else
-    {
-        e_leveldb_snapshot_handle* snapshot_handle;
-        if (enif_get_resource(env, argv[0], e_leveldb_snapshot_RESOURCE, 
-                              (void **)&snapshot_handle)) 
-            return enif_make_tuple2(env, ATOM_ERROR, ATOM_ERROR_READ_ONLY_SNAPSHOT);
-        else 
-            return enif_make_badarg(env);
-    }
+    else if (enif_get_resource(env, argv[0], e_leveldb_snapshot_RESOURCE, 
+                               (void **)&snapshot_handle)) 
+        return enif_make_tuple2(env, ATOM_ERROR, ATOM_ERROR_READ_ONLY_SNAPSHOT);
+    else 
+        return enif_make_badarg(env);
 }
 
 ERL_NIF_TERM e_leveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
