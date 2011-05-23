@@ -24,6 +24,7 @@
 #include "leveldb/db.h"
 #include "leveldb/comparator.h"
 #include "leveldb/write_batch.h"
+#include "leveldb/cache.h"
 
 static ErlNifResourceType* e_leveldb_db_RESOURCE;
 static ErlNifResourceType* e_leveldb_itr_RESOURCE;
@@ -71,6 +72,9 @@ static ERL_NIF_TERM ATOM_LAST;
 static ERL_NIF_TERM ATOM_NEXT;
 static ERL_NIF_TERM ATOM_PREV;
 static ERL_NIF_TERM ATOM_INVALID_ITERATOR;
+static ERL_NIF_TERM ATOM_CACHE_SIZE;
+static ERL_NIF_TERM ATOM_PARANOID_CHECKS;
+ 
 
 static ErlNifFunc nif_funcs[] =
 {
@@ -95,6 +99,39 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             opts.create_if_missing = (option[1] == ATOM_TRUE);
         else if (option[0] == ATOM_ERROR_IF_EXISTS)
             opts.error_if_exists = (option[1] == ATOM_TRUE);
+        else if (option[0] == ATOM_PARANOID_CHECKS) 
+            opts.paranoid_checks = (option[1] == ATOM_TRUE);
+        else if (option[0] == ATOM_MAX_OPEN_FILES) 
+        {
+            int max_open_files;
+            if (enif_get_int(env, option[1], &max_open_files))
+                opts.max_open_files = max_open_files;
+        }
+        else if (option[0] == ATOM_WRITE_BUFFER_SIZE) 
+        { 
+            size_t write_buffer_sz;
+            if (enif_get_ulong(env, option[1], &write_buffer_sz))
+                opts.write_buffer_size = write_buffer_sz;
+        }
+        else if (option[0] == ATOM_BLOCK_SIZE) 
+        { 
+            size_t block_sz;
+            if (enif_get_ulong(env, option[1], &block_sz)) 
+                opts.block_size = block_sz;
+        }
+        else if (option[0] == ATOM_BLOCK_RESTART_INTERVAL) 
+        { 
+            int block_restart_interval;
+            if (enif_get_int(env, option[1], &block_restart_interval))
+                opts.block_restart_interval = block_restart_interval;
+        }
+        else if (option[0] == ATOM_CACHE_SIZE) 
+        {
+            size_t cache_sz;
+            if (enif_get_ulong(env, option[1], &cache_sz)) 
+                if (cache_sz != 0) 
+                    opts.block_cache = leveldb::NewLRUCache(cache_sz);
+        }
     }
 
     return ATOM_OK;
@@ -537,6 +574,8 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_NEXT, "next");
     ATOM(ATOM_PREV, "prev");
     ATOM(ATOM_INVALID_ITERATOR, "invalid_iterator");
+    ATOM(ATOM_CACHE_SIZE, "cache_size");
+    ATOM(ATOM_PARANOID_CHECKS, "paranoid_checks");
 
     return 0;
 }
