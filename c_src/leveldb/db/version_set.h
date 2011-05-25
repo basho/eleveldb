@@ -63,7 +63,7 @@ class Version {
   int refs_;                    // Number of live refs to this version
 
   // List of files per level
-  std::vector<FileMetaData*> files_[config::kNumLevels];
+  USED_BY_NESTED_FRIEND(std::vector<FileMetaData*> files_[config::kNumLevels])
 
   // Level that should be compacted next and its compaction score.
   // Score < 1 means compaction is not strictly needed.  These fields

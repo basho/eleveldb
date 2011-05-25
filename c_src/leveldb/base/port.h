@@ -52,4 +52,14 @@
 #define API_CALL
 #endif
 
+// Some compilers do not provide access to nested classes of a declared friend class
+// Defining PUBLIC_NESTED_FRIEND_ACCESS will cause those declarations to be made public as a workaround
+#ifdef PUBLIC_NESTED_FRIEND_ACCESS
+#define USED_BY_NESTED_FRIEND(a) public: a; private:
+#define USED_BY_NESTED_FRIEND2(a,b) public: a,b; private:
+#else
+#define USED_BY_NESTED_FRIEND(a) a;
+#define USED_BY_NESTED_FRIEND2(a,b) a,b;
+#endif
+
 #endif  // BASE_PORT_H_

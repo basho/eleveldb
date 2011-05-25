@@ -100,7 +100,7 @@ inline Atomic32 Release_Load(volatile const Atomic32 *ptr) {
   return *ptr;
 }
 
-#ifdef __LP64__
+#ifdef ARCH_CPU_64_BITS
 
 // 64-bit implementation on 64-bit platform
 
@@ -190,7 +190,7 @@ inline Atomic64 Release_Load(volatile const Atomic64 *ptr) {
   return *ptr;
 }
 
-#endif  // defined(__LP64__)
+#endif  // defined(ARCH_CPU_64_BITS)
 
 }   // namespace base::subtle
 }   // namespace base
