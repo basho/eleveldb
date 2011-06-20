@@ -9,18 +9,36 @@
 
 #include "build/build_config.h"
 #if defined(OS_MACOSX)
-#include <machine/endian.h>
+  #include <machine/endian.h>
+
+#elif defined(OS_SOLARIS)
+  #include <sys/isa_defs.h>
+  #ifdef _LITTLE_ENDIAN
+    #define LITTLE_ENDIAN
+  #else
+    #define BIG_ENDIAN
+  #endif
+
 #else
-#include <endian.h>
+  #include <endian.h>
 #endif
 #include <pthread.h>
 #include <stdint.h>
 #include <string>
 #include "base/atomicops.h"
 
+#ifdef LITTLE_ENDIAN
+#define IS_LITTLE_ENDIAN true
+#else
+#define IS_LITTLE_ENDIAN false
+#endif
+
+#if defined(OS_MACOSX) || defined(OS_SOLARIS)
 #define fread_unlocked fread
 #define fwrite_unlocked fwrite
 #define fflush_unlocked fflush
+#endif
+
 #if defined(OS_MACOSX)
 #define fdatasync fsync
 #endif
@@ -28,7 +46,7 @@
 namespace leveldb {
 namespace port {
 
-static const bool kLittleEndian = (BYTE_ORDER == LITTLE_ENDIAN);
+static const bool kLittleEndian = IS_LITTLE_ENDIAN;
 
 class CondVar;
 

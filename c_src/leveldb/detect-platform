@@ -1,0 +1,74 @@
+#!/bin/sh
+
+mkdir -p build
+rm -f build/build_config.h build/build_config.mk
+
+# Detect OS
+case `uname -s` in
+    Darwin)
+        PLATFORM=OS_MACOSX
+        echo "PLATFORM_CXXFLAGS=-pthread" >> build/build_config.mk
+        echo "PLATFORM_LDFLAGS=-pthread"  >> build/build_config.mk
+        ;;
+    Linux)
+        PLATFORM=OS_LINUX
+        echo "PLATFORM_CXXFLAGS=-pthread" >> build/build_config.mk
+        echo "PLATFORM_LDFLAGS=-pthread"  >> build/build_config.mk
+        ;;
+    SunOS)
+        PLATFORM=OS_SOLARIS
+        echo "PLATFORM_CXXFLAGS=-D_REENTRANT"  >> build/build_config.mk
+        echo "PLATFORM_LDFLAGS=-lpthread -lrt" >> build/build_config.mk
+        ;;
+    *)
+        echo "Unknown platform!"
+        exit 1
+esac
+
+echo "#define $PLATFORM" >> build/build_config.h
+echo "PLATFORM=$PLATFORM" >> build/build_config.mk
+
+# Assume for moment that it's always GCC on x86
+echo "#define COMPILER_GCC" >> build/build_config.h
+echo "#define ARCH_CPU_X86_FAMILY" >> build/build_config.h
+
+# Detect 64-bits
+gcc $CFLAGS -xc - -o /tmp/platform-test.out <<EOF
+ int main() {
+   #ifdef __LP64__
+      return 1;
+   #else
+      return 0;
+   #endif
+   }
+EOF
+/tmp/platform-test.out
+if [ "$?" = "1" ]; then
+    echo "#define ARCH_CPU_64_BITS" >> build/build_config.h
+fi
+
+# Detect C++0x -- this determines the port module we'll use
+gcc $CFLAGS -x c - -o /dev/null 2>/dev/null  <<EOF
+  #include <cstdatomic>
+  int main() {}
+EOF
+if [ "$?" = 0 ]; then
+    PORT_CFLAGS=-DLEVELDB_PLATFORM_POSIX -std=c++0x
+    PORT_MODULE=port_posix.o
+else
+    PORT_CFLAGS=-DLEVELDB_PLATFORM_STD
+    PORT_MODULE=port_std.o
+fi
+
+echo "PORT_CFLAGS=$PORT_CFLAGS" >> build/build_config.mk
+echo "PORT_MODULE=$PORT_MODULE" >> build/build_config.mk
+
+# Detect if we need public_nested_friend_access; seems to only be a problem on Darwin
+# or Solaris with older compilers
+if [ "$PLATFORM" = "OS_SOLARIS" -o "$PLATFORM" = "OS_MACOSX" ]; then
+    if [ "$PORT_MODULE" = "port_std.o" ]; then
+        echo "#define PUBLIC_NESTED_FRIEND_ACCESS" >> build/build_config.h
+    fi
+fi
+
+
