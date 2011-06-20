@@ -77,10 +77,6 @@ class DBImpl : public DB {
   // Delete any unneeded files and stale in-memory entries.
   void DeleteObsoleteFiles();
 
-  // Called when an iterator over a particular version of the
-  // descriptor goes away.
-  static void Unref(void* arg1, void* arg2);
-
   // Compact the in-memory write buffer to disk.  Switches to a new
   // log-file/memtable and writes a new descriptor iff successful.
   Status CompactMemTable();
@@ -123,8 +119,7 @@ class DBImpl : public DB {
   // State below is protected by mutex_
   port::Mutex mutex_;
   port::AtomicPointer shutting_down_;
-  port::CondVar bg_cv_;          // Signalled when !bg_compaction_scheduled_
-  port::CondVar compacting_cv_;  // Signalled when !compacting_
+  port::CondVar bg_cv_;          // Signalled when background work finishes
   MemTable* mem_;
   MemTable* imm_;                // Memtable being compacted
   port::AtomicPointer has_imm_;  // So bg thread can detect non-NULL imm_
@@ -139,8 +134,13 @@ class DBImpl : public DB {
   // Has a background compaction been scheduled or is running?
   bool bg_compaction_scheduled_;
 
-  // Is there a compaction running?
-  bool compacting_;
+  // Information for a manual compaction
+  struct ManualCompaction {
+    int level;
+    std::string begin;
+    std::string end;
+  };
+  ManualCompaction* manual_compaction_;
 
   VersionSet* versions_;
 

@@ -2,15 +2,21 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-CC = g++
+#-----------------------------------------------
+# Uncomment exactly one of the lines labelled (A), (B), and (C) below
+# to switch between compilation modes.
 
-# Uncomment one of the following to switch between debug and opt mode
-#OPT = -O2 -DNDEBUG
-OPT = -g2 -fPIC
+OPT = -O2 -DNDEBUG       # (A) Production use (optimized mode)
+# OPT = -g2              # (B) Debug mode, w/ full line-level debugging symbols
+# OPT = -O2 -g2 -DNDEBUG # (C) Profiling mode: opt, but w/debugging symbols
+#-----------------------------------------------
 
-CFLAGS = -c -DLEVELDB_PLATFORM_STD -I. -I./include $(OPT)
+$(shell sh ./detect-platform)
+include build/build_config.mk
 
-LDFLAGS=-lpthread
+CXX = g++
+CXXFLAGS += $(PLATFORM_CXXFLAGS) -c -I. -I./include $(PORT_CFLAGS) $(OPT)
+LDFLAGS  += $(PLATFORM_LDFLAGS)
 
 LIBOBJECTS = \
 	./db/builder.o \
@@ -26,7 +32,7 @@ LIBOBJECTS = \
 	./db/version_edit.o \
 	./db/version_set.o \
 	./db/write_batch.o \
-	./port/port_std.o \
+	./port/$(PORT_MODULE) \
 	./table/block.o \
 	./table/block_builder.o \
 	./table/format.o \
@@ -69,67 +75,79 @@ TESTS = \
 
 PROGRAMS = db_bench $(TESTS)
 
-all: build/build_config.h libleveldb.a $(PROGRAMS)
+LIBRARY = libleveldb.a
 
-build/build_config.h:
-	sh ./platform.env
+all: $(LIBRARY)
 
-libleveldb.a: $(LIBOBJECTS)
-	ar rcs $@ $(LIBOBJECTS)
-
-check: $(TESTS)
+check: $(PROGRAMS) $(TESTS)
 	for t in $(TESTS); do echo "***** Running $$t"; ./$$t || exit 1; done
 
 clean:
-	rm -f $(PROGRAMS) */*.o */*.a build/build_config.h
+	-rm -f $(PROGRAMS) $(LIBRARY) */*.o ios-x86/*/*.o ios-arm/*/*.o
+	-rm -rf ios-x86/* ios-arm/*
+
+$(LIBRARY): $(LIBOBJECTS)
+	rm -f $@
+	$(AR) -rs $@ $(LIBOBJECTS)
 
 db_bench: db/db_bench.o $(LIBOBJECTS) $(TESTUTIL)
-	$(CC) $(LDFLAGS) db/db_bench.o $(LIBOBJECTS) $(TESTUTIL) -o $@
+	$(CXX) $(LDFLAGS) db/db_bench.o $(LIBOBJECTS) $(TESTUTIL) -o $@
 
 arena_test: util/arena_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CC) $(LDFLAGS) util/arena_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
+	$(CXX) $(LDFLAGS) util/arena_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
 
 cache_test: util/cache_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CC) $(LDFLAGS) util/cache_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
+	$(CXX) $(LDFLAGS) util/cache_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
 
 coding_test: util/coding_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CC) $(LDFLAGS) util/coding_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
+	$(CXX) $(LDFLAGS) util/coding_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
 
 corruption_test: db/corruption_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CC) $(LDFLAGS) db/corruption_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
+	$(CXX) $(LDFLAGS) db/corruption_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
 
 crc32c_test: util/crc32c_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CC) $(LDFLAGS) util/crc32c_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
+	$(CXX) $(LDFLAGS) util/crc32c_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
 
 db_test: db/db_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CC) $(LDFLAGS) db/db_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
+	$(CXX) $(LDFLAGS) db/db_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
 
 dbformat_test: db/dbformat_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CC) $(LDFLAGS) db/dbformat_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
+	$(CXX) $(LDFLAGS) db/dbformat_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
 
 env_test: util/env_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CC) $(LDFLAGS) util/env_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
+	$(CXX) $(LDFLAGS) util/env_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
 
 filename_test: db/filename_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CC) $(LDFLAGS) db/filename_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
+	$(CXX) $(LDFLAGS) db/filename_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
 
 log_test: db/log_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CC) $(LDFLAGS) db/log_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
+	$(CXX) $(LDFLAGS) db/log_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
 
 table_test: table/table_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CC) $(LDFLAGS) table/table_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
+	$(CXX) $(LDFLAGS) table/table_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
 
 skiplist_test: db/skiplist_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CC) $(LDFLAGS) db/skiplist_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
+	$(CXX) $(LDFLAGS) db/skiplist_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
 
 version_edit_test: db/version_edit_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CC) $(LDFLAGS) db/version_edit_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
+	$(CXX) $(LDFLAGS) db/version_edit_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
 
 write_batch_test: db/write_batch_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(CC) $(LDFLAGS) db/write_batch_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
+	$(CXX) $(LDFLAGS) db/write_batch_test.o $(LIBOBJECTS) $(TESTHARNESS) -o $@
 
+ifeq ($(PLATFORM), IOS)
+# For iOS, create universal object files to be used on both the simulator and
+# a device.
 .cc.o:
-	$(CC) $(CFLAGS) $< -o $@
+	mkdir -p ios-x86/$(dir $@)
+	$(CXX) $(CXXFLAGS) -isysroot /Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator4.3.sdk -arch i686 $< -o ios-x86/$@
+	mkdir -p ios-arm/$(dir $@)
+	$(CXX) $(CXXFLAGS) -isysroot /Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS4.3.sdk -arch armv6 -arch armv7 $< -o ios-arm/$@
+	lipo ios-x86/$@ ios-arm/$@ -create -output $@
+else
+.cc.o:
+	$(CXX) $(CXXFLAGS) $< -o $@
+endif
 
 # TODO(gabor): dependencies for .o files
 # TODO(gabor): Build library

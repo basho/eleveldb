@@ -12,10 +12,6 @@ namespace leveldb {
 // This can help avoid virtual function calls and also gives better
 // cache locality.
 class IteratorWrapper {
- private:
-  Iterator* iter_;
-  bool valid_;
-  Slice key_;
  public:
   IteratorWrapper(): iter_(NULL), valid_(false) { }
   explicit IteratorWrapper(Iterator* iter): iter_(NULL) {
@@ -38,16 +34,16 @@ class IteratorWrapper {
 
 
   // Iterator interface methods
-  bool Valid() const { return valid_; }
-  Slice key() const { assert(Valid()); return key_; }
-  Slice value() const { assert(Valid()); return iter_->value(); }
+  bool Valid() const        { return valid_; }
+  Slice key() const         { assert(Valid()); return key_; }
+  Slice value() const       { assert(Valid()); return iter_->value(); }
   // Methods below require iter() != NULL
-  Status status() const { assert(iter_); return iter_->status(); }
-  void Next() { assert(iter_); iter_->Next(); Update(); }
-  void Prev() { assert(iter_); iter_->Prev(); Update(); }
-  void Seek(const Slice& k) { assert(iter_); iter_->Seek(k); Update(); }
-  void SeekToFirst() { assert(iter_); iter_->SeekToFirst(); Update(); }
-  void SeekToLast() { assert(iter_); iter_->SeekToLast(); Update(); }
+  Status status() const     { assert(iter_); return iter_->status(); }
+  void Next()               { assert(iter_); iter_->Next();        Update(); }
+  void Prev()               { assert(iter_); iter_->Prev();        Update(); }
+  void Seek(const Slice& k) { assert(iter_); iter_->Seek(k);       Update(); }
+  void SeekToFirst()        { assert(iter_); iter_->SeekToFirst(); Update(); }
+  void SeekToLast()         { assert(iter_); iter_->SeekToLast();  Update(); }
 
  private:
   void Update() {
@@ -56,9 +52,12 @@ class IteratorWrapper {
       key_ = iter_->key();
     }
   }
+
+  Iterator* iter_;
+  bool valid_;
+  Slice key_;
 };
 
-}
-
+}  // namespace leveldb
 
 #endif  // STORAGE_LEVELDB_TABLE_ITERATOR_WRAPPER_H_
