@@ -1,6 +1,9 @@
 
 -module(basho_bench_driver_eldb).
 
+-record(state, { ref,
+                 itr }).
+
 -export([new/1,
          run/4]).
 
@@ -25,36 +28,33 @@ new(_Id) ->
             ok
     end,
 
-    case e_leveldb:open(WorkDir, [{create_if_missing, true},
-                                  {cache_size, 1024 * 1024 * 128}]) of
+    case e_leveldb:open(WorkDir, [{create_if_missing, true}]) of
         {ok, Ref} ->
-            {ok, Ref};
+            {ok, Itr} = e_leveldb:iterator(Ref, []),
+            {ok, #state { ref = Ref, itr = Itr }};
         {error, Reason} ->
             {error, Reason}
     end.
 
-
 run(get, KeyGen, _ValueGen, State) ->
-    case e_leveldb:get(State, KeyGen(), []) of
-        {ok, _Value} ->
+    Key = KeyGen(),
+    case e_leveldb:iterator_move(State#state.itr, Key) of
+        {ok, Key, _Value} ->
+            {ok, State};
+        {ok, OtherKey, _Value} ->
+            io:format("~p vs ~p!!\n", [Key, OtherKey]),
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
     end;
 run(put, KeyGen, ValueGen, State) ->
-    print_status(State, 1000),
-    case e_leveldb:put(State, KeyGen(), ValueGen(), []) of
+    print_status(State#state.ref, 1000),
+    case e_leveldb:put(State#state.ref, KeyGen(), ValueGen(), []) of
         ok ->
-            {ok, State};
-        {error, Reason} ->
-            {error, State, Reason}
-    end;
-run(batch_put, KeyGen, ValueGen, State) ->
-    print_status(State, 100),
-    Batch = [{put, KeyGen(), ValueGen()} || _ <- lists:seq(1, 100)],
-    case e_leveldb:write(State, Batch, []) of
-        ok ->
-            {ok, State};
+            %% Reset the iterator to see the latest data
+            e_leveldb:iterator_close(State#state.itr),
+            Itr = e_leveldb:iterator(State#state.ref),
+            {ok, State#state { itr = Itr }};
         {error, Reason} ->
             {error, State, Reason}
     end.
