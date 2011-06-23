@@ -34,6 +34,8 @@ ERL_NIF_TERM e_leveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
 ERL_NIF_TERM e_leveldb_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 ERL_NIF_TERM e_leveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 ERL_NIF_TERM e_leveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM e_leveldb_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM e_leveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 }
 
 #endif

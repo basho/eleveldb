@@ -45,6 +45,7 @@ typedef struct
 
 // Atoms (initialized in on_load)
 static ERL_NIF_TERM ATOM_TRUE;
+static ERL_NIF_TERM ATOM_FALSE;
 static ERL_NIF_TERM ATOM_OK;
 static ERL_NIF_TERM ATOM_ERROR;
 static ERL_NIF_TERM ATOM_CREATE_IF_MISSING;
@@ -74,6 +75,7 @@ static ERL_NIF_TERM ATOM_PREV;
 static ERL_NIF_TERM ATOM_INVALID_ITERATOR;
 static ERL_NIF_TERM ATOM_CACHE_SIZE;
 static ERL_NIF_TERM ATOM_PARANOID_CHECKS;
+static ERL_NIF_TERM ATOM_ERROR_DB_DESTROY;
  
 
 static ErlNifFunc nif_funcs[] =
@@ -85,8 +87,9 @@ static ErlNifFunc nif_funcs[] =
     {"iterator_move", 2, e_leveldb_iterator_move},
     {"iterator_close", 1, e_leveldb_iterator_close},
     {"status", 2, e_leveldb_status},
-/*    {"destroy", 2, e_leveldb_destroy},
-    {"repair", 2, e_leveldb_repair} */
+    {"destroy", 1, e_leveldb_destroy},
+    /*{"repair", 2, e_leveldb_repair} */
+    {"is_empty", 1, e_leveldb_is_empty},
 };
 
 ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Options& opts)
@@ -511,6 +514,55 @@ ERL_NIF_TERM e_leveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[
     }
 }
 
+ERL_NIF_TERM e_leveldb_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    char name[4096];
+    if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1) &&
+        enif_is_list(env, argv[1]))
+    {
+        leveldb::Options opts;
+        leveldb::Status status = leveldb::DestroyDB(name, opts);
+        if (!status.ok())
+        {
+            return error_tuple(env, ATOM_ERROR_DB_DESTROY, status);
+        }
+        else
+        {
+            return ATOM_OK;
+        }
+    }
+    else
+    {
+        return enif_make_badarg(env);
+    }
+}
+
+ERL_NIF_TERM e_leveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    e_leveldb_db_handle* db_handle;
+    if (enif_get_resource(env, argv[0], e_leveldb_db_RESOURCE, (void**)&db_handle))
+    {
+        leveldb::ReadOptions opts;
+        leveldb::Iterator* itr = db_handle->db->NewIterator(opts);
+        itr->SeekToFirst();
+        ERL_NIF_TERM result;
+        if (itr->Valid())
+        {
+            result = ATOM_FALSE;
+        }
+        else
+        {
+            result = ATOM_TRUE;
+        }
+        delete itr;
+        return result;
+    }
+    else
+    {
+        return enif_make_badarg(env);
+    }
+}
+
 static void e_leveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
 {
     // Delete any dynamically allocated memory stored in e_leveldb_db_handle
@@ -549,6 +601,7 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_OK, "ok");
     ATOM(ATOM_ERROR, "error");
     ATOM(ATOM_TRUE, "true");
+    ATOM(ATOM_FALSE, "false");
     ATOM(ATOM_CREATE_IF_MISSING, "create_if_missing");
     ATOM(ATOM_ERROR_IF_EXISTS, "error_if_exists");
     ATOM(ATOM_WRITE_BUFFER_SIZE, "write_buffer_size");
@@ -576,7 +629,7 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_INVALID_ITERATOR, "invalid_iterator");
     ATOM(ATOM_CACHE_SIZE, "cache_size");
     ATOM(ATOM_PARANOID_CHECKS, "paranoid_checks");
-
+    ATOM(ATOM_ERROR_DB_DESTROY, "error_db_destroy");
     return 0;
 }
 

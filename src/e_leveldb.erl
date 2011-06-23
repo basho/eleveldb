@@ -28,8 +28,9 @@
          write/3,
          fold/4,
          status/2,
-         destroy/2,
-         repair/2]).
+         destroy/1,
+         repair/2,
+         is_empty/1]).
 
 -export([iterator/2,
          iterator_move/2,
@@ -135,11 +136,16 @@ fold(Ref, Fun, Acc0, Opts) ->
 status(_Ref, _Key) ->
     erlang:nif_error({error, not_loaded}).
 
-destroy(_Name, _Opts) ->
-    ok.
+-spec destroy(string()) -> ok | {error, any()}.
+destroy(_Name) ->
+    erlang:nif_error({erlang, not_loaded}).
 
 repair(_Name, _Opts) ->
     ok.
+
+-spec is_empty(db_ref()) -> boolean().
+is_empty(_Ref) ->
+    erlang:nif_error({error, not_loaded}).
 
 %% ===================================================================
 %% Internal functions
