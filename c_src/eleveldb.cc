@@ -89,7 +89,7 @@ static ErlNifFunc nif_funcs[] =
     {"iterator_move", 2, eleveldb_iterator_move},
     {"iterator_close", 1, eleveldb_iterator_close},
     {"status", 2, eleveldb_status},
-    {"destroy", 1, eleveldb_destroy},
+    {"destroy", 2, eleveldb_destroy},
     /*{"repair", 2, eleveldb_repair} */
     {"is_empty", 1, eleveldb_is_empty},
 };
