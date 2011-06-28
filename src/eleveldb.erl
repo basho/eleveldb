@@ -29,7 +29,7 @@
          fold/4,
          fold_keys/4,
          status/2,
-         destroy/1,
+         destroy/2,
          repair/2,
          is_empty/1]).
 
@@ -145,8 +145,8 @@ fold_keys(Ref, Fun, Acc0, Opts) ->
 status(_Ref, _Key) ->
     erlang:nif_error({error, not_loaded}).
 
--spec destroy(string()) -> ok | {error, any()}.
-destroy(_Name) ->
+-spec destroy(string(), list()) -> ok | {error, any()}.
+destroy(_Name, _Opts) ->
     erlang:nif_error({erlang, not_loaded}).
 
 repair(_Name, _Opts) ->
