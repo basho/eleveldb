@@ -27,6 +27,7 @@
          delete/3,
          write/3,
          fold/4,
+         fold_keys/4,
          status/2,
          destroy/1,
          repair/2,
@@ -110,7 +111,12 @@ write(_Ref, _Updates, _Opts) ->
 iterator(_Ref, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
+-spec iterator(db_ref(), read_options(), keys_only) -> {ok, itr_ref()}.
+iterator(_Ref, _Opts, keys_only) ->
+    erlang:nif_error({error, not_loaded}).
+
 -spec iterator_move(itr_ref(), iterator_action()) -> {ok, Key::binary(), Value::binary()} |
+                                                     {ok, Key::binary()} |
                                                      {error, invalid_iterator} |
                                                      {error, iterator_closed}.
 iterator_move(_IRef, _Loc) ->
@@ -126,11 +132,14 @@ iterator_close(_IRef) ->
 -spec fold(db_ref(), fold_fun(), any(), read_options()) -> any().
 fold(Ref, Fun, Acc0, Opts) ->
     {ok, Itr} = iterator(Ref, Opts),
-    try
-        fold_loop(iterator_move(Itr, first), Itr, Fun, Acc0)
-    after
-        iterator_close(Itr)
-    end.
+    do_fold(Itr, Fun, Acc0, Opts).
+
+-type fold_keys_fun() :: fun((Key::binary(), any()) -> any()).
+
+-spec fold_keys(db_ref(), fold_keys_fun(), any(), read_options()) -> any().
+fold_keys(Ref, Fun, Acc0, Opts) ->
+    {ok, Itr} = iterator(Ref, Opts, keys_only),
+    do_fold(Itr, Fun, Acc0, Opts).
 
 -spec status(db_ref(), Key::binary()) -> {ok, binary()} | error.
 status(_Ref, _Key) ->
@@ -150,8 +159,23 @@ is_empty(_Ref) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+do_fold(Itr, Fun, Acc0, Opts) ->
+    try
+        %% Extract {first_key, binary()} and seek to that key as a starting
+        %% point for the iteration. The folding function should use throw if it
+        %% wishes to terminate before the end of the fold.
+        Start = proplists:get_value(first_key, Opts, first),
+        true = is_binary(Start) or (Start == first),
+        fold_loop(iterator_move(Itr, Start), Itr, Fun, Acc0)
+    after
+        iterator_close(Itr)
+    end.
+
 fold_loop({error, invalid_iterator}, _Itr, _Fun, Acc0) ->
     Acc0;
+fold_loop({ok, K}, Itr, Fun, Acc0) ->
+    Acc = Fun(K, Acc0),
+    fold_loop(iterator_move(Itr, next), Itr, Fun, Acc);
 fold_loop({ok, K, V}, Itr, Fun, Acc0) ->
     Acc = Fun({K, V}, Acc0),
     fold_loop(iterator_move(Itr, next), Itr, Fun, Acc).
@@ -178,6 +202,27 @@ fold_test() ->
      {<<"def">>, <<"456">>},
      {<<"hij">>, <<"789">>}] = lists:reverse(fold(Ref, fun({K, V}, Acc) -> [{K, V} | Acc] end,
                                                   [], [])).
+
+fold_keys_test() ->
+    os:cmd("rm -rf /tmp/eleveldb.fold.keys.test"),
+    {ok, Ref} = open("/tmp/eleveldb.fold.keys.test", [{create_if_missing, true}]),
+    ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
+    ok = ?MODULE:put(Ref, <<"abc">>, <<"123">>, []),
+    ok = ?MODULE:put(Ref, <<"hij">>, <<"789">>, []),
+    [<<"abc">>, <<"def">>, <<"hij">>] = lists:reverse(fold_keys(Ref,
+                                                                fun(K, Acc) -> [K | Acc] end,
+                                                                [], [])).
+
+fold_from_key_test() ->
+    os:cmd("rm -rf /tmp/eleveldb.fold.fromkeys.test"),
+    {ok, Ref} = open("/tmp/eleveldb.fromfold.keys.test", [{create_if_missing, true}]),
+    ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
+    ok = ?MODULE:put(Ref, <<"abc">>, <<"123">>, []),
+    ok = ?MODULE:put(Ref, <<"hij">>, <<"789">>, []),
+    [<<"def">>, <<"hij">>] = lists:reverse(fold_keys(Ref,
+                                                     fun(K, Acc) -> [K | Acc] end,
+                                                     [], [{first_key, <<"d">>}])).
+
 
 -ifdef(EQC).
 

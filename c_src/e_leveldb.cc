@@ -41,6 +41,7 @@ typedef struct
     ErlNifMutex*         itr_lock;
     const leveldb::Snapshot*   snapshot;
     e_leveldb_db_handle* db_handle;
+    bool keys_only;
 } e_leveldb_itr_handle;
 
 // Atoms (initialized in on_load)
@@ -76,7 +77,7 @@ static ERL_NIF_TERM ATOM_INVALID_ITERATOR;
 static ERL_NIF_TERM ATOM_CACHE_SIZE;
 static ERL_NIF_TERM ATOM_PARANOID_CHECKS;
 static ERL_NIF_TERM ATOM_ERROR_DB_DESTROY;
- 
+static ERL_NIF_TERM ATOM_KEYS_ONLY; 
 
 static ErlNifFunc nif_funcs[] =
 {
@@ -84,6 +85,7 @@ static ErlNifFunc nif_funcs[] =
     {"get", 3, e_leveldb_get},
     {"write", 3, e_leveldb_write},
     {"iterator", 2, e_leveldb_iterator},
+    {"iterator", 3, e_leveldb_iterator},
     {"iterator_move", 2, e_leveldb_iterator_move},
     {"iterator_close", 1, e_leveldb_iterator_close},
     {"status", 2, e_leveldb_status},
@@ -384,6 +386,9 @@ ERL_NIF_TERM e_leveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
         opts.snapshot = itr_handle->snapshot;
         itr_handle->itr = db_handle->db->NewIterator(opts);
 
+        // Check for keys_only iterator flag
+        itr_handle->keys_only = ((argc == 3) && (argv[2] == ATOM_KEYS_ONLY));
+
         ERL_NIF_TERM result = enif_make_resource(env, itr_handle);
         enif_release_resource(itr_handle);
         return enif_make_tuple2(env, ATOM_OK, result);
@@ -444,9 +449,17 @@ ERL_NIF_TERM e_leveldb_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TER
         ERL_NIF_TERM result;
         if (itr->Valid())
         {
-            result = enif_make_tuple3(env, ATOM_OK,
-                                      slice_to_binary(env, itr->key()),
-                                      slice_to_binary(env, itr->value()));
+            if (itr_handle->keys_only)
+            {
+                result = enif_make_tuple2(env, ATOM_OK,
+                                          slice_to_binary(env, itr->key()));
+            }
+            else
+            {
+                result = enif_make_tuple3(env, ATOM_OK,
+                                          slice_to_binary(env, itr->key()),
+                                          slice_to_binary(env, itr->value()));
+            }
         }
         else
         {
@@ -630,6 +643,7 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_CACHE_SIZE, "cache_size");
     ATOM(ATOM_PARANOID_CHECKS, "paranoid_checks");
     ATOM(ATOM_ERROR_DB_DESTROY, "error_db_destroy");
+    ATOM(ATOM_KEYS_ONLY, "keys_only");
     return 0;
 }
 
