@@ -1,6 +1,6 @@
 // -------------------------------------------------------------------
 //
-// e_leveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
+// eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
 // Copyright (c) 2011 Basho Technologies, Inc. All Rights Reserved.
 //
@@ -19,30 +19,30 @@
 // under the License.
 //
 // -------------------------------------------------------------------
-#include "e_leveldb.h"
+#include "eleveldb.h"
 
 #include "leveldb/db.h"
 #include "leveldb/comparator.h"
 #include "leveldb/write_batch.h"
 #include "leveldb/cache.h"
 
-static ErlNifResourceType* e_leveldb_db_RESOURCE;
-static ErlNifResourceType* e_leveldb_itr_RESOURCE;
+static ErlNifResourceType* eleveldb_db_RESOURCE;
+static ErlNifResourceType* eleveldb_itr_RESOURCE;
 
 typedef struct
 {
     leveldb::DB* db;
     leveldb::Options options;
-} e_leveldb_db_handle;
+} eleveldb_db_handle;
 
 typedef struct
 {
     leveldb::Iterator*   itr;
     ErlNifMutex*         itr_lock;
     const leveldb::Snapshot*   snapshot;
-    e_leveldb_db_handle* db_handle;
+    eleveldb_db_handle* db_handle;
     bool keys_only;
-} e_leveldb_itr_handle;
+} eleveldb_itr_handle;
 
 // Atoms (initialized in on_load)
 static ERL_NIF_TERM ATOM_TRUE;
@@ -81,17 +81,17 @@ static ERL_NIF_TERM ATOM_KEYS_ONLY;
 
 static ErlNifFunc nif_funcs[] =
 {
-    {"open", 2, e_leveldb_open},
-    {"get", 3, e_leveldb_get},
-    {"write", 3, e_leveldb_write},
-    {"iterator", 2, e_leveldb_iterator},
-    {"iterator", 3, e_leveldb_iterator},
-    {"iterator_move", 2, e_leveldb_iterator_move},
-    {"iterator_close", 1, e_leveldb_iterator_close},
-    {"status", 2, e_leveldb_status},
-    {"destroy", 1, e_leveldb_destroy},
-    /*{"repair", 2, e_leveldb_repair} */
-    {"is_empty", 1, e_leveldb_is_empty},
+    {"open", 2, eleveldb_open},
+    {"get", 3, eleveldb_get},
+    {"write", 3, eleveldb_write},
+    {"iterator", 2, eleveldb_iterator},
+    {"iterator", 3, eleveldb_iterator},
+    {"iterator_move", 2, eleveldb_iterator_move},
+    {"iterator_close", 1, eleveldb_iterator_close},
+    {"status", 2, eleveldb_status},
+    {"destroy", 1, eleveldb_destroy},
+    /*{"repair", 2, eleveldb_repair} */
+    {"is_empty", 1, eleveldb_is_empty},
 };
 
 ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Options& opts)
@@ -234,7 +234,7 @@ ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Status& st
                             enif_make_tuple2(env, error, reason));
 }
 
-ERL_NIF_TERM e_leveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM eleveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     char name[4096];
     if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1) &&
@@ -253,10 +253,10 @@ ERL_NIF_TERM e_leveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         }
 
         // Setup handle
-        e_leveldb_db_handle* handle =
-            (e_leveldb_db_handle*) enif_alloc_resource(e_leveldb_db_RESOURCE,
-                                                       sizeof(e_leveldb_db_handle));
-        memset(handle, '\0', sizeof(e_leveldb_db_handle));
+        eleveldb_db_handle* handle =
+            (eleveldb_db_handle*) enif_alloc_resource(eleveldb_db_RESOURCE,
+                                                       sizeof(eleveldb_db_handle));
+        memset(handle, '\0', sizeof(eleveldb_db_handle));
         handle->db = db;
         handle->options = opts;
         ERL_NIF_TERM result = enif_make_resource(env, handle);
@@ -269,11 +269,11 @@ ERL_NIF_TERM e_leveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     }
 }
 
-ERL_NIF_TERM e_leveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    e_leveldb_db_handle* handle;
+    eleveldb_db_handle* handle;
     ErlNifBinary key;
-    if (enif_get_resource(env, argv[0], e_leveldb_db_RESOURCE, (void**)&handle) &&
+    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&handle) &&
         enif_inspect_binary(env, argv[1], &key) &&
         enif_is_list(env, argv[2]))
     {
@@ -316,10 +316,10 @@ ERL_NIF_TERM e_leveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     }
 }
 
-ERL_NIF_TERM e_leveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    e_leveldb_db_handle* handle;
-    if (enif_get_resource(env, argv[0], e_leveldb_db_RESOURCE, (void**)&handle) &&
+    eleveldb_db_handle* handle;
+    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&handle) &&
         enif_is_list(env, argv[1]) && // Actions
         enif_is_list(env, argv[2]))   // Opts
     {
@@ -359,10 +359,10 @@ ERL_NIF_TERM e_leveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
     }
 }
 
-ERL_NIF_TERM e_leveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    e_leveldb_db_handle* db_handle;
-    if (enif_get_resource(env, argv[0], e_leveldb_db_RESOURCE, (void**)&db_handle) &&
+    eleveldb_db_handle* db_handle;
+    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
         enif_is_list(env, argv[1])) // Options
     {
         // Increment references to db_handle for duration of the iterator
@@ -373,14 +373,14 @@ ERL_NIF_TERM e_leveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
         fold(env, argv[1], parse_read_option, opts);
 
         // Setup handle
-        e_leveldb_itr_handle* itr_handle =
-            (e_leveldb_itr_handle*) enif_alloc_resource(e_leveldb_itr_RESOURCE,
-                                                        sizeof(e_leveldb_itr_handle));
-        memset(itr_handle, '\0', sizeof(e_leveldb_itr_handle));
+        eleveldb_itr_handle* itr_handle =
+            (eleveldb_itr_handle*) enif_alloc_resource(eleveldb_itr_RESOURCE,
+                                                        sizeof(eleveldb_itr_handle));
+        memset(itr_handle, '\0', sizeof(eleveldb_itr_handle));
 
         // Initialize itr handle
         // TODO: Should it be possible to iterate WITHOUT a snapshot?
-        itr_handle->itr_lock = enif_mutex_create((char*)"e_leveldb_itr_lock");
+        itr_handle->itr_lock = enif_mutex_create((char*)"eleveldb_itr_lock");
         itr_handle->db_handle = db_handle;
         itr_handle->snapshot = db_handle->db->GetSnapshot();
         opts.snapshot = itr_handle->snapshot;
@@ -407,10 +407,10 @@ static ERL_NIF_TERM slice_to_binary(ErlNifEnv* env, leveldb::Slice s)
     return result;
 }
 
-ERL_NIF_TERM e_leveldb_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM eleveldb_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    e_leveldb_itr_handle* itr_handle;
-    if (enif_get_resource(env, argv[0], e_leveldb_itr_RESOURCE, (void**)&itr_handle))
+    eleveldb_itr_handle* itr_handle;
+    if (enif_get_resource(env, argv[0], eleveldb_itr_RESOURCE, (void**)&itr_handle))
     {
         enif_mutex_lock(itr_handle->itr_lock);
 
@@ -476,10 +476,10 @@ ERL_NIF_TERM e_leveldb_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TER
 }
 
 
-ERL_NIF_TERM e_leveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM eleveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    e_leveldb_itr_handle* itr_handle;
-    if (enif_get_resource(env, argv[0], e_leveldb_itr_RESOURCE, (void**)&itr_handle))
+    eleveldb_itr_handle* itr_handle;
+    if (enif_get_resource(env, argv[0], eleveldb_itr_RESOURCE, (void**)&itr_handle))
     {
         enif_mutex_lock(itr_handle->itr_lock);
 
@@ -500,11 +500,11 @@ ERL_NIF_TERM e_leveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TE
     }
 }
 
-ERL_NIF_TERM e_leveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM eleveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    e_leveldb_db_handle* db_handle;
+    eleveldb_db_handle* db_handle;
     ErlNifBinary name_bin;
-    if (enif_get_resource(env, argv[0], e_leveldb_db_RESOURCE, (void**)&db_handle) &&
+    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
         enif_inspect_binary(env, argv[1], &name_bin))
     {
         leveldb::Slice name((const char*)name_bin.data, name_bin.size);
@@ -527,7 +527,7 @@ ERL_NIF_TERM e_leveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[
     }
 }
 
-ERL_NIF_TERM e_leveldb_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM eleveldb_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     char name[4096];
     if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1) &&
@@ -550,10 +550,10 @@ ERL_NIF_TERM e_leveldb_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
     }
 }
 
-ERL_NIF_TERM e_leveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    e_leveldb_db_handle* db_handle;
-    if (enif_get_resource(env, argv[0], e_leveldb_db_RESOURCE, (void**)&db_handle))
+    eleveldb_db_handle* db_handle;
+    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
     {
         leveldb::ReadOptions opts;
         leveldb::Iterator* itr = db_handle->db->NewIterator(opts);
@@ -576,17 +576,17 @@ ERL_NIF_TERM e_leveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM arg
     }
 }
 
-static void e_leveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
+static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
 {
-    // Delete any dynamically allocated memory stored in e_leveldb_db_handle
-    e_leveldb_db_handle* handle = (e_leveldb_db_handle*)arg;
+    // Delete any dynamically allocated memory stored in eleveldb_db_handle
+    eleveldb_db_handle* handle = (eleveldb_db_handle*)arg;
     delete handle->db;
 }
 
-static void e_leveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
+static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
 {
-    // Delete any dynamically allocated memory stored in e_leveldb_itr_handle
-    e_leveldb_itr_handle* itr_handle = (e_leveldb_itr_handle*)arg;
+    // Delete any dynamically allocated memory stored in eleveldb_itr_handle
+    eleveldb_itr_handle* itr_handle = (eleveldb_itr_handle*)arg;
     if (itr_handle->itr != 0)
     {
         delete itr_handle->itr;
@@ -603,11 +603,11 @@ static void e_leveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
 static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 {
     ErlNifResourceFlags flags = (ErlNifResourceFlags)(ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER);
-    e_leveldb_db_RESOURCE = enif_open_resource_type(env, NULL, "e_leveldb_db_resource",
-                                                    &e_leveldb_db_resource_cleanup,
+    eleveldb_db_RESOURCE = enif_open_resource_type(env, NULL, "eleveldb_db_resource",
+                                                    &eleveldb_db_resource_cleanup,
                                                     flags, NULL);
-    e_leveldb_itr_RESOURCE = enif_open_resource_type(env, NULL, "e_leveldb_itr_resource",
-                                                     &e_leveldb_itr_resource_cleanup,
+    eleveldb_itr_RESOURCE = enif_open_resource_type(env, NULL, "eleveldb_itr_resource",
+                                                     &eleveldb_itr_resource_cleanup,
                                                      flags, NULL);
 
     // Initialize common atoms
@@ -648,5 +648,5 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 }
 
 extern "C" {
-    ERL_NIF_INIT(e_leveldb, nif_funcs, &on_load, NULL, NULL, NULL);
+    ERL_NIF_INIT(eleveldb, nif_funcs, &on_load, NULL, NULL, NULL);
 }

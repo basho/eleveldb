@@ -1,4 +1,4 @@
-{application, e_leveldb,
+{application, eleveldb,
  [
   {description, ""},
   {vsn, "0.0.1"},
@@ -7,6 +7,5 @@
                   kernel,
                   stdlib
                  ]},
-  {mod, { e_leveldb_app, []}},
   {env, []}
  ]}.

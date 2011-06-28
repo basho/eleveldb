@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%%  e_leveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
+%%  eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 %%
 %% Copyright (c) 2010 Basho Technologies, Inc. All Rights Reserved.
 %%
@@ -19,7 +19,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(e_leveldb).
+-module(eleveldb).
 
 -export([open/2,
          get/3,
@@ -54,12 +54,12 @@ init() ->
                  {error, bad_name} ->
                      case code:which(?MODULE) of
                          Filename when is_list(Filename) ->
-                             filename:join([filename:dirname(Filename),"../priv", "e_leveldb"]);
+                             filename:join([filename:dirname(Filename),"../priv", "eleveldb"]);
                          _ ->
-                             filename:join("../priv", "e_leveldb")
+                             filename:join("../priv", "eleveldb")
                      end;
                  Dir ->
-                     filename:join(Dir, "e_leveldb")
+                     filename:join(Dir, "eleveldb")
              end,
     erlang:load_nif(SoName, 0).
 
@@ -241,10 +241,10 @@ ops(Keys, Values) ->
 apply_kv_ops([], _Ref, Acc0) ->
     Acc0;
 apply_kv_ops([{put, K, V} | Rest], Ref, Acc0) ->
-    ok = e_leveldb:put(Ref, K, V, []),
+    ok = eleveldb:put(Ref, K, V, []),
     apply_kv_ops(Rest, Ref, orddict:store(K, V, Acc0));
 apply_kv_ops([{delete, K, _} | Rest], Ref, Acc0) ->
-    ok = e_leveldb:delete(Ref, K, []),
+    ok = eleveldb:delete(Ref, K, []),
     apply_kv_ops(Rest, Ref, orddict:store(K, deleted, Acc0)).
 
 prop_put_delete() ->
@@ -252,15 +252,15 @@ prop_put_delete() ->
          ?FORALL(Ops, eqc_gen:non_empty(list(ops(Keys, Values))),
                  begin
                      ?cmd("rm -rf /tmp/eleveldb.putdelete.qc"),
-                     {ok, Ref} = e_leveldb:open("/tmp/eleveldb.putdelete.qc",
+                     {ok, Ref} = eleveldb:open("/tmp/eleveldb.putdelete.qc",
                                                 [{create_if_missing, true}]),
                      Model = apply_kv_ops(Ops, Ref, []),
 
                      %% Valdiate that all deleted values return not_found
                      F = fun({K, deleted}) ->
-                                 ?assertEqual(not_found, e_leveldb:get(Ref, K, []));
+                                 ?assertEqual(not_found, eleveldb:get(Ref, K, []));
                             ({K, V}) ->
-                                 ?assertEqual({ok, V}, e_leveldb:get(Ref, K, []))
+                                 ?assertEqual({ok, V}, eleveldb:get(Ref, K, []))
                          end,
                      lists:map(F, Model),
 
