@@ -7,17 +7,57 @@
 #ifndef STORAGE_LEVELDB_PORT_PORT_POSIX_H_
 #define STORAGE_LEVELDB_PORT_PORT_POSIX_H_
 
-#include <endian.h>
+#if defined(OS_MACOSX)
+  #include <machine/endian.h>
+#elif defined(OS_SOLARIS)
+  #include <sys/isa_defs.h>
+  #ifdef _LITTLE_ENDIAN
+    #define LITTLE_ENDIAN
+  #else
+    #define BIG_ENDIAN
+  #endif
+#else
+  #include <endian.h>
+#endif
 #include <pthread.h>
+#ifdef SNAPPY
+#include <snappy.h>
+#endif
 #include <stdint.h>
 #include <string>
-#include <cstdatomic>
-#include <cstring>
+#include "port/atomic_pointer.h"
+
+#ifdef LITTLE_ENDIAN
+#define IS_LITTLE_ENDIAN true
+#else
+#define IS_LITTLE_ENDIAN (__BYTE_ORDER == __LITTLE_ENDIAN)
+#endif
+
+#if defined(OS_MACOSX) || defined(OS_SOLARIS)
+#define fread_unlocked fread
+#define fwrite_unlocked fwrite
+#define fflush_unlocked fflush
+#endif
+
+#if defined(OS_MACOSX)
+#define fdatasync fsync
+#endif
+
+// Some compilers do not provide access to nested classes of a declared friend class
+// Defining PUBLIC_NESTED_FRIEND_ACCESS will cause those declarations to be made
+// public as a workaround
+#if defined(OS_MACOSX) || defined(OS_SOLARIS)
+#define USED_BY_NESTED_FRIEND(a) public: a; private:
+#define USED_BY_NESTED_FRIEND2(a,b) public: a,b; private:
+#else
+#define USED_BY_NESTED_FRIEND(a) a;
+#define USED_BY_NESTED_FRIEND2(a,b) a,b;
+#endif
 
 namespace leveldb {
 namespace port {
 
-static const bool kLittleEndian = (__BYTE_ORDER == __LITTLE_ENDIAN);
+static const bool kLittleEndian = IS_LITTLE_ENDIAN;
 
 class CondVar;
 
@@ -51,36 +91,30 @@ class CondVar {
   Mutex* mu_;
 };
 
-// Storage for a lock-free pointer
-class AtomicPointer {
- private:
-  std::atomic<void*> rep_;
- public:
-  AtomicPointer() { }
-  explicit AtomicPointer(void* v) : rep_(v) { }
-  inline void* Acquire_Load() const {
-    return rep_.load(std::memory_order_acquire);
-  }
-  inline void Release_Store(void* v) {
-    rep_.store(v, std::memory_order_release);
-  }
-  inline void* NoBarrier_Load() const {
-    return rep_.load(std::memory_order_relaxed);
-  }
-  inline void NoBarrier_Store(void* v) {
-    rep_.store(v, std::memory_order_relaxed);
-  }
-};
-
-// TODO(gabor): Implement actual compress
 inline bool Snappy_Compress(const char* input, size_t input_length,
-                            std::string* output) {
+                            ::std::string* output) {
+#ifdef SNAPPY
+  output->resize(snappy::MaxCompressedLength(input_length));
+  size_t outlen;
+  snappy::RawCompress(input, input_length, &(*output)[0], &outlen);
+  output->resize(outlen);
+  return true;
+#endif
+
   return false;
 }
 
-// TODO(gabor): Implement actual uncompress
 inline bool Snappy_Uncompress(const char* input_data, size_t input_length,
-                              std::string* output) {
+                              ::std::string* output) {
+#ifdef SNAPPY
+  size_t ulength;
+  if (!snappy::GetUncompressedLength(input_data, ulength, &ulength)) {
+    return false;
+  }
+  output->resize(ulength);
+  return snappy::RawUncompress(input_data, input_length, &(*output)[0]);
+#endif
+
   return false;
 }
 
@@ -88,7 +122,7 @@ inline bool GetHeapProfile(void (*func)(void*, const char*, int), void* arg) {
   return false;
 }
 
-}
-}
+} // namespace port
+} // namespace leveldb
 
 #endif  // STORAGE_LEVELDB_PORT_PORT_POSIX_H_
