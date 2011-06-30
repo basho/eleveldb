@@ -29,7 +29,7 @@
          fold/4,
          fold_keys/4,
          status/2,
-         destroy/1,
+         destroy/2,
          repair/2,
          is_empty/1]).
 
@@ -145,8 +145,8 @@ fold_keys(Ref, Fun, Acc0, Opts) ->
 status(_Ref, _Key) ->
     erlang:nif_error({error, not_loaded}).
 
--spec destroy(string()) -> ok | {error, any()}.
-destroy(_Name) ->
+-spec destroy(string(), open_options()) -> ok | {error, any()}.
+destroy(_Name, _Opts) ->
     erlang:nif_error({erlang, not_loaded}).
 
 repair(_Name, _Opts) ->
@@ -223,6 +223,13 @@ fold_from_key_test() ->
                                                      fun(K, Acc) -> [K | Acc] end,
                                                      [], [{first_key, <<"d">>}])).
 
+destroy_test() ->
+    os:cmd("rm -rf /tmp/eleveldb.destroy.test"),
+    {ok, Ref} = open("/tmp/eleveldb.destroy.test", [{create_if_missing, true}]),
+    ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
+    {ok, <<"456">>} = ?MODULE:get(Ref, <<"def">>, []),
+    ok = ?MODULE:destroy("/tmp/eleveldb.destroy.test", []),
+    {error, {db_open, _}} = open("/tmp/eleveldb.destroy.test", [{error_if_exists, true}]).
 
 -ifdef(EQC).
 

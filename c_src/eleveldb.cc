@@ -89,7 +89,7 @@ static ErlNifFunc nif_funcs[] =
     {"iterator_move", 2, eleveldb_iterator_move},
     {"iterator_close", 1, eleveldb_iterator_close},
     {"status", 2, eleveldb_status},
-    {"destroy", 1, eleveldb_destroy},
+    {"destroy", 2, eleveldb_destroy},
     /*{"repair", 2, eleveldb_repair} */
     {"is_empty", 1, eleveldb_is_empty},
 };
@@ -533,7 +533,10 @@ ERL_NIF_TERM eleveldb_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[
     if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1) &&
         enif_is_list(env, argv[1]))
     {
+        // Parse out the options
         leveldb::Options opts;
+        fold(env, argv[1], parse_open_option, opts);
+
         leveldb::Status status = leveldb::DestroyDB(name, opts);
         if (!status.ok())
         {
