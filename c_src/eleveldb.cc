@@ -114,13 +114,13 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         }
         else if (option[0] == ATOM_WRITE_BUFFER_SIZE) 
         { 
-            size_t write_buffer_sz;
+            unsigned long write_buffer_sz;
             if (enif_get_ulong(env, option[1], &write_buffer_sz))
                 opts.write_buffer_size = write_buffer_sz;
         }
         else if (option[0] == ATOM_BLOCK_SIZE) 
         { 
-            size_t block_sz;
+            unsigned long block_sz;
             if (enif_get_ulong(env, option[1], &block_sz)) 
                 opts.block_size = block_sz;
         }
@@ -132,7 +132,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         }
         else if (option[0] == ATOM_CACHE_SIZE) 
         {
-            size_t cache_sz;
+            unsigned long cache_sz;
             if (enif_get_ulong(env, option[1], &cache_sz)) 
                 if (cache_sz != 0) 
                     opts.block_cache = leveldb::NewLRUCache(cache_sz);
