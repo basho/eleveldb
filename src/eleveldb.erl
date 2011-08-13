@@ -26,6 +26,7 @@
          put/4,
          delete/3,
          write/3,
+         snapshot/1,
          fold/4,
          fold_keys/4,
          status/2,
@@ -73,7 +74,8 @@ init() ->
                          {paranoid_checks, boolean()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
-                         {fill_cache, boolean()}].
+                         {fill_cache, boolean()} |
+                         {snapshot, ss_ref()}].
 
 -type write_options() :: [{sync, boolean()}].
 
@@ -84,6 +86,8 @@ init() ->
 -type iterator_action() :: first | last | next | prev | binary().
 
 -opaque db_ref() :: binary().
+
+-opaque ss_ref() :: binary().
 
 -opaque itr_ref() :: binary().
 
@@ -105,6 +109,10 @@ delete(Ref, Key, Opts) ->
 
 -spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
 write(_Ref, _Updates, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec snapshot(db_ref()) -> {ok, ss_ref()} | {error, any()}.
+snapshot(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec iterator(db_ref(), read_options()) -> {ok, itr_ref()}.
@@ -191,6 +199,34 @@ open_test() ->
     ok = ?MODULE:put(Ref, <<"abc">>, <<"123">>, []),
     {ok, <<"123">>} = ?MODULE:get(Ref, <<"abc">>, []),
     not_found = ?MODULE:get(Ref, <<"def">>, []).
+
+
+snapshot_test() ->
+    os:cmd("rm -rf /tmp/eleveldb.snapshot.test"),
+    {ok, Ref} = open("/tmp/eleveldb.snapshot.test", [{create_if_missing, true}]),
+    ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
+    {ok, SSRef1} = snapshot(Ref),    
+    ok = ?MODULE:put(Ref, <<"abc">>, <<"123">>, []),
+    {ok, SSRef2} = snapshot(Ref),
+    ok = ?MODULE:put(Ref, <<"hij">>, <<"789">>, []),
+    {ok, SSRef3} = snapshot(Ref),
+    io:format("A~n", []),
+    [{<<"def">>, <<"456">>}] = lists:reverse(fold(Ref, fun({K, V}, Acc) -> [{K, V} | Acc] end,
+                                                  [], [{snapshot, SSRef1}])),
+    io:format("B~n", []),
+    [{<<"abc">>, <<"123">>},
+     {<<"def">>, <<"456">>}] = lists:reverse(fold(Ref, fun({K, V}, Acc) -> [{K, V} | Acc] end,
+                                                  [], [{snapshot, SSRef2}])),
+    io:format("C~n", []),                                              
+    [{<<"abc">>, <<"123">>},
+     {<<"def">>, <<"456">>},
+     {<<"hij">>, <<"789">>}] = lists:reverse(fold(Ref, fun({K, V}, Acc) -> [{K, V} | Acc] end,
+                                                [], [{snapshot, SSRef3}])),
+    ok = ?MODULE:put(Ref, <<"abc">>, <<"321">>, []),
+    {ok, <<"321">>} = ?MODULE:get(Ref, <<"abc">>, []),
+    {ok, <<"123">>} = ?MODULE:get(Ref, <<"abc">>, [{snapshot, SSRef2}]),
+    not_found = ?MODULE:get(Ref, <<"abc">>, [{snapshot, SSRef1}]).
+    
 
 fold_test() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.test"),

@@ -28,12 +28,20 @@
 
 static ErlNifResourceType* eleveldb_db_RESOURCE;
 static ErlNifResourceType* eleveldb_itr_RESOURCE;
+static ErlNifResourceType* eleveldb_ss_RESOURCE;
 
 typedef struct
 {
     leveldb::DB* db;
     leveldb::Options options;
 } eleveldb_db_handle;
+
+typedef struct
+{
+    leveldb::DB* db;
+    const leveldb::Snapshot* snapshot;
+    eleveldb_db_handle* db_handle;
+} eleveldb_ss_handle;
 
 typedef struct
 {
@@ -67,6 +75,7 @@ static ERL_NIF_TERM ATOM_PUT;
 static ERL_NIF_TERM ATOM_DELETE;
 static ERL_NIF_TERM ATOM_ERROR_DB_WRITE;
 static ERL_NIF_TERM ATOM_BAD_WRITE_ACTION;
+static ERL_NIF_TERM ATOM_SNAPSHOT;
 static ERL_NIF_TERM ATOM_KEEP_RESOURCE_FAILED;
 static ERL_NIF_TERM ATOM_ITERATOR_CLOSED;
 static ERL_NIF_TERM ATOM_FIRST;
@@ -84,6 +93,7 @@ static ErlNifFunc nif_funcs[] =
     {"open", 2, eleveldb_open},
     {"get", 3, eleveldb_get},
     {"write", 3, eleveldb_write},
+    {"snapshot", 1, eleveldb_snapshot},
     {"iterator", 2, eleveldb_iterator},
     {"iterator", 3, eleveldb_iterator},
     {"iterator_move", 2, eleveldb_iterator_move},
@@ -144,6 +154,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
 
 ERL_NIF_TERM parse_read_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::ReadOptions& opts)
 {
+    eleveldb_ss_handle* ss_handle;
     int arity;
     const ERL_NIF_TERM* option;
     if (enif_get_tuple(env, item, &arity, &option))
@@ -152,6 +163,9 @@ ERL_NIF_TERM parse_read_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::ReadO
             opts.verify_checksums = (option[1] == ATOM_TRUE);
         else if (option[0] == ATOM_FILL_CACHE)
             opts.fill_cache = (option[1] == ATOM_TRUE);
+        else if (enif_compare(option[0], ATOM_SNAPSHOT) == 0 &&
+                 enif_get_resource(env, option[1], eleveldb_ss_RESOURCE, (void**)&ss_handle))
+            opts.snapshot = ss_handle->snapshot;
     }
 
     return ATOM_OK;
@@ -359,6 +373,31 @@ ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     }
 }
 
+ERL_NIF_TERM eleveldb_snapshot(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    eleveldb_db_handle* db_handle;
+    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
+    {
+        enif_keep_resource(db_handle);
+        
+        eleveldb_ss_handle* ss_handle =
+            (eleveldb_ss_handle*) enif_alloc_resource(eleveldb_ss_RESOURCE,
+                                                        sizeof(eleveldb_ss_handle));
+        memset(ss_handle, '\0', sizeof(eleveldb_ss_handle));
+        
+        ss_handle->db_handle = db_handle;
+        ss_handle->snapshot = db_handle->db->GetSnapshot();
+        
+        ERL_NIF_TERM result = enif_make_resource(env, ss_handle);
+        enif_release_resource(ss_handle);
+        return enif_make_tuple2(env, ATOM_OK, result);        
+    }
+    else
+    {
+        return enif_make_badarg(env);
+    }
+}
+
 ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     eleveldb_db_handle* db_handle;
@@ -382,8 +421,11 @@ ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
         // TODO: Should it be possible to iterate WITHOUT a snapshot?
         itr_handle->itr_lock = enif_mutex_create((char*)"eleveldb_itr_lock");
         itr_handle->db_handle = db_handle;
-        itr_handle->snapshot = db_handle->db->GetSnapshot();
-        opts.snapshot = itr_handle->snapshot;
+        if (opts.snapshot == 0)
+        {
+            itr_handle->snapshot = db_handle->db->GetSnapshot();
+            opts.snapshot = itr_handle->snapshot;            
+        }
         itr_handle->itr = db_handle->db->NewIterator(opts);
 
         // Check for keys_only iterator flag
@@ -487,7 +529,8 @@ ERL_NIF_TERM eleveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TER
         {
             delete itr_handle->itr;
             itr_handle->itr = 0;
-            itr_handle->db_handle->db->ReleaseSnapshot(itr_handle->snapshot);
+            if (itr_handle->snapshot != 0)
+                itr_handle->db_handle->db->ReleaseSnapshot(itr_handle->snapshot);
             enif_release_resource(itr_handle->db_handle);
         }
 
@@ -586,6 +629,17 @@ static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
     delete handle->db;
 }
 
+static void eleveldb_ss_resource_cleanup(ErlNifEnv* env, void* arg)
+{
+    // Release the snapshot and our reference to the eleveldb_db_handle
+    eleveldb_ss_handle* ss_handle = (eleveldb_ss_handle*) arg;
+    if (ss_handle->snapshot != 0)
+    {
+        ss_handle->db_handle->db->ReleaseSnapshot(ss_handle->snapshot);
+        enif_release_resource(ss_handle->db_handle);
+    }    
+}
+
 static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
 {
     // Delete any dynamically allocated memory stored in eleveldb_itr_handle
@@ -594,7 +648,8 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
     {
         delete itr_handle->itr;
         itr_handle->itr = 0;
-        itr_handle->db_handle->db->ReleaseSnapshot(itr_handle->snapshot);
+        if (itr_handle->snapshot != 0)
+            itr_handle->db_handle->db->ReleaseSnapshot(itr_handle->snapshot);            
         enif_release_resource(itr_handle->db_handle);
     }
 
@@ -612,6 +667,9 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     eleveldb_itr_RESOURCE = enif_open_resource_type(env, NULL, "eleveldb_itr_resource",
                                                      &eleveldb_itr_resource_cleanup,
                                                      flags, NULL);
+    eleveldb_ss_RESOURCE = enif_open_resource_type(env, NULL, "eleveldb_ss_resource",
+                                                    &eleveldb_ss_resource_cleanup,
+                                                    flags, NULL);
 
     // Initialize common atoms
     ATOM(ATOM_OK, "ok");
@@ -636,6 +694,7 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_DELETE, "delete");
     ATOM(ATOM_ERROR_DB_WRITE, "db_write");
     ATOM(ATOM_BAD_WRITE_ACTION, "bad_write_action");
+    ATOM(ATOM_SNAPSHOT, "snapshot");
     ATOM(ATOM_KEEP_RESOURCE_FAILED, "keep_resource_failed");
     ATOM(ATOM_ITERATOR_CLOSED, "iterator_closed");
     ATOM(ATOM_FIRST, "first");
