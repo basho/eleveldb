@@ -42,6 +42,7 @@ class SpecialEnv : public EnvWrapper {
           : env_(env),
             base_(base) {
       }
+      ~SSTableFile() { delete base_; }
       Status Append(const Slice& data) { return base_->Append(data); }
       Status Close() { return base_->Close(); }
       Status Flush() { return base_->Flush(); }
@@ -515,6 +516,21 @@ TEST(DBTest, IterSmallAndLargeMix) {
   iter->Prev();
   ASSERT_EQ(IterStatus(iter), "(invalid)");
 
+  delete iter;
+}
+
+TEST(DBTest, IterMultiWithDelete) {
+  ASSERT_OK(Put("a", "va"));
+  ASSERT_OK(Put("b", "vb"));
+  ASSERT_OK(Put("c", "vc"));
+  ASSERT_OK(Delete("b"));
+  ASSERT_EQ("NOT_FOUND", Get("b"));
+
+  Iterator* iter = db_->NewIterator(ReadOptions());
+  iter->Seek("c");
+  ASSERT_EQ(IterStatus(iter), "c->vc");
+  iter->Prev();
+  ASSERT_EQ(IterStatus(iter), "a->va");
   delete iter;
 }
 
