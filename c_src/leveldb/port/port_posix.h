@@ -7,7 +7,7 @@
 #ifndef STORAGE_LEVELDB_PORT_PORT_POSIX_H_
 #define STORAGE_LEVELDB_PORT_PORT_POSIX_H_
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) || defined(OS_FREEBSD)
   #include <machine/endian.h>
 #elif defined(OS_SOLARIS)
   #include <sys/isa_defs.h>
@@ -33,13 +33,13 @@
 #define IS_LITTLE_ENDIAN (__BYTE_ORDER == __LITTLE_ENDIAN)
 #endif
 
-#if defined(OS_MACOSX) || defined(OS_SOLARIS)
+#if defined(OS_MACOSX) || defined(OS_SOLARIS) || defined(OS_FREEBSD)
 #define fread_unlocked fread
 #define fwrite_unlocked fwrite
 #define fflush_unlocked fflush
 #endif
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) || defined(OS_FREEBSD)
 #define fdatasync fsync
 #endif
 
@@ -91,12 +91,12 @@ class CondVar {
   Mutex* mu_;
 };
 
-inline bool Snappy_Compress(const char* input, size_t input_length,
+inline bool Snappy_Compress(const char* input, size_t length,
                             ::std::string* output) {
 #ifdef SNAPPY
-  output->resize(snappy::MaxCompressedLength(input_length));
+  output->resize(snappy::MaxCompressedLength(length));
   size_t outlen;
-  snappy::RawCompress(input, input_length, &(*output)[0], &outlen);
+  snappy::RawCompress(input, length, &(*output)[0], &outlen);
   output->resize(outlen);
   return true;
 #endif
@@ -104,18 +104,22 @@ inline bool Snappy_Compress(const char* input, size_t input_length,
   return false;
 }
 
-inline bool Snappy_Uncompress(const char* input_data, size_t input_length,
-                              ::std::string* output) {
+inline bool Snappy_GetUncompressedLength(const char* input, size_t length,
+                                         size_t* result) {
 #ifdef SNAPPY
-  size_t ulength;
-  if (!snappy::GetUncompressedLength(input_data, input_length, &ulength)) {
-    return false;
-  }
-  output->resize(ulength);
-  return snappy::RawUncompress(input_data, input_length, &(*output)[0]);
-#endif
-
+  return snappy::GetUncompressedLength(input, length, result);
+#else
   return false;
+#endif
+}
+
+inline bool Snappy_Uncompress(const char* input, size_t length,
+                              char* output) {
+#ifdef SNAPPY
+  return snappy::RawUncompress(input, length, output);
+#else
+  return false;
+#endif
 }
 
 inline bool GetHeapProfile(void (*func)(void*, const char*, int), void* arg) {
