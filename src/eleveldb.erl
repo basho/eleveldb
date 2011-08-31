@@ -136,7 +136,7 @@ fold(Ref, Fun, Acc0, Opts) ->
     {ok, Itr} = iterator(Ref, Opts),
     do_fold(Itr, Fun, Acc0, Opts).
 
-%% -spec async_fold(db_ref(), fold_fun(), any(), read_options()) -> {async, fun()}.
+-spec folder(db_ref(), fold_fun(), any(), read_options()) -> fun().
 folder(Ref, Fun, Acc, Opts) ->
     {ok, Itr} = iterator(Ref, Opts),
     fun() ->
@@ -150,7 +150,7 @@ fold_keys(Ref, Fun, Acc0, Opts) ->
     {ok, Itr} = iterator(Ref, Opts, keys_only),
     do_fold(Itr, Fun, Acc0, Opts).
 
-%% -spec key_folder(db_ref(), fold_keys_fun(), any(), read_options()) -> any().
+-spec key_folder(db_ref(), fold_keys_fun(), any(), read_options()) -> fun().
 key_folder(Ref, Fun, Acc, Opts) ->
     {ok, Itr} = iterator(Ref, Opts, keys_only),
     fun() ->
