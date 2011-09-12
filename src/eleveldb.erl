@@ -28,8 +28,6 @@
          write/3,
          fold/4,
          fold_keys/4,
-         folder/4,
-         key_folder/4,
          status/2,
          destroy/2,
          repair/2,
@@ -136,26 +134,12 @@ fold(Ref, Fun, Acc0, Opts) ->
     {ok, Itr} = iterator(Ref, Opts),
     do_fold(Itr, Fun, Acc0, Opts).
 
--spec folder(db_ref(), fold_fun(), any(), read_options()) -> fun().
-folder(Ref, Fun, Acc, Opts) ->
-    {ok, Itr} = iterator(Ref, Opts),
-    fun() ->
-            do_fold(Itr, Fun, Acc, Opts)
-    end.
-    
 -type fold_keys_fun() :: fun((Key::binary(), any()) -> any()).
 
 -spec fold_keys(db_ref(), fold_keys_fun(), any(), read_options()) -> any().
 fold_keys(Ref, Fun, Acc0, Opts) ->
     {ok, Itr} = iterator(Ref, Opts, keys_only),
     do_fold(Itr, Fun, Acc0, Opts).
-
--spec key_folder(db_ref(), fold_keys_fun(), any(), read_options()) -> fun().
-key_folder(Ref, Fun, Acc, Opts) ->
-    {ok, Itr} = iterator(Ref, Opts, keys_only),
-    fun() ->
-            do_fold(Itr, Fun, Acc, Opts)
-    end.
 
 -spec status(db_ref(), Key::binary()) -> {ok, binary()} | error.
 status(_Ref, _Key) ->
