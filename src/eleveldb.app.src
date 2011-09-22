@@ -7,5 +7,8 @@
                   kernel,
                   stdlib
                  ]},
-  {env, []}
+  {env, [
+         %% Max file handles to keep open by default
+         {max_open_files, 10}
+        ]}
  ]}.
