@@ -149,6 +149,7 @@ status(_Ref, _Key) ->
 destroy(_Name, _Opts) ->
     erlang:nif_error({erlang, not_loaded}).
 
+-spec repair(string(), open_options()) -> ok.
 repair(_Name, _Opts) ->
     ok.
 

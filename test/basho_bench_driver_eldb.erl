@@ -1,8 +1,8 @@
 
 -module(basho_bench_driver_eldb).
 
--record(state, { ref,
-                 itr }).
+-record(state, { ref  :: e_leveldb:db_ref(),
+                 itr  :: e_leveldb:itr_ref()}).
 
 -export([new/1,
          run/4]).
@@ -10,7 +10,7 @@
 %% ====================================================================
 %% API
 %% ====================================================================
-
+-spec new(_) -> {ok, #state{}} | {error, term()}.
 new(_Id) ->
     %% Pull the e_leveldb_config key which has all the key/value pairs for the
     %% engine -- stuff everything into the e_leveldb application namespace
@@ -36,6 +36,7 @@ new(_Id) ->
             {error, Reason}
     end.
 
+-spec run(get|put, fun(() -> e_leveldb:iterator_action()), _, #state{}) -> {ok, #state{}} | {error, term(), #state{}}.
 run(get, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
     case e_leveldb:iterator_move(State#state.itr, Key) of
