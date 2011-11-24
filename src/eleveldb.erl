@@ -54,7 +54,14 @@ init() ->
                  {error, bad_name} ->
                      case code:which(?MODULE) of
                          Filename when is_list(Filename) ->
-                             filename:join([filename:dirname(Filename),"../priv", "eleveldb"]);
+                             Dirname =
+                                 case filelib:is_file(filename:dirname(Filename)) of
+                                     true -> %% It's inside an escript
+                                         filename:dirname(filename:dirname(Filename));
+                                     false ->
+                                         filename:dirname(Filename)
+                                 end,
+                             filename:join([Dirname,"../priv", "eleveldb"]);
                          _ ->
                              filename:join("../priv", "eleveldb")
                      end;
