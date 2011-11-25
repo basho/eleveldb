@@ -56,7 +56,7 @@ init() ->
                          Filename when is_list(Filename) ->
                              case filelib:is_file(filename:dirname(Filename)) of
                                  true -> %% It's inside an escript. We assume whoever did that has zipped the .so file next to the .beam
-                                     "eleveldb";
+                                     filename:join(filename:dirname(Filename), "eleveldb");
                                  false ->
                                      filename:join([filename:dirname(Filename),"../priv", "eleveldb"])
                              end;
