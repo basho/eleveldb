@@ -54,14 +54,12 @@ init() ->
                  {error, bad_name} ->
                      case code:which(?MODULE) of
                          Filename when is_list(Filename) ->
-                             Dirname =
-                                 case filelib:is_file(filename:dirname(Filename)) of
-                                     true -> %% It's inside an escript
-                                         filename:dirname(filename:dirname(Filename));
-                                     false ->
-                                         filename:dirname(Filename)
-                                 end,
-                             filename:join([Dirname,"../priv", "eleveldb"]);
+                             case filelib:is_file(filename:dirname(Filename)) of
+                                 true -> %% It's inside an escript. We assume whoever did that has zipped the .so file next to the .beam
+                                     "eleveldb";
+                                 false ->
+                                     filename:join([filename:dirname(Filename),"../priv", "eleveldb"])
+                             end;
                          _ ->
                              filename:join("../priv", "eleveldb")
                      end;
