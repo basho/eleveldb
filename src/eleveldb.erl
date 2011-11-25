@@ -55,8 +55,8 @@ init() ->
                      case code:which(?MODULE) of
                          Filename when is_list(Filename) ->
                              case filelib:is_file(filename:dirname(Filename)) of
-                                 true -> %% It's inside an escript. We assume whoever did that has zipped the .so file next to the .beam
-                                     filename:join(filename:dirname(Filename), "eleveldb");
+                                 true -> %% It's inside an escript. We assume whoever did that has zipped the .so file next to the script file
+                                     filename:join(filename:dirname(filename:dirname(Filename)), "eleveldb");
                                  false ->
                                      filename:join([filename:dirname(Filename),"../priv", "eleveldb"])
                              end;
