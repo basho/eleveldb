@@ -69,8 +69,9 @@ init() ->
                          {max_open_files, pos_integer()} |
                          {block_size, pos_integer()} |
                          {block_restart_interval, pos_integer()} |
-                         {cache_size, pos_integer()} | 
-                         {paranoid_checks, boolean()}].
+                         {cache_size, pos_integer()} |
+                         {paranoid_checks, boolean()} |
+                         {compression, boolean()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()}].
@@ -230,6 +231,30 @@ destroy_test() ->
     {ok, <<"456">>} = ?MODULE:get(Ref, <<"def">>, []),
     ok = ?MODULE:destroy("/tmp/eleveldb.destroy.test", []),
     {error, {db_open, _}} = open("/tmp/eleveldb.destroy.test", [{error_if_exists, true}]).
+
+compression_test() ->
+    CompressibleData = list_to_binary([0 || _X <- lists:seq(1,50000)]),
+    os:cmd("rm -rf /tmp/eleveldb.compress.0 /tmp/eleveldb.compress.1"),
+    {ok, Ref0} = open("/tmp/eleveldb.compress.0", [{write_buffer_size, 5},
+                                                   {create_if_missing, true},
+                                                   {compression, false}]),
+    [ok = ?MODULE:put(Ref0, <<I:64/unsigned>>, CompressibleData, [{sync, true}]) ||
+        I <- lists:seq(1,10)],
+    {ok, Ref1} = open("/tmp/eleveldb.compress.1", [{write_buffer_size, 5},
+                                                   {create_if_missing, true},
+                                                   {compression, true}]),
+    [ok = ?MODULE:put(Ref1, <<I:64/unsigned>>, CompressibleData, [{sync, true}]) ||
+        I <- lists:seq(1,10)],
+    %% Sum up the sizes of the .sst files in each directory -- compressed dir should
+    %% be less than uncompressed
+    Size = fun(Dir) ->
+                   lists:sum([element(2, element(2, file:read_file_info(F))) ||
+                                 F <- filelib:wildcard(filename:join(Dir, "*.sst"))])
+           end,
+    UncompressedSize = Size("/tmp/eleveldb.compress.0"),
+    CompressedSize = Size("/tmp/eleveldb.compress.1"),
+    ?assert(UncompressedSize > CompressedSize).
+
 
 -ifdef(EQC).
 
