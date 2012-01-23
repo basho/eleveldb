@@ -77,7 +77,8 @@ static ERL_NIF_TERM ATOM_INVALID_ITERATOR;
 static ERL_NIF_TERM ATOM_CACHE_SIZE;
 static ERL_NIF_TERM ATOM_PARANOID_CHECKS;
 static ERL_NIF_TERM ATOM_ERROR_DB_DESTROY;
-static ERL_NIF_TERM ATOM_KEYS_ONLY; 
+static ERL_NIF_TERM ATOM_KEYS_ONLY;
+static ERL_NIF_TERM ATOM_COMPRESSION;
 
 static ErlNifFunc nif_funcs[] =
 {
@@ -136,6 +137,17 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (enif_get_ulong(env, option[1], &cache_sz)) 
                 if (cache_sz != 0) 
                     opts.block_cache = leveldb::NewLRUCache(cache_sz);
+        }
+        else if (option[0] == ATOM_COMPRESSION)
+        {
+            if (option[1] == ATOM_TRUE)
+            {
+                opts.compression = leveldb::kSnappyCompression;
+            }
+            else
+            {
+                opts.compression = leveldb::kNoCompression;
+            }
         }
     }
 
@@ -647,6 +659,7 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_PARANOID_CHECKS, "paranoid_checks");
     ATOM(ATOM_ERROR_DB_DESTROY, "error_db_destroy");
     ATOM(ATOM_KEYS_ONLY, "keys_only");
+    ATOM(ATOM_COMPRESSION, "compression");
     return 0;
 }
 
