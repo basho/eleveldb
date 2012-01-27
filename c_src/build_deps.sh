@@ -1,6 +1,6 @@
 #!/bin/bash
 
-LEVELDB_VSN="3c8be108bfb5fbd7d51f824199627e757279f79e"
+LEVELDB_VSN="dss-compaction-tweaks"
 SNAPPY_VSN="1.0.4"
 
 set -e
@@ -28,14 +28,8 @@ case "$1" in
         export LDFLAGS="$LDFLAGS -L $BASEDIR/system/lib"
 
         if [ ! -d leveldb ]; then
-            tar -xjf leveldb.tar.bz2
-            (cd leveldb && git checkout $VSN)
-
-            for p in patches/*.patch; do
-                echo "Applying $p"
-                (cd leveldb && patch -p1 < ../$p)
-            done
-
+            git clone git://github.com/basho/leveldb
+            (cd leveldb && git checkout $LEVELDB_VSN)
         fi
 
         (cd leveldb && make)
