@@ -32,7 +32,7 @@ case "$1" in
             (cd leveldb && git checkout $LEVELDB_VSN)
         fi
 
-        (cd leveldb && make)
+        (cd leveldb && make check)
 
         ;;
 esac
