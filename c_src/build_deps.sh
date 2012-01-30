@@ -26,6 +26,7 @@ case "$1" in
 
         export CFLAGS="$CFLAGS -I $BASEDIR/system/include"
         export LDFLAGS="$LDFLAGS -L $BASEDIR/system/lib"
+        export LD_LIBRARY_PATH="$BASEDIR/system/lib:$LD_LIBRARY_PATH"
 
         if [ ! -d leveldb ]; then
             git clone git://github.com/basho/leveldb
