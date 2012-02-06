@@ -79,6 +79,7 @@ static ERL_NIF_TERM ATOM_PARANOID_CHECKS;
 static ERL_NIF_TERM ATOM_ERROR_DB_DESTROY;
 static ERL_NIF_TERM ATOM_KEYS_ONLY;
 static ERL_NIF_TERM ATOM_COMPRESSION;
+static ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
 
 static ErlNifFunc nif_funcs[] =
 {
@@ -91,7 +92,7 @@ static ErlNifFunc nif_funcs[] =
     {"iterator_close", 1, eleveldb_iterator_close},
     {"status", 2, eleveldb_status},
     {"destroy", 2, eleveldb_destroy},
-    /*{"repair", 2, eleveldb_repair} */
+    {"repair", 2, eleveldb_repair},
     {"is_empty", 1, eleveldb_is_empty},
 };
 
@@ -539,6 +540,30 @@ ERL_NIF_TERM eleveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
     }
 }
 
+ERL_NIF_TERM eleveldb_repair(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    char name[4096];
+    if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1))
+    {
+        // Parse out the options
+        leveldb::Options opts;
+
+        leveldb::Status status = leveldb::RepairDB(name, opts);
+        if (!status.ok())
+        {
+            return error_tuple(env, ATOM_ERROR_DB_REPAIR, status);
+        }
+        else
+        {
+            return ATOM_OK;
+        }
+    }
+    else
+    {
+        return enif_make_badarg(env);
+    }
+}
+
 ERL_NIF_TERM eleveldb_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     char name[4096];
@@ -658,6 +683,7 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_CACHE_SIZE, "cache_size");
     ATOM(ATOM_PARANOID_CHECKS, "paranoid_checks");
     ATOM(ATOM_ERROR_DB_DESTROY, "error_db_destroy");
+    ATOM(ATOM_ERROR_DB_REPAIR, "error_db_repair");
     ATOM(ATOM_KEYS_ONLY, "keys_only");
     ATOM(ATOM_COMPRESSION, "compression");
     return 0;
