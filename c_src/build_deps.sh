@@ -1,6 +1,6 @@
 #!/bin/bash
 
-LEVELDB_VSN="3c8be108bfb5fbd7d51f824199627e757279f79e"
+LEVELDB_VSN="14478f170bbe3d13bc0119d41b70e112b3925453" # tweaks v1
 SNAPPY_VSN="1.0.4"
 
 set -e
@@ -16,6 +16,14 @@ case "$1" in
         rm -rf leveldb system snappy-$SNAPPY_VSN
         ;;
 
+    test)
+        export CFLAGS="$CFLAGS -I $BASEDIR/system/include"
+        export LDFLAGS="$LDFLAGS -L $BASEDIR/system/lib"
+        export LD_LIBRARY_PATH="$BASEDIR/system/lib:$LD_LIBRARY_PATH"
+
+        (cd leveldb && make check)
+
+        ;;
     *)
         if [ ! -d snappy-$SNAPPY_VSN ]; then
             tar -xzf snappy-$SNAPPY_VSN.tar.gz
@@ -26,19 +34,14 @@ case "$1" in
 
         export CFLAGS="$CFLAGS -I $BASEDIR/system/include"
         export LDFLAGS="$LDFLAGS -L $BASEDIR/system/lib"
+        export LD_LIBRARY_PATH="$BASEDIR/system/lib:$LD_LIBRARY_PATH"
 
         if [ ! -d leveldb ]; then
-            tar -xjf leveldb.tar.bz2
-            (cd leveldb && git checkout $VSN)
-
-            for p in patches/*.patch; do
-                echo "Applying $p"
-                (cd leveldb && patch -p1 < ../$p)
-            done
-
+            git clone git://github.com/basho/leveldb
+            (cd leveldb && git checkout $LEVELDB_VSN)
         fi
 
-        (cd leveldb && make)
+        (cd leveldb && make all)
 
         ;;
 esac
