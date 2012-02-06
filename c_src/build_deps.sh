@@ -1,6 +1,6 @@
 #!/bin/bash
 
-LEVELDB_VSN="dss-compaction-tweaks"
+LEVELDB_VSN="14478f170bbe3d13bc0119d41b70e112b3925453" # tweaks v1
 SNAPPY_VSN="1.0.4"
 
 set -e
