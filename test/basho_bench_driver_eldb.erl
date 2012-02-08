@@ -1,8 +1,7 @@
 
 -module(basho_bench_driver_eldb).
 
--record(state, { ref,
-                 itr }).
+-record(state, { ref }).
 
 -export([new/1,
          run/4]).
@@ -11,16 +10,26 @@
 %% API
 %% ====================================================================
 
-new(_Id) ->
-    %% Pull the e_leveldb_config key which has all the key/value pairs for the
-    %% engine -- stuff everything into the e_leveldb application namespace
+new(Id) ->
+    %% Pull the eleveldb_config key which has all the key/value pairs for the
+    %% engine -- stuff everything into the eleveldb application namespace
     %% so that starting the app will pull it in.
-    application:load(e_leveldb),
-    Config = basho_bench_config:get(e_leveldb_config, []),
-    [ok = application:set_env(e_leveldb, K, V) || {K, V} <- Config],
+    application:load(eleveldb),
+    Config = basho_bench_config:get(eleveldb_config, [{max_open_files, 50}]),
+    [ok = application:set_env(eleveldb, K, V) || {K, V} <- Config],
 
-    WorkDir = basho_bench_config:get(eldb_work_dir, "/tmp/eldb.bb"),
-    case basho_bench_config:get(eldb_clear_work_dir, false) of
+    if Id == 1 ->
+            io:format("\n"),
+            io:format("NOTE: ELevelDB driver is using separate data\n"),
+            io:format("      directories for each concurrent basho_bench\n"),
+            io:format("      driver instance.\n\n");
+       true ->
+            ok
+    end,
+
+    WorkDir = basho_bench_config:get(eleveldb_work_dir, "/tmp/eleveldb.bb") ++
+        "." ++ integer_to_list(Id),
+    case basho_bench_config:get(eleveldb_clear_work_dir, false) of
         true ->
             io:format("Clearing work dir: " ++ WorkDir ++ "\n"),
             os:cmd("rm -rf " ++ WorkDir ++ "/*");
@@ -28,33 +37,29 @@ new(_Id) ->
             ok
     end,
 
-    case e_leveldb:open(WorkDir, [{create_if_missing, true}]) of
+    case eleveldb:open(WorkDir, [{create_if_missing, true}]) of
         {ok, Ref} ->
-            {ok, Itr} = e_leveldb:iterator(Ref, []),
-            {ok, #state { ref = Ref, itr = Itr }};
+            {ok, #state { ref = Ref }};
         {error, Reason} ->
             {error, Reason}
     end.
 
 run(get, KeyGen, _ValueGen, State) ->
-    Key = KeyGen(),
-    case e_leveldb:iterator_move(State#state.itr, Key) of
-        {ok, Key, _Value} ->
+    Key = list_to_binary(KeyGen()),
+    case eleveldb:get(State#state.ref, Key, []) of
+        {ok, _Value} ->
             {ok, State};
-        {ok, OtherKey, _Value} ->
-            io:format("~p vs ~p!!\n", [Key, OtherKey]),
+        not_found ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
     end;
 run(put, KeyGen, ValueGen, State) ->
     print_status(State#state.ref, 1000),
-    case e_leveldb:put(State#state.ref, KeyGen(), ValueGen(), []) of
+    Key = list_to_binary(KeyGen()),
+    case eleveldb:put(State#state.ref, Key, ValueGen(), []) of
         ok ->
-            %% Reset the iterator to see the latest data
-            e_leveldb:iterator_close(State#state.itr),
-            Itr = e_leveldb:iterator(State#state.ref),
-            {ok, State#state { itr = Itr }};
+            {ok, State};
         {error, Reason} ->
             {error, State, Reason}
     end.
@@ -62,7 +67,7 @@ run(put, KeyGen, ValueGen, State) ->
 
 print_status(Ref, Count) ->
     status_counter(Count, fun() ->
-                               {ok, S} = e_leveldb:status(Ref, <<"leveldb.stats">>),
+                               {ok, S} = eleveldb:status(Ref, <<"leveldb.stats">>),
                                io:format("~s\n", [S])
                        end).
 
