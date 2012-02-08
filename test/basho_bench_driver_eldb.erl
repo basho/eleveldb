@@ -1,8 +1,7 @@
 
 -module(basho_bench_driver_eldb).
 
--record(state, { ref,
-                 itr }).
+-record(state, { ref }).
 
 -export([new/1,
          run/4]).
@@ -40,19 +39,17 @@ new(Id) ->
 
     case eleveldb:open(WorkDir, [{create_if_missing, true}]) of
         {ok, Ref} ->
-            {ok, Itr} = eleveldb:iterator(Ref, []),
-            {ok, #state { ref = Ref, itr = Itr }};
+            {ok, #state { ref = Ref }};
         {error, Reason} ->
             {error, Reason}
     end.
 
 run(get, KeyGen, _ValueGen, State) ->
     Key = list_to_binary(KeyGen()),
-    case eleveldb:iterator_move(State#state.itr, Key) of
-        {ok, Key, _Value} ->
+    case eleveldb:get(State#state.ref, Key, []) of
+        {ok, _Value} ->
             {ok, State};
-        {ok, OtherKey, _Value} ->
-            io:format("~p vs ~p!!\n", [Key, OtherKey]),
+        not_found ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
@@ -62,10 +59,7 @@ run(put, KeyGen, ValueGen, State) ->
     Key = list_to_binary(KeyGen()),
     case eleveldb:put(State#state.ref, Key, ValueGen(), []) of
         ok ->
-            %% Reset the iterator to see the latest data
-            %SLF HACK: eleveldb:iterator_close(State#state.itr),
-            {ok, Itr} = {ok, slffoo},%SLF HACK: eleveldb:iterator(State#state.ref, []),
-            {ok, State#state { itr = Itr }};
+            {ok, State};
         {error, Reason} ->
             {error, State, Reason}
     end.
