@@ -37,7 +37,7 @@ new(Id) ->
             ok
     end,
 
-    case eleveldb:open(WorkDir, [{create_if_missing, true}]) of
+    case eleveldb:open(WorkDir, [{create_if_missing, true}] ++ Config) of
         {ok, Ref} ->
             {ok, #state { ref = Ref }};
         {error, Reason} ->
@@ -45,7 +45,7 @@ new(Id) ->
     end.
 
 run(get, KeyGen, _ValueGen, State) ->
-    Key = list_to_binary(KeyGen()),
+    Key = iolist_to_binary(KeyGen()),
     case eleveldb:get(State#state.ref, Key, []) of
         {ok, _Value} ->
             {ok, State};
@@ -56,7 +56,7 @@ run(get, KeyGen, _ValueGen, State) ->
     end;
 run(put, KeyGen, ValueGen, State) ->
     print_status(State#state.ref, 1000),
-    Key = list_to_binary(KeyGen()),
+    Key = iolist_to_binary(KeyGen()),
     case eleveldb:put(State#state.ref, Key, ValueGen(), []) of
         ok ->
             {ok, State};
