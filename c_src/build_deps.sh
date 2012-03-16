@@ -1,6 +1,6 @@
 #!/bin/bash
 
-LEVELDB_VSN="14478f170bbe3d13bc0119d41b70e112b3925453" # tweaks v1
+LEVELDB_VSN="b921bc7197c50e47a01608d8728ff3dcacfe0c30" # Mar 15 merge of mainline
 SNAPPY_VSN="1.0.4"
 
 set -e
