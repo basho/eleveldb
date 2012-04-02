@@ -86,6 +86,7 @@ static ErlNifFunc nif_funcs[] =
     {"open", 2, eleveldb_open},
     {"get", 3, eleveldb_get},
     {"write", 3, eleveldb_write},
+    {"close", 1, eleveldb_close},
     {"iterator", 2, eleveldb_iterator},
     {"iterator", 3, eleveldb_iterator},
     {"iterator_move", 2, eleveldb_iterator_move},
@@ -372,6 +373,17 @@ ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     }
 }
 
+ERL_NIF_TERM eleveldb_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    eleveldb_db_handle* db_handle;
+    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
+    {
+        delete db_handle->db;
+	db_handle->db = NULL;
+    }
+    return ATOM_OK;
+}
+
 ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     eleveldb_db_handle* db_handle;
@@ -620,7 +632,9 @@ static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
 {
     // Delete any dynamically allocated memory stored in eleveldb_db_handle
     eleveldb_db_handle* handle = (eleveldb_db_handle*)arg;
-    delete handle->db;
+    if (handle->db) {
+      delete handle->db;
+    }
 }
 
 static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)

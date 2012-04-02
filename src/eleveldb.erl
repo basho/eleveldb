@@ -26,6 +26,7 @@
          put/4,
          delete/3,
          write/3,
+	 close/1,
          fold/4,
          fold_keys/4,
          status/2,
@@ -106,6 +107,10 @@ delete(Ref, Key, Opts) ->
 
 -spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
 write(_Ref, _Updates, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec close(db_ref()) -> ok.
+close(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec iterator(db_ref(), read_options()) -> {ok, itr_ref()}.
@@ -192,6 +197,11 @@ open_test() ->
     ok = ?MODULE:put(Ref, <<"abc">>, <<"123">>, []),
     {ok, <<"123">>} = ?MODULE:get(Ref, <<"abc">>, []),
     not_found = ?MODULE:get(Ref, <<"def">>, []).
+
+close_test() ->
+    os:cmd("rm -rf /tmp/eleveldb.close.test"),
+    {ok, Ref} = open("/tmp/eleveldb.close.test", [{create_if_missing, true}]),
+    ok = ?MODULE:close(Ref).
 
 fold_test() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.test"),
