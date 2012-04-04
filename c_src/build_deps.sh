@@ -37,8 +37,7 @@ case "$1" in
         export LD_LIBRARY_PATH="$BASEDIR/system/lib:$LD_LIBRARY_PATH"
 
         if [ ! -d leveldb ]; then
-            git clone git://github.com/basho/leveldb
-            (cd leveldb && git checkout $LEVELDB_VSN)
+            tar -xzf leveldb.tar.gz
         fi
 
         (cd leveldb && make all)
