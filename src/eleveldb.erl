@@ -201,7 +201,11 @@ open_test() ->
 close_test() ->
     os:cmd("rm -rf /tmp/eleveldb.close.test"),
     {ok, Ref} = open("/tmp/eleveldb.close.test", [{create_if_missing, true}]),
-    ok = ?MODULE:close(Ref).
+    ok = ?MODULE:close(Ref),
+    ?assertError(badarg, ?MODULE:put(Ref, <<"a">>, <<"b">>, [])),
+    ?assertError(badarg, ?MODULE:get(Ref, <<"a">>, [])),
+    ?assertError(badarg, ?MODULE:status(Ref, <<"a">>)),
+    ?assertError(badarg, ?MODULE:iterator(Ref, [])).
 
 fold_test() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.test"),
