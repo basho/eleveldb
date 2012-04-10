@@ -198,14 +198,7 @@ open_test() ->
     {ok, <<"123">>} = ?MODULE:get(Ref, <<"abc">>, []),
     not_found = ?MODULE:get(Ref, <<"def">>, []).
 
-close_test() ->
-    os:cmd("rm -rf /tmp/eleveldb.close.test"),
-    {ok, Ref} = open("/tmp/eleveldb.close.test", [{create_if_missing, true}]),
-    ok = ?MODULE:close(Ref),
-    ?assertError(badarg, ?MODULE:put(Ref, <<"a">>, <<"b">>, [])),
-    ?assertError(badarg, ?MODULE:get(Ref, <<"a">>, [])),
-    ?assertError(badarg, ?MODULE:status(Ref, <<"a">>)),
-    ?assertError(badarg, ?MODULE:iterator(Ref, [])).
+
 
 fold_test() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.test"),
@@ -269,6 +262,20 @@ compression_test() ->
     CompressedSize = Size("/tmp/eleveldb.compress.1"),
     ?assert(UncompressedSize > CompressedSize).
 
+close_test() ->
+    os:cmd("rm -rf /tmp/eleveldb.close.test"),
+    {ok, Ref} = open("/tmp/eleveldb.close.test", [{create_if_missing, true}]),
+    ok = ?MODULE:close(Ref),
+    ?assertError(badarg, ?MODULE:put(Ref, <<"a">>, <<"b">>, [])),
+    ?assertError(badarg, ?MODULE:get(Ref, <<"a">>, [])),
+    ?assertError(badarg, ?MODULE:status(Ref, <<"a">>)),
+    ?assertError(badarg, ?MODULE:iterator(Ref, [])).
+
+close_with_iterator_test() ->
+    os:cmd("rm -rf /tmp/eleveldb.close_itr.test"),
+    {ok, Ref} = open("/tmp/eleveldb.close_itr.test", [{create_if_missing, true}]),
+    {ok, _Itr} = ?MODULE:iterator(Ref, []),
+    ?assertError(badarg, ?MODULE:close(Ref)).
 
 -ifdef(EQC).
 
