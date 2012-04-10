@@ -301,29 +301,18 @@ ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         leveldb::ReadOptions opts;
         fold(env, argv[2], parse_read_option, opts);
 
-        // The DB* does provide a Get() method, but that requires us to copy the
-        // value first to a string value and then into an erlang binary. A
-        // little digging reveals that Get() is (currently) a convenience
-        // wrapper around iterators. So, drop into iterators and avoid that
-        // unnecessary alloc/copy/free of the value
-        leveldb::Iterator* itr = db->NewIterator(opts);
-        itr->Seek(key_slice);
-        if (itr->Valid() && handle->options.comparator->Compare(key_slice, itr->key()) == 0)
+        std::string sval;
+        leveldb::Status status = db->Get(opts, key_slice, &sval);
+        if (status.ok())
         {
-            // Exact match on our key. Allocate a binary for the result
-            leveldb::Slice v = itr->value();
+            const size_t size = sval.size();
             ERL_NIF_TERM value_bin;
-            unsigned char* value = enif_make_new_binary(env, v.size(), &value_bin);
-            memcpy(value, v.data(), v.size());
-
-            delete itr;
+            unsigned char* value = enif_make_new_binary(env, size, &value_bin);
+            memcpy(value, sval.data(), size);
             return enif_make_tuple2(env, ATOM_OK, value_bin);
         }
         else
         {
-            // Either iterator was invalid OR comparison was not exact. Either way,
-            // we didn't find the value
-            delete itr;
             return ATOM_NOT_FOUND;
         }
     }
