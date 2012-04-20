@@ -36,6 +36,7 @@ case "$1" in
 
     test)
         export CFLAGS="$CFLAGS -I $BASEDIR/system/include"
+        export CXXFLAGS="$CXXFLAGS -I $BASEDIR/system/include"
         export LDFLAGS="$LDFLAGS -L $BASEDIR/system/lib"
         export LD_LIBRARY_PATH="$BASEDIR/system/lib:$LD_LIBRARY_PATH"
 
@@ -51,6 +52,7 @@ case "$1" in
         (cd snappy-$SNAPPY_VSN && $MAKE && $MAKE install)
 
         export CFLAGS="$CFLAGS -I $BASEDIR/system/include"
+        export CXXFLAGS="$CXXFLAGS -I $BASEDIR/system/include"
         export LDFLAGS="$LDFLAGS -L $BASEDIR/system/lib"
         export LD_LIBRARY_PATH="$BASEDIR/system/lib:$LD_LIBRARY_PATH"
 
