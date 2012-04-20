@@ -33,6 +33,15 @@ typedef struct
 {
     leveldb::DB* db;
     leveldb::Options options;
+    leveldb::WriteBatch*   write_batch;
+    leveldb::WriteOptions* write_options;
+    ErlNifEnv*             write_env;
+    ErlNifMutex*           write_lock;
+    ErlNifCond*            write_cv;
+    ErlNifTid              write_thread;
+    ERL_NIF_TERM           write_caller;
+    ERL_NIF_TERM           write_ref;
+    bool                   write_thread_shutdown;
 } eleveldb_db_handle;
 
 typedef struct
@@ -80,12 +89,16 @@ static ERL_NIF_TERM ATOM_ERROR_DB_DESTROY;
 static ERL_NIF_TERM ATOM_KEYS_ONLY;
 static ERL_NIF_TERM ATOM_COMPRESSION;
 static ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
+static ERL_NIF_TERM ATOM_ERROR_CREATE_WRITER_THREAD;
+static ERL_NIF_TERM ATOM_ERROR_WRITE_PENDING;
+
+static void* eleveldb_write_thread(void* args);
 
 static ErlNifFunc nif_funcs[] =
 {
     {"open", 2, eleveldb_open},
     {"get", 3, eleveldb_get},
-    {"write", 3, eleveldb_write},
+    {"write_async", 3, eleveldb_write_async},
     {"iterator", 2, eleveldb_iterator},
     {"iterator", 3, eleveldb_iterator},
     {"iterator_move", 2, eleveldb_iterator_move},
@@ -272,6 +285,29 @@ ERL_NIF_TERM eleveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         memset(handle, '\0', sizeof(eleveldb_db_handle));
         handle->db = db;
         handle->options = opts;
+
+        // Spin up the necessary subsystems for handling writes off-scheduler
+        handle->write_batch = new leveldb::WriteBatch();
+        handle->write_options = new leveldb::WriteOptions();
+        handle->write_env = enif_alloc_env();
+        handle->write_lock = enif_mutex_create((char*)"eleveldb_write_lock");
+        handle->write_cv = enif_cond_create((char*)"eleveldb_write_cv");
+
+        int error = enif_thread_create((char*)"eleveldb_write_thread", &(handle->write_thread),
+                                       &eleveldb_write_thread, handle, NULL);
+        if (error != 0)
+        {
+            enif_free_env(handle->write_env);
+            enif_cond_destroy(handle->write_cv);
+            enif_mutex_destroy(handle->write_lock);
+            delete handle->write_options;
+            delete handle->write_batch;
+            delete db;
+
+            enif_release_resource(handle);
+            return enif_make_tuple2(env, ATOM_ERROR_CREATE_WRITER_THREAD, enif_make_uint(env, error));
+        }
+
         ERL_NIF_TERM result = enif_make_resource(env, handle);
         enif_release_resource(handle);
         return enif_make_tuple2(env, ATOM_OK, result);
@@ -318,38 +354,60 @@ ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     }
 }
 
-ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+
+ERL_NIF_TERM eleveldb_write_async(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     eleveldb_db_handle* handle;
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&handle) &&
         enif_is_list(env, argv[1]) && // Actions
         enif_is_list(env, argv[2]))   // Opts
     {
+        // Grab the lock
+        enif_mutex_lock(handle->write_lock);
+
+        // If another write is already in process, bail
+        if (handle->write_caller)
+        {
+            enif_mutex_unlock(handle->write_lock);
+            return enif_make_tuple2(env, ATOM_ERROR, ATOM_ERROR_WRITE_PENDING);
+        }
+
         // Traverse actions and build a write batch
-        leveldb::WriteBatch batch;
-        ERL_NIF_TERM result = fold(env, argv[1], write_batch_item, batch);
+        ERL_NIF_TERM result = fold(env, argv[1], write_batch_item, *(handle->write_batch));
         if (result == ATOM_OK)
         {
             // Was able to fold across all items cleanly -- apply the batch
 
             // Parse out the write options
-            leveldb::WriteOptions opts;
-            fold(env, argv[2], parse_write_option, opts);
+            fold(env, argv[2], parse_write_option, *(handle->write_options));
 
-            // TODO: Why does the API want a WriteBatch* versus a ref?
-            leveldb::Status status = handle->db->Write(opts, &batch);
-            if (status.ok())
-            {
-                return ATOM_OK;
-            }
-            else
-            {
-                return error_tuple(env, ATOM_ERROR_DB_WRITE, status);
-            }
+            // Identify the calling PID and make that available to the worker
+            ErlNifPid caller;
+            enif_self(env, &caller);
+            handle->write_caller = enif_make_pid(handle->write_env, &caller);
+
+            // Construct a reference that will be used to identify this specific
+            // request back to the caller and take advantage of optimizations
+            // for long message queues
+            //
+            // PARANOID: copy the ref into the caller's env; not clear if this
+            // is strictly necessary
+            handle->write_ref = enif_make_ref(handle->write_env);
+            ERL_NIF_TERM ref = enif_make_copy(env, handle->write_ref);
+
+            // Kick the writer thread and wait for a response
+            enif_cond_signal(handle->write_cv);
+            enif_mutex_unlock(handle->write_lock);
+
+            // Return the reference
+            return enif_make_tuple2(env, ATOM_OK, ref);
         }
         else
         {
-            // Failed to parse out batch commands; bad item was returned from fold.
+            // Failed to parse out batch commands; bad item was returned from fold. Clear out
+            // the batch so that we aren't holding on to any copies of unused actions
+            handle->write_batch->Clear();
+            enif_mutex_unlock(handle->write_lock);
             return enif_make_tuple2(env, ATOM_ERROR,
                                     enif_make_tuple2(env, ATOM_BAD_WRITE_ACTION,
                                                      result));
@@ -359,6 +417,61 @@ ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     {
         return enif_make_badarg(env);
     }
+}
+
+static void* eleveldb_write_thread(void* arg)
+{
+    eleveldb_db_handle* handle = (eleveldb_db_handle*)arg;
+    enif_mutex_lock(handle->write_lock);
+    while(1)
+    {
+        if (handle->write_thread_shutdown)
+        {
+            enif_cond_signal(handle->write_cv);
+            enif_mutex_unlock(handle->write_lock);
+            break;
+        }
+
+        if (handle->write_caller)
+        {
+            // Release the mutex while we perform the lock to ensure any calling
+            // erlang processes don't get held up.
+            enif_mutex_unlock(handle->write_lock);
+
+            leveldb::Status status = handle->db->Write(*(handle->write_options), handle->write_batch);
+
+            // Reacquire our lock
+            enif_mutex_lock(handle->write_lock);
+
+            ERL_NIF_TERM result;
+            if (status.ok())
+            {
+                result = enif_make_tuple2(handle->write_env, handle->write_ref, ATOM_OK);
+            }
+            else
+            {
+                ERL_NIF_TERM error = error_tuple(handle->write_env, ATOM_ERROR_DB_WRITE, status);
+                result = enif_make_tuple2(handle->write_env, handle->write_ref, error);
+            }
+
+            // Send back the result of the write
+            ErlNifPid caller;
+            enif_get_local_pid(handle->write_env, handle->write_caller, &caller);
+            enif_send(NULL, &caller, handle->write_env, result);
+
+            // Clean up request and result data (we've already copied the data when
+            // sending it back to caller)
+            enif_clear_env(handle->write_env);
+            handle->write_batch->Clear();
+            handle->write_caller = 0;
+        }
+        else
+        {
+            enif_cond_wait(handle->write_cv, handle->write_lock);
+        }
+    }
+
+    return 0;
 }
 
 ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
@@ -609,6 +722,22 @@ static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
 {
     // Delete any dynamically allocated memory stored in eleveldb_db_handle
     eleveldb_db_handle* handle = (eleveldb_db_handle*)arg;
+
+    // Shutdown the worker
+    enif_mutex_lock(handle->write_lock);
+    handle->write_thread_shutdown = true;
+    enif_cond_signal(handle->write_cv);
+    enif_mutex_unlock(handle->write_lock);
+    enif_thread_join(handle->write_thread, 0);
+
+    // Cleanup mutexes, cv, etc.
+    enif_cond_destroy(handle->write_cv);
+    enif_mutex_destroy(handle->write_lock);
+    enif_free_env(handle->write_env);
+
+    // Cleanup eleveldb stuff
+    delete handle->write_batch;
+    delete handle->write_options;
     delete handle->db;
 }
 
@@ -675,6 +804,9 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_ERROR_DB_REPAIR, "error_db_repair");
     ATOM(ATOM_KEYS_ONLY, "keys_only");
     ATOM(ATOM_COMPRESSION, "compression");
+    ATOM(ATOM_ERROR_CREATE_WRITER_THREAD, "create_writer_thread");
+    ATOM(ATOM_ERROR_WRITE_PENDING, "write_pending");
+
     return 0;
 }
 
