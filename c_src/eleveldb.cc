@@ -98,7 +98,7 @@ static ErlNifFunc nif_funcs[] =
 {
     {"open", 2, eleveldb_open},
     {"get", 3, eleveldb_get},
-    {"write_async", 3, eleveldb_write_async},
+    {"write_async", 4, eleveldb_write_async},
     {"iterator", 2, eleveldb_iterator},
     {"iterator", 3, eleveldb_iterator},
     {"iterator_move", 2, eleveldb_iterator_move},
@@ -360,8 +360,11 @@ ERL_NIF_TERM eleveldb_write_async(ErlNifEnv* env, int argc, const ERL_NIF_TERM a
     eleveldb_db_handle* handle;
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&handle) &&
         enif_is_list(env, argv[1]) && // Actions
-        enif_is_list(env, argv[2]))   // Opts
+        enif_is_list(env, argv[2]) && // Opts
+        enif_is_ref(env, argv[3]))    // Write-Ref
     {
+        ERL_NIF_TERM writeref = argv[3];
+
         // Grab the lock
         enif_mutex_lock(handle->write_lock);
 
@@ -386,21 +389,16 @@ ERL_NIF_TERM eleveldb_write_async(ErlNifEnv* env, int argc, const ERL_NIF_TERM a
             enif_self(env, &caller);
             handle->write_caller = enif_make_pid(handle->write_env, &caller);
 
-            // Construct a reference that will be used to identify this specific
-            // request back to the caller and take advantage of optimizations
-            // for long message queues
-            //
-            // PARANOID: copy the ref into the caller's env; not clear if this
-            // is strictly necessary
-            handle->write_ref = enif_make_ref(handle->write_env);
-            ERL_NIF_TERM ref = enif_make_copy(env, handle->write_ref);
+            // Save the write-reference for the response back to the caller;
+            // enables us to use receive optimizations in the VM
+            handle->write_ref = enif_make_copy(handle->write_env, writeref);
 
             // Kick the writer thread and wait for a response
             enif_cond_signal(handle->write_cv);
             enif_mutex_unlock(handle->write_lock);
 
             // Return the reference
-            return enif_make_tuple2(env, ATOM_OK, ref);
+            return ATOM_OK;
         }
         else
         {

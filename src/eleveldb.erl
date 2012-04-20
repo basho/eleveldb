@@ -33,7 +33,7 @@
          repair/2,
          is_empty/1]).
 
--export([write_async/3,
+-export([write_async/4,
          iterator/2,
          iterator_move/2,
          iterator_close/1]).
@@ -107,8 +107,9 @@ delete(Ref, Key, Opts) ->
 
 -spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
 write(Ref, Updates, Opts) ->
-    case write_async(Ref, Updates, Opts) of
-        {ok, Wref} ->
+    Wref = make_ref(),
+    case write_async(Ref, Updates, Opts, Wref) of
+        ok ->
             receive
                 {Wref, Result} ->
                     Result
@@ -117,8 +118,8 @@ write(Ref, Updates, Opts) ->
             {error, Reason}
     end.
 
--spec write_async(db_ref(), write_actions(), write_options()) -> {ok, reference()} | {error, any()}.
-write_async(_Ref, _Updates, _Opts) ->
+-spec write_async(db_ref(), write_actions(), write_options(), reference()) -> ok | {error, any()}.
+write_async(_Ref, _Updates, _Opts, _Wref) ->
     erlang:nif_error({error, not_loaded}).
 
 
