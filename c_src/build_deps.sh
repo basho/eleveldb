@@ -43,6 +43,14 @@ case "$1" in
         (cd leveldb && $MAKE check)
 
         ;;
+
+    get-deps)
+        if [ ! -d leveldb ]; then
+            git clone git://github.com/basho/leveldb
+            (cd leveldb && git checkout $LEVELDB_VSN)
+        fi
+        ;;
+
     *)
         if [ ! -d snappy-$SNAPPY_VSN ]; then
             tar -xzf snappy-$SNAPPY_VSN.tar.gz
