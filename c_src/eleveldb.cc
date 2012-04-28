@@ -32,6 +32,7 @@ static ErlNifResourceType* eleveldb_itr_RESOURCE;
 typedef struct
 {
     leveldb::DB* db;
+    int iterators;
     leveldb::Options options;
 } eleveldb_db_handle;
 
@@ -86,6 +87,7 @@ static ErlNifFunc nif_funcs[] =
     {"open", 2, eleveldb_open},
     {"get", 3, eleveldb_get},
     {"write", 3, eleveldb_write},
+    {"close", 1, eleveldb_close},
     {"iterator", 2, eleveldb_iterator},
     {"iterator", 3, eleveldb_iterator},
     {"iterator_move", 2, eleveldb_iterator_move},
@@ -270,6 +272,7 @@ ERL_NIF_TERM eleveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
             (eleveldb_db_handle*) enif_alloc_resource(eleveldb_db_RESOURCE,
                                                        sizeof(eleveldb_db_handle));
         memset(handle, '\0', sizeof(eleveldb_db_handle));
+	handle->iterators = 0;
         handle->db = db;
         handle->options = opts;
         ERL_NIF_TERM result = enif_make_resource(env, handle);
@@ -287,6 +290,7 @@ ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     eleveldb_db_handle* handle;
     ErlNifBinary key;
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&handle) &&
+	handle->db &&
         enif_inspect_binary(env, argv[1], &key) &&
         enif_is_list(env, argv[2]))
     {
@@ -322,6 +326,7 @@ ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     eleveldb_db_handle* handle;
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&handle) &&
+	handle->db &&
         enif_is_list(env, argv[1]) && // Actions
         enif_is_list(env, argv[2]))   // Opts
     {
@@ -361,10 +366,28 @@ ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     }
 }
 
+ERL_NIF_TERM eleveldb_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    eleveldb_db_handle* db_handle;
+    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
+	db_handle->db &&
+	db_handle->iterators == 0)
+    {
+        delete db_handle->db;
+	db_handle->db = NULL;
+	return ATOM_OK;
+    }
+    else
+    {
+        return enif_make_badarg(env);
+    }
+}
+
 ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     eleveldb_db_handle* db_handle;
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
+	db_handle->db &&
         enif_is_list(env, argv[1])) // Options
     {
         // Increment references to db_handle for duration of the iterator
@@ -387,6 +410,9 @@ ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
         itr_handle->snapshot = db_handle->db->GetSnapshot();
         opts.snapshot = itr_handle->snapshot;
         itr_handle->itr = db_handle->db->NewIterator(opts);
+	
+	// Increment a counter so we don't have any dangling iterators on close
+	db_handle->iterators++;
 
         // Check for keys_only iterator flag
         itr_handle->keys_only = ((argc == 3) && (argv[2] == ATOM_KEYS_ONLY));
@@ -412,10 +438,10 @@ static ERL_NIF_TERM slice_to_binary(ErlNifEnv* env, leveldb::Slice s)
 ERL_NIF_TERM eleveldb_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     eleveldb_itr_handle* itr_handle;
-    if (enif_get_resource(env, argv[0], eleveldb_itr_RESOURCE, (void**)&itr_handle))
+    if (enif_get_resource(env, argv[0], eleveldb_itr_RESOURCE, (void**)&itr_handle) &&
+	itr_handle->db_handle->db)
     {
         enif_mutex_lock(itr_handle->itr_lock);
-
         leveldb::Iterator* itr = itr_handle->itr;
 
         if (itr == NULL)
@@ -484,12 +510,14 @@ ERL_NIF_TERM eleveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TER
     if (enif_get_resource(env, argv[0], eleveldb_itr_RESOURCE, (void**)&itr_handle))
     {
         enif_mutex_lock(itr_handle->itr_lock);
-
+	itr_handle->db_handle->iterators--;
         if (itr_handle->itr != 0)
         {
             delete itr_handle->itr;
             itr_handle->itr = 0;
-            itr_handle->db_handle->db->ReleaseSnapshot(itr_handle->snapshot);
+	    if (itr_handle->db_handle->db) {
+	      itr_handle->db_handle->db->ReleaseSnapshot(itr_handle->snapshot);
+	    }
             enif_release_resource(itr_handle->db_handle);
         }
 
@@ -507,6 +535,7 @@ ERL_NIF_TERM eleveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
     eleveldb_db_handle* db_handle;
     ErlNifBinary name_bin;
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
+	db_handle->db &&
         enif_inspect_binary(env, argv[1], &name_bin))
     {
         leveldb::Slice name((const char*)name_bin.data, name_bin.size);
@@ -582,7 +611,8 @@ ERL_NIF_TERM eleveldb_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[
 ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     eleveldb_db_handle* db_handle;
-    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
+    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
+	db_handle->db)
     {
         leveldb::ReadOptions opts;
         leveldb::Iterator* itr = db_handle->db->NewIterator(opts);
@@ -609,7 +639,10 @@ static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
 {
     // Delete any dynamically allocated memory stored in eleveldb_db_handle
     eleveldb_db_handle* handle = (eleveldb_db_handle*)arg;
-    delete handle->db;
+    if (handle->db) {
+      delete handle->db;
+      handle->db = NULL;
+    }
 }
 
 static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
@@ -620,10 +653,11 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
     {
         delete itr_handle->itr;
         itr_handle->itr = 0;
-        itr_handle->db_handle->db->ReleaseSnapshot(itr_handle->snapshot);
+	if (itr_handle->db_handle->db) {
+	  itr_handle->db_handle->db->ReleaseSnapshot(itr_handle->snapshot);
+	}
         enif_release_resource(itr_handle->db_handle);
     }
-
     enif_mutex_destroy(itr_handle->itr_lock);
 }
 
