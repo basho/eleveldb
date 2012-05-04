@@ -610,6 +610,12 @@ static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
     // Delete any dynamically allocated memory stored in eleveldb_db_handle
     eleveldb_db_handle* handle = (eleveldb_db_handle*)arg;
     delete handle->db;
+
+    // Release any cache we explicitly allocated when setting up options
+    if (handle->options.block_cache)
+    {
+        delete handle->options.block_cache;
+    }
 }
 
 static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
