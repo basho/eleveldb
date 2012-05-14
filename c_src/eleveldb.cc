@@ -94,6 +94,7 @@ static ErlNifFunc nif_funcs[] =
     {"destroy", 2, eleveldb_destroy},
     {"repair", 2, eleveldb_repair},
     {"is_empty", 1, eleveldb_is_empty},
+    {"compact_range", 3, eleveldb_compact_range}
 };
 
 ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Options& opts)
@@ -598,6 +599,27 @@ ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
         }
         delete itr;
         return result;
+    }
+    else
+    {
+        return enif_make_badarg(env);
+    }
+}
+
+ERL_NIF_TERM eleveldb_compact_range(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    eleveldb_db_handle* db_handle;
+    ErlNifBinary cr_begin;
+    ErlNifBinary cr_end;
+    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
+        enif_inspect_binary(env, argv[1], &cr_begin) &&
+        enif_inspect_binary(env, argv[2], &cr_end))
+    {
+        // TODO: This WILL block the Erlang scheduler while it waits for compaction to finish!!
+        leveldb::Slice begin_slice((const char*)cr_begin.data, cr_begin.size);
+        leveldb::Slice end_slice((const char*)cr_end.data, cr_end.size);
+        db_handle->db->CompactRange(&begin_slice, &end_slice);
+        return ATOM_OK;
     }
     else
     {

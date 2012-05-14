@@ -31,7 +31,8 @@
          status/2,
          destroy/2,
          repair/2,
-         is_empty/1]).
+         is_empty/1,
+         compact_range/3]).
 
 -export([iterator/2,
          iterator_move/2,
@@ -157,6 +158,11 @@ repair(_Name, _Opts) ->
 is_empty(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
+-spec compact_range(db_ref(), Begin::binary(), End::binary()) -> ok.
+compact_range(_Ref, _Begin, _End) ->
+    %% TODO: This WILL block the Erlang scheduler while it waits for compaction to finish!!
+    erlang:nif_error({error, not_loaded}).
+
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
@@ -254,6 +260,15 @@ compression_test() ->
     UncompressedSize = Size("/tmp/eleveldb.compress.0"),
     CompressedSize = Size("/tmp/eleveldb.compress.1"),
     ?assert(UncompressedSize > CompressedSize).
+
+compact_range_test() ->
+    os:cmd("rm -rf /tmp/eleveldb.compact.range.test"),
+    {ok, Ref} = open("/tmp/eleveldb.compact.range.test", [{create_if_missing, true}]),
+    ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
+    ok = ?MODULE:put(Ref, <<"abc">>, <<"123">>, []),
+    ok = ?MODULE:put(Ref, <<"hij">>, <<"789">>, []),
+    ok = compact_range(Ref, <<"def">>, <<>>),
+    ok = compact_range(Ref, <<>>, <<>>).
 
 
 -ifdef(EQC).
