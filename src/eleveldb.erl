@@ -33,6 +33,9 @@
          repair/2,
          is_empty/1]).
 
+-export([option_types/1,
+         validate_options/2]).
+
 -export([iterator/2,
          iterator_move/2,
          iterator_close/1]).
@@ -71,7 +74,8 @@ init() ->
                          {block_restart_interval, pos_integer()} |
                          {cache_size, pos_integer()} |
                          {paranoid_checks, boolean()} |
-                         {compression, boolean()}].
+                         {compression, boolean()} |
+                         {use_bloomfilter, boolean() | pos_integer()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()}].
@@ -157,6 +161,35 @@ repair(_Name, _Opts) ->
 is_empty(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
+-spec option_types(open | read | write) -> [{atom(), bool | integer | any}].
+option_types(open) ->
+    [{create_if_missing, bool},
+     {error_if_exists, bool},
+     {write_buffer_size, integer},
+     {max_open_files, integer},
+     {block_size, integer},
+     {block_restart_interval, integer},
+     {cache_size, integer},
+     {paranoid_checks, bool},
+     {compression, bool},
+     {use_bloomfilter, any}];
+option_types(read) ->
+    [{verify_checksums, bool},
+     {fill_cache, bool}];
+option_types(write) ->
+     [{sync, bool}].
+
+-spec validate_options(open | read | write, [{atom(), any()}]) ->
+                              {[{atom(), any()}], [{atom(), any()}]}.
+validate_options(Type, Opts) ->
+    Types = option_types(Type),
+    lists:partition(fun({K, V}) ->
+                            KType = lists:keyfind(K, 1, Types),
+                            validate_type(KType, V)
+                    end, Opts).
+
+
+
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
@@ -180,6 +213,13 @@ fold_loop({ok, K}, Itr, Fun, Acc0) ->
 fold_loop({ok, K, V}, Itr, Fun, Acc0) ->
     Acc = Fun({K, V}, Acc0),
     fold_loop(iterator_move(Itr, next), Itr, Fun, Acc).
+
+validate_type({_Key, bool}, true)                            -> true;
+validate_type({_Key, bool}, false)                           -> true;
+validate_type({_Key, integer}, Value) when is_integer(Value) -> true;
+validate_type({_Key, any}, _Value)                           -> true;
+validate_type(_, _)                                          -> false.
+
 
 %% ===================================================================
 %% EUnit tests
