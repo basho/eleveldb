@@ -158,7 +158,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             // per-table basis. We only disable it if explicitly asked. Alternatively,
             // one can provide a value for # of bits-per-key.
             unsigned long bfsize = 10;
-            if (option[1] != ATOM_TRUE || enif_get_ulong(env, option[1], &bfsize))
+            if (option[1] == ATOM_TRUE || enif_get_ulong(env, option[1], &bfsize))
             {
                 opts.filter_policy = leveldb::NewBloomFilterPolicy(bfsize);
             }
