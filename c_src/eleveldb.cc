@@ -25,6 +25,7 @@
 #include "leveldb/comparator.h"
 #include "leveldb/write_batch.h"
 #include "leveldb/cache.h"
+#include "leveldb/filter_policy.h"
 
 static ErlNifResourceType* eleveldb_db_RESOURCE;
 static ErlNifResourceType* eleveldb_itr_RESOURCE;
@@ -80,6 +81,7 @@ static ERL_NIF_TERM ATOM_ERROR_DB_DESTROY;
 static ERL_NIF_TERM ATOM_KEYS_ONLY;
 static ERL_NIF_TERM ATOM_COMPRESSION;
 static ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
+static ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 
 static ErlNifFunc nif_funcs[] =
 {
@@ -148,6 +150,17 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             else
             {
                 opts.compression = leveldb::kNoCompression;
+            }
+        }
+        else if (option[0] == ATOM_USE_BLOOMFILTER)
+        {
+            // By default, we want to use a 10-bit-per-key bloom filter on a
+            // per-table basis. We only disable it if explicitly asked. Alternatively,
+            // one can provide a value for # of bits-per-key.
+            unsigned long bfsize = 10;
+            if (option[1] == ATOM_TRUE || enif_get_ulong(env, option[1], &bfsize))
+            {
+                opts.filter_policy = leveldb::NewBloomFilterPolicy(bfsize);
             }
         }
     }
@@ -616,6 +629,12 @@ static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
     {
         delete handle->options.block_cache;
     }
+
+    // Clean up any filter policies
+    if (handle->options.filter_policy)
+    {
+        delete handle->options.filter_policy;
+    }
 }
 
 static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
@@ -681,6 +700,7 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_ERROR_DB_REPAIR, "error_db_repair");
     ATOM(ATOM_KEYS_ONLY, "keys_only");
     ATOM(ATOM_COMPRESSION, "compression");
+    ATOM(ATOM_USE_BLOOMFILTER, "use_bloomfilter");
     return 0;
 }
 
