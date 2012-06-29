@@ -285,15 +285,19 @@ compression_test() ->
                                                    {compression, true}]),
     [ok = ?MODULE:put(Ref1, <<I:64/unsigned>>, CompressibleData, [{sync, true}]) ||
         I <- lists:seq(1,10)],
-    %% Sum up the sizes of the .sst files in each directory -- compressed dir should
-    %% be less than uncompressed
-    Size = fun(Dir) ->
-                   lists:sum([element(2, element(2, file:read_file_info(F))) ||
-                                 F <- filelib:wildcard(filename:join(Dir, "*.sst"))])
-           end,
-    UncompressedSize = Size("/tmp/eleveldb.compress.0"),
-    CompressedSize = Size("/tmp/eleveldb.compress.1"),
-    ?assert(UncompressedSize > CompressedSize).
+	%% Check both of the LOG files created to see if the compression option was correctly
+	%% passed down
+	MatchCompressOption =
+		fun(File, Expected) ->
+				{ok, Contents} = file:read_file(File),
+				case re:run(Contents, "Options.compression: " ++ Expected) of
+					{match, _} -> match;
+					nomatch -> nomatch
+				end
+		end,
+	Log0Option = MatchCompressOption("/tmp/eleveldb.compress.0/LOG", "0"),
+	Log1Option = MatchCompressOption("/tmp/eleveldb.compress.1/LOG", "1"),
+	?assert(Log0Option =:= match andalso Log1Option =:= match).
 
 
 -ifdef(EQC).
