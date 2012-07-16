@@ -6,3 +6,6 @@ priv/*
 *.o
 *.beam
 ebin
+c_src/leveldb/
+c_src/snappy*/
+c_src/system

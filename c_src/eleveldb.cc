@@ -25,6 +25,7 @@
 #include "leveldb/comparator.h"
 #include "leveldb/write_batch.h"
 #include "leveldb/cache.h"
+#include "leveldb/filter_policy.h"
 
 static ErlNifResourceType* eleveldb_db_RESOURCE;
 static ErlNifResourceType* eleveldb_itr_RESOURCE;
@@ -77,7 +78,10 @@ static ERL_NIF_TERM ATOM_INVALID_ITERATOR;
 static ERL_NIF_TERM ATOM_CACHE_SIZE;
 static ERL_NIF_TERM ATOM_PARANOID_CHECKS;
 static ERL_NIF_TERM ATOM_ERROR_DB_DESTROY;
-static ERL_NIF_TERM ATOM_KEYS_ONLY; 
+static ERL_NIF_TERM ATOM_KEYS_ONLY;
+static ERL_NIF_TERM ATOM_COMPRESSION;
+static ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
+static ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 
 static ErlNifFunc nif_funcs[] =
 {
@@ -90,7 +94,7 @@ static ErlNifFunc nif_funcs[] =
     {"iterator_close", 1, eleveldb_iterator_close},
     {"status", 2, eleveldb_status},
     {"destroy", 2, eleveldb_destroy},
-    /*{"repair", 2, eleveldb_repair} */
+    {"repair", 2, eleveldb_repair},
     {"is_empty", 1, eleveldb_is_empty},
 };
 
@@ -136,6 +140,28 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (enif_get_ulong(env, option[1], &cache_sz)) 
                 if (cache_sz != 0) 
                     opts.block_cache = leveldb::NewLRUCache(cache_sz);
+        }
+        else if (option[0] == ATOM_COMPRESSION)
+        {
+            if (option[1] == ATOM_TRUE)
+            {
+                opts.compression = leveldb::kSnappyCompression;
+            }
+            else
+            {
+                opts.compression = leveldb::kNoCompression;
+            }
+        }
+        else if (option[0] == ATOM_USE_BLOOMFILTER)
+        {
+            // By default, we want to use a 10-bit-per-key bloom filter on a
+            // per-table basis. We only disable it if explicitly asked. Alternatively,
+            // one can provide a value for # of bits-per-key.
+            unsigned long bfsize = 10;
+            if (option[1] == ATOM_TRUE || enif_get_ulong(env, option[1], &bfsize))
+            {
+                opts.filter_policy = leveldb::NewBloomFilterPolicy(bfsize);
+            }
         }
     }
 
@@ -284,29 +310,18 @@ ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         leveldb::ReadOptions opts;
         fold(env, argv[2], parse_read_option, opts);
 
-        // The DB* does provide a Get() method, but that requires us to copy the
-        // value first to a string value and then into an erlang binary. A
-        // little digging reveals that Get() is (currently) a convenience
-        // wrapper around iterators. So, drop into iterators and avoid that
-        // unnecessary alloc/copy/free of the value
-        leveldb::Iterator* itr = db->NewIterator(opts);
-        itr->Seek(key_slice);
-        if (itr->Valid() && handle->options.comparator->Compare(key_slice, itr->key()) == 0)
+        std::string sval;
+        leveldb::Status status = db->Get(opts, key_slice, &sval);
+        if (status.ok())
         {
-            // Exact match on our key. Allocate a binary for the result
-            leveldb::Slice v = itr->value();
+            const size_t size = sval.size();
             ERL_NIF_TERM value_bin;
-            unsigned char* value = enif_make_new_binary(env, v.size(), &value_bin);
-            memcpy(value, v.data(), v.size());
-
-            delete itr;
+            unsigned char* value = enif_make_new_binary(env, size, &value_bin);
+            memcpy(value, sval.data(), size);
             return enif_make_tuple2(env, ATOM_OK, value_bin);
         }
         else
         {
-            // Either iterator was invalid OR comparison was not exact. Either way,
-            // we didn't find the value
-            delete itr;
             return ATOM_NOT_FOUND;
         }
     }
@@ -527,6 +542,30 @@ ERL_NIF_TERM eleveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
     }
 }
 
+ERL_NIF_TERM eleveldb_repair(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    char name[4096];
+    if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1))
+    {
+        // Parse out the options
+        leveldb::Options opts;
+
+        leveldb::Status status = leveldb::RepairDB(name, opts);
+        if (!status.ok())
+        {
+            return error_tuple(env, ATOM_ERROR_DB_REPAIR, status);
+        }
+        else
+        {
+            return ATOM_OK;
+        }
+    }
+    else
+    {
+        return enif_make_badarg(env);
+    }
+}
+
 ERL_NIF_TERM eleveldb_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     char name[4096];
@@ -584,6 +623,18 @@ static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
     // Delete any dynamically allocated memory stored in eleveldb_db_handle
     eleveldb_db_handle* handle = (eleveldb_db_handle*)arg;
     delete handle->db;
+
+    // Release any cache we explicitly allocated when setting up options
+    if (handle->options.block_cache)
+    {
+        delete handle->options.block_cache;
+    }
+
+    // Clean up any filter policies
+    if (handle->options.filter_policy)
+    {
+        delete handle->options.filter_policy;
+    }
 }
 
 static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
@@ -646,7 +697,10 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_CACHE_SIZE, "cache_size");
     ATOM(ATOM_PARANOID_CHECKS, "paranoid_checks");
     ATOM(ATOM_ERROR_DB_DESTROY, "error_db_destroy");
+    ATOM(ATOM_ERROR_DB_REPAIR, "error_db_repair");
     ATOM(ATOM_KEYS_ONLY, "keys_only");
+    ATOM(ATOM_COMPRESSION, "compression");
+    ATOM(ATOM_USE_BLOOMFILTER, "use_bloomfilter");
     return 0;
 }
 
