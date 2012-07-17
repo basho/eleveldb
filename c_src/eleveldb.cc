@@ -33,6 +33,8 @@ static ErlNifResourceType* eleveldb_itr_RESOURCE;
 typedef struct
 {
     leveldb::DB* db;
+    ErlNifMutex* db_lock; // protects access to db
+
     leveldb::Options options;
 } eleveldb_db_handle;
 
@@ -50,6 +52,7 @@ static ERL_NIF_TERM ATOM_TRUE;
 static ERL_NIF_TERM ATOM_FALSE;
 static ERL_NIF_TERM ATOM_OK;
 static ERL_NIF_TERM ATOM_ERROR;
+static ERL_NIF_TERM ATOM_EINVAL;
 static ERL_NIF_TERM ATOM_CREATE_IF_MISSING;
 static ERL_NIF_TERM ATOM_ERROR_IF_EXISTS;
 static ERL_NIF_TERM ATOM_WRITE_BUFFER_SIZE;
@@ -252,6 +255,11 @@ template <typename Acc> ERL_NIF_TERM fold(ErlNifEnv* env, ERL_NIF_TERM list,
 }
 
 
+ERL_NIF_TERM error_einval(ErlNifEnv* env)
+{
+    return enif_make_tuple2(env, ATOM_ERROR, ATOM_EINVAL);
+}
+
 ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Status& status)
 {
     ERL_NIF_TERM reason = enif_make_string(env, status.ToString().c_str(),
@@ -284,6 +292,7 @@ ERL_NIF_TERM eleveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
                                                        sizeof(eleveldb_db_handle));
         memset(handle, '\0', sizeof(eleveldb_db_handle));
         handle->db = db;
+        handle->db_lock = enif_mutex_create((char*)"eleveldb_db_lock");
         handle->options = opts;
         ERL_NIF_TERM result = enif_make_resource(env, handle);
         enif_release_resource(handle);
@@ -303,6 +312,13 @@ ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         enif_inspect_binary(env, argv[1], &key) &&
         enif_is_list(env, argv[2]))
     {
+        enif_mutex_lock(handle->db_lock);
+        if (handle->db == NULL)
+        {
+            enif_mutex_unlock(handle->db_lock);
+            return error_einval(env);
+        }
+
         leveldb::DB* db = handle->db;
         leveldb::Slice key_slice((const char*)key.data, key.size);
 
@@ -318,10 +334,12 @@ ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
             ERL_NIF_TERM value_bin;
             unsigned char* value = enif_make_new_binary(env, size, &value_bin);
             memcpy(value, sval.data(), size);
+            enif_mutex_unlock(handle->db_lock);
             return enif_make_tuple2(env, ATOM_OK, value_bin);
         }
         else
         {
+            enif_mutex_unlock(handle->db_lock);
             return ATOM_NOT_FOUND;
         }
     }
@@ -338,6 +356,13 @@ ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         enif_is_list(env, argv[1]) && // Actions
         enif_is_list(env, argv[2]))   // Opts
     {
+        enif_mutex_lock(handle->db_lock);
+        if (handle->db == NULL)
+        {
+            enif_mutex_unlock(handle->db_lock);
+            return error_einval(env);
+        }
+
         // Traverse actions and build a write batch
         leveldb::WriteBatch batch;
         ERL_NIF_TERM result = fold(env, argv[1], write_batch_item, batch);
@@ -353,15 +378,18 @@ ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
             leveldb::Status status = handle->db->Write(opts, &batch);
             if (status.ok())
             {
+                enif_mutex_unlock(handle->db_lock);
                 return ATOM_OK;
             }
             else
             {
+                enif_mutex_unlock(handle->db_lock);
                 return error_tuple(env, ATOM_ERROR_DB_WRITE, status);
             }
         }
         else
         {
+            enif_mutex_unlock(handle->db_lock);
             // Failed to parse out batch commands; bad item was returned from fold.
             return enif_make_tuple2(env, ATOM_ERROR,
                                     enif_make_tuple2(env, ATOM_BAD_WRITE_ACTION,
@@ -380,6 +408,13 @@ ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
         enif_is_list(env, argv[1])) // Options
     {
+        enif_mutex_lock(db_handle->db_lock);
+        if (db_handle->db == NULL)
+        {
+            enif_mutex_unlock(db_handle->db_lock);
+            return error_einval(env);
+        }
+
         // Increment references to db_handle for duration of the iterator
         enif_keep_resource(db_handle);
 
@@ -406,6 +441,7 @@ ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
 
         ERL_NIF_TERM result = enif_make_resource(env, itr_handle);
         enif_release_resource(itr_handle);
+        enif_mutex_unlock(db_handle->db_lock);
         return enif_make_tuple2(env, ATOM_OK, result);
     }
     else
@@ -522,6 +558,13 @@ ERL_NIF_TERM eleveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
         enif_inspect_binary(env, argv[1], &name_bin))
     {
+        enif_mutex_lock(db_handle->db_lock);
+        if (db_handle->db == NULL)
+        {
+            enif_mutex_unlock(db_handle->db_lock);
+            return error_einval(env);
+        }
+
         leveldb::Slice name((const char*)name_bin.data, name_bin.size);
         std::string value;
         if (db_handle->db->GetProperty(name, &value))
@@ -529,10 +572,12 @@ ERL_NIF_TERM eleveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
             ERL_NIF_TERM result;
             unsigned char* result_buf = enif_make_new_binary(env, value.size(), &result);
             memcpy(result_buf, value.c_str(), value.size());
+            enif_mutex_unlock(db_handle->db_lock);
             return enif_make_tuple2(env, ATOM_OK, result);
         }
         else
         {
+            enif_mutex_unlock(db_handle->db_lock);
             return ATOM_ERROR;
         }
     }
@@ -597,6 +642,13 @@ ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
     eleveldb_db_handle* db_handle;
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
     {
+        enif_mutex_lock(db_handle->db_lock);
+        if (db_handle->db == NULL)
+        {
+            enif_mutex_unlock(db_handle->db_lock);
+            return error_einval(env);
+        }
+
         leveldb::ReadOptions opts;
         leveldb::Iterator* itr = db_handle->db->NewIterator(opts);
         itr->SeekToFirst();
@@ -610,6 +662,7 @@ ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
             result = ATOM_TRUE;
         }
         delete itr;
+        enif_mutex_unlock(db_handle->db_lock);
         return result;
     }
     else
@@ -622,7 +675,9 @@ static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
 {
     // Delete any dynamically allocated memory stored in eleveldb_db_handle
     eleveldb_db_handle* handle = (eleveldb_db_handle*)arg;
-    delete handle->db;
+
+    if (handle->db)
+        delete handle->db;
 
     // Release any cache we explicitly allocated when setting up options
     if (handle->options.block_cache)
@@ -635,13 +690,14 @@ static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
     {
         delete handle->options.filter_policy;
     }
+    enif_mutex_destroy(handle->db_lock);
 }
 
 static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
 {
     // Delete any dynamically allocated memory stored in eleveldb_itr_handle
     eleveldb_itr_handle* itr_handle = (eleveldb_itr_handle*)arg;
-    if (itr_handle->itr != 0)
+     if (itr_handle->itr != 0)
     {
         delete itr_handle->itr;
         itr_handle->itr = 0;
@@ -667,6 +723,7 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     // Initialize common atoms
     ATOM(ATOM_OK, "ok");
     ATOM(ATOM_ERROR, "error");
+    ATOM(ATOM_EINVAL, "einval");
     ATOM(ATOM_TRUE, "true");
     ATOM(ATOM_FALSE, "false");
     ATOM(ATOM_CREATE_IF_MISSING, "create_if_missing");
