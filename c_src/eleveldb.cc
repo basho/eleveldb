@@ -39,7 +39,7 @@ typedef struct
     leveldb::DB* db;
     ErlNifMutex* db_lock; // protects access to db
     leveldb::Options options;
-    std::set<struct eleveldb_itr_handle*> iters;
+    std::set<struct eleveldb_itr_handle*>* iters;
 } eleveldb_db_handle;
 
 struct eleveldb_itr_handle
@@ -279,8 +279,8 @@ static void free_db(eleveldb_db_handle* db_handle)
         // shutdown all the iterators - grab the lock as
         // another thread could still be in eleveldb:fold
         // which will get {error, einval} returned next time
-        for (std::set<eleveldb_itr_handle*>::iterator iters_it = db_handle->iters.begin();
-             iters_it != db_handle->iters.end();
+        for (std::set<eleveldb_itr_handle*>::iterator iters_it = db_handle->iters->begin();
+             iters_it != db_handle->iters->end();
              ++iters_it)
         {
             eleveldb_itr_handle* itr_handle = *iters_it;
@@ -293,6 +293,10 @@ static void free_db(eleveldb_db_handle* db_handle)
         delete db_handle->db;
         db_handle->db = NULL;
         
+        // delete the iters
+        delete db_handle->iters;
+        db_handle->iters = NULL;
+
         // Release any cache we explicitly allocated when setting up options
         if (db_handle->options.block_cache)
         {
@@ -347,7 +351,7 @@ ERL_NIF_TERM eleveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         handle->db = db;
         handle->db_lock = enif_mutex_create((char*)"eleveldb_db_lock");
         handle->options = opts;
-        handle->iters = std::set<struct eleveldb_itr_handle*>();
+        handle->iters = new std::set<struct eleveldb_itr_handle*>();
         ERL_NIF_TERM result = enif_make_resource(env, handle);
         enif_release_resource(handle);
         return enif_make_tuple2(env, ATOM_OK, result);
@@ -522,7 +526,7 @@ ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
         ERL_NIF_TERM result = enif_make_resource(env, itr_handle);
         enif_release_resource(itr_handle);
 
-        db_handle->iters.insert(itr_handle);
+        db_handle->iters->insert(itr_handle);
         enif_mutex_unlock(db_handle->db_lock);
         return enif_make_tuple2(env, ATOM_OK, result);
     }
@@ -619,7 +623,12 @@ ERL_NIF_TERM eleveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TER
         enif_mutex_lock(itr_handle->db_handle->db_lock);
         enif_mutex_lock(itr_handle->itr_lock);
 
-        itr_handle->db_handle->iters.erase(itr_handle);
+        if (itr_handle->db_handle->iters)
+        {
+            // db may have been closed before the iter (the unit test
+            // does an evil close-inside-fold)
+            itr_handle->db_handle->iters->erase(itr_handle);
+        }
         free_itr(itr_handle);
 
         enif_mutex_unlock(itr_handle->itr_lock);
@@ -775,7 +784,7 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
     {
         enif_mutex_lock(itr_handle->db_handle->db_lock);
 
-        itr_handle->db_handle->iters.erase(itr_handle);
+        itr_handle->db_handle->iters->erase(itr_handle);
         free_itr(itr_handle);
 
         enif_mutex_unlock(itr_handle->db_handle->db_lock);
