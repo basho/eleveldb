@@ -784,7 +784,10 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
     {
         enif_mutex_lock(itr_handle->db_handle->db_lock);
 
-        itr_handle->db_handle->iters->erase(itr_handle);
+        if (itr_handle->db_handle->iters)
+        {
+            itr_handle->db_handle->iters->erase(itr_handle);
+        }
         free_itr(itr_handle);
 
         enif_mutex_unlock(itr_handle->db_handle->db_lock);
