@@ -634,7 +634,7 @@ ERL_NIF_TERM eleveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TER
         enif_mutex_unlock(itr_handle->itr_lock);
         enif_mutex_unlock(itr_handle->db_handle->db_lock);
 
-        enif_release_resource(itr_handle->db_handle);
+        enif_release_resource(itr_handle->db_handle); // matches keep in eleveldb_iterator()
 
         return ATOM_OK;
     }
@@ -791,7 +791,7 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
         free_itr(itr_handle);
 
         enif_mutex_unlock(itr_handle->db_handle->db_lock);
-        enif_release_resource(itr_handle->db_handle);
+        enif_release_resource(itr_handle->db_handle);  // matches keep in eleveldb_iterator()
     }
 
     enif_mutex_destroy(itr_handle->itr_lock);
