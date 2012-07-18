@@ -45,7 +45,7 @@ typedef struct
 struct eleveldb_itr_handle
 {
     leveldb::Iterator*   itr;
-    ErlNifMutex*         itr_lock;
+    ErlNifMutex*         itr_lock; // acquire *after* db_lock if both needed
     const leveldb::Snapshot*   snapshot;
     eleveldb_db_handle* db_handle;
     bool keys_only;
@@ -290,11 +290,8 @@ static void free_db(eleveldb_db_handle* db_handle)
         }
 
         // close the db 
-        if (db_handle->db)
-        {
-            delete db_handle->db;
-            db_handle->db = NULL;
-        }
+        delete db_handle->db;
+        db_handle->db = NULL;
         
         // Release any cache we explicitly allocated when setting up options
         if (db_handle->options.block_cache)
@@ -617,6 +614,8 @@ ERL_NIF_TERM eleveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TER
     eleveldb_itr_handle* itr_handle;
     if (enif_get_resource(env, argv[0], eleveldb_itr_RESOURCE, (void**)&itr_handle))
     {
+        // Make sure locks are acquired in the same order to close/free_db
+        // to avoid a deadlock.
         enif_mutex_lock(itr_handle->db_handle->db_lock);
         enif_mutex_lock(itr_handle->itr_lock);
 
@@ -770,18 +769,16 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
 {
     // Delete any dynamically allocated memory stored in eleveldb_itr_handle
     eleveldb_itr_handle* itr_handle = (eleveldb_itr_handle*)arg;
+
+    // No need to lock iter - it's the last reference
     if (itr_handle->itr != 0)
     {
-        delete itr_handle->itr;
-        itr_handle->itr = 0;
-
         enif_mutex_lock(itr_handle->db_handle->db_lock);
 
-        itr_handle->db_handle->db->ReleaseSnapshot(itr_handle->snapshot);
         itr_handle->db_handle->iters.erase(itr_handle);
+        free_itr(itr_handle);
 
         enif_mutex_unlock(itr_handle->db_handle->db_lock);
-
         enif_release_resource(itr_handle->db_handle);
     }
 
