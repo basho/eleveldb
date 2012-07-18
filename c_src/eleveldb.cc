@@ -94,6 +94,7 @@ static ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 static ErlNifFunc nif_funcs[] =
 {
     {"open", 2, eleveldb_open},
+    {"close", 1, eleveldb_close},
     {"get", 3, eleveldb_get},
     {"write", 3, eleveldb_write},
     {"iterator", 2, eleveldb_iterator},
@@ -287,6 +288,7 @@ static void free_db(eleveldb_db_handle* db_handle)
             free_itr(*iters_it);
             enif_mutex_unlock(itr_handle->itr_lock);
         }
+
         // close the db 
         if (db_handle->db)
         {
@@ -352,6 +354,32 @@ ERL_NIF_TERM eleveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         ERL_NIF_TERM result = enif_make_resource(env, handle);
         enif_release_resource(handle);
         return enif_make_tuple2(env, ATOM_OK, result);
+    }
+    else
+    {
+        return enif_make_badarg(env);
+    }
+}
+
+ERL_NIF_TERM eleveldb_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    eleveldb_db_handle* db_handle;
+    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
+    {
+        ERL_NIF_TERM result;
+
+        enif_mutex_lock(db_handle->db_lock);
+        if (db_handle->db)
+        {
+            free_db(db_handle);
+            result = ATOM_OK;
+        }
+        else
+        {
+            result = error_einval(env);
+        }
+        enif_mutex_unlock(db_handle->db_lock);
+        return result;
     }
     else
     {

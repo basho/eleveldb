@@ -22,6 +22,7 @@
 -module(eleveldb).
 
 -export([open/2,
+         close/1,
          get/3,
          put/4,
          delete/3,
@@ -94,6 +95,10 @@ init() ->
 
 -spec open(string(), open_options()) -> {ok, db_ref()} | {error, any()}.
 open(_Name, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec close(db_ref()) -> ok | {error, any()}.
+close(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec get(db_ref(), binary(), read_options()) -> {ok, binary()} | not_found | {error, any()}.
@@ -270,6 +275,7 @@ destroy_test() ->
     ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
     {ok, <<"456">>} = ?MODULE:get(Ref, <<"def">>, []),
     ok = ?MODULE:destroy("/tmp/eleveldb.destroy.test", []),
+    close(Ref),
     {error, {db_open, _}} = open("/tmp/eleveldb.destroy.test", [{error_if_exists, true}]).
 
 compression_test() ->
