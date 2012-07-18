@@ -139,6 +139,8 @@ iterator_close(_IRef) ->
 
 -type fold_fun() :: fun(({Key::binary(), Value::binary()}, any()) -> any()).
 
+%% Fold over the keys and values in the database
+%% will throw an exception if the database is closed while the fold runs
 -spec fold(db_ref(), fold_fun(), any(), read_options()) -> any().
 fold(Ref, Fun, Acc0, Opts) ->
     {ok, Itr} = iterator(Ref, Opts),
@@ -146,6 +148,8 @@ fold(Ref, Fun, Acc0, Opts) ->
 
 -type fold_keys_fun() :: fun((Key::binary(), any()) -> any()).
 
+%% Fold over the keys in the database
+%% will throw an exception if the database is closed while the fold runs
 -spec fold_keys(db_ref(), fold_keys_fun(), any(), read_options()) -> any().
 fold_keys(Ref, Fun, Acc0, Opts) ->
     {ok, Itr} = iterator(Ref, Opts, keys_only),
@@ -210,6 +214,8 @@ do_fold(Itr, Fun, Acc0, Opts) ->
         iterator_close(Itr)
     end.
 
+fold_loop({error, iterator_closed}, _Itr, _Fun, Acc0) ->
+    throw({iterator_closed, Acc0});
 fold_loop({error, invalid_iterator}, _Itr, _Fun, Acc0) ->
     Acc0;
 fold_loop({ok, K}, Itr, Fun, Acc0) ->
@@ -305,6 +311,19 @@ compression_test() ->
 	Log1Option = MatchCompressOption("/tmp/eleveldb.compress.1/LOG", "1"),
 	?assert(Log0Option =:= match andalso Log1Option =:= match).
 
+
+close_test() ->
+    os:cmd("rm -rf /tmp/eleveldb.close.test"),
+    {ok, Ref} = open("/tmp/eleveldb.close.test", [{create_if_missing, true}]),
+    ?assertEqual(ok, close(Ref)),
+    ?assertEqual({error, einval}, close(Ref)).
+
+close_fold_test() ->
+    os:cmd("rm -rf /tmp/eleveldb.close_fold.test"),
+    {ok, Ref} = open("/tmp/eleveldb.close_fold.test", [{create_if_missing, true}]),
+    ok = eleveldb:put(Ref, <<"k">>,<<"v">>,[]),
+    ?assertException(throw, {iterator_closed, ok}, % ok is returned by close as the acc
+                     eleveldb:fold(Ref, fun(_,A) -> eleveldb:close(Ref) end, undefined, [])).
 
 -ifdef(EQC).
 
