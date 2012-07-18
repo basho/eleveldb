@@ -280,8 +280,8 @@ destroy_test() ->
     {ok, Ref} = open("/tmp/eleveldb.destroy.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
     {ok, <<"456">>} = ?MODULE:get(Ref, <<"def">>, []),
-    ok = ?MODULE:destroy("/tmp/eleveldb.destroy.test", []),
     close(Ref),
+    ok = ?MODULE:destroy("/tmp/eleveldb.destroy.test", []),
     {error, {db_open, _}} = open("/tmp/eleveldb.destroy.test", [{error_if_exists, true}]).
 
 compression_test() ->
