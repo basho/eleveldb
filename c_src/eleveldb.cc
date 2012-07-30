@@ -136,8 +136,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         { 
             /* DEPRECATED: the old block_size atom was actually ignored. */
             unsigned long block_sz;
-            if (enif_get_ulong(env, option[1], &block_sz)) 
-             ; // ignore
+            enif_get_ulong(env, option[1], &block_sz); // ignore
         }
         else if (option[0] == ATOM_SST_BLOCK_SIZE)
         {
