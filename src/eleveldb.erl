@@ -71,7 +71,8 @@ init() ->
                          {error_if_exists, boolean()} |
                          {write_buffer_size, pos_integer()} |
                          {max_open_files, pos_integer()} |
-                         {block_size, pos_integer()} |
+                         {block_size, pos_integer()} |                  %% DEPRECATED
+                         {sst_block_size, pos_integer()} |
                          {block_restart_interval, pos_integer()} |
                          {cache_size, pos_integer()} |
                          {paranoid_checks, boolean()} |
@@ -176,7 +177,8 @@ option_types(open) ->
      {error_if_exists, bool},
      {write_buffer_size, integer},
      {max_open_files, integer},
-     {block_size, integer},
+     {block_size, integer},                            %% DEPRECATED
+     {sst_block_size, integer},
      {block_restart_interval, integer},
      {cache_size, integer},
      {paranoid_checks, bool},

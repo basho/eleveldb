@@ -62,7 +62,8 @@ static ERL_NIF_TERM ATOM_CREATE_IF_MISSING;
 static ERL_NIF_TERM ATOM_ERROR_IF_EXISTS;
 static ERL_NIF_TERM ATOM_WRITE_BUFFER_SIZE;
 static ERL_NIF_TERM ATOM_MAX_OPEN_FILES;
-static ERL_NIF_TERM ATOM_BLOCK_SIZE;
+static ERL_NIF_TERM ATOM_BLOCK_SIZE;                    /* DEPRECATED */
+static ERL_NIF_TERM ATOM_SST_BLOCK_SIZE;
 static ERL_NIF_TERM ATOM_BLOCK_RESTART_INTERVAL;
 static ERL_NIF_TERM ATOM_ERROR_DB_OPEN;
 static ERL_NIF_TERM ATOM_ERROR_DB_PUT;
@@ -133,9 +134,16 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         }
         else if (option[0] == ATOM_BLOCK_SIZE) 
         { 
+            /* DEPRECATED: the old block_size atom was actually ignored. */
             unsigned long block_sz;
             if (enif_get_ulong(env, option[1], &block_sz)) 
-                opts.block_size = block_sz;
+             ; // ignore
+        }
+        else if (option[0] == ATOM_SST_BLOCK_SIZE)
+        {
+            unsigned long sst_block_sz(0);
+            if (enif_get_ulong(env, option[1], &sst_block_sz))
+             opts.block_size = sst_block_sz; // Note: We just set the "old" block_size option. 
         }
         else if (option[0] == ATOM_BLOCK_RESTART_INTERVAL) 
         { 
@@ -820,6 +828,7 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_WRITE_BUFFER_SIZE, "write_buffer_size");
     ATOM(ATOM_MAX_OPEN_FILES, "max_open_files");
     ATOM(ATOM_BLOCK_SIZE, "block_size");
+    ATOM(ATOM_SST_BLOCK_SIZE, "sst_block_size");
     ATOM(ATOM_BLOCK_RESTART_INTERVAL, "block_restart_interval");
     ATOM(ATOM_ERROR_DB_OPEN,"db_open");
     ATOM(ATOM_ERROR_DB_PUT, "db_put");
