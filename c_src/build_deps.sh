@@ -12,7 +12,7 @@ LEVELDB_VSN="0e51889b4093e067206151f94ec9aae31b81ab52" # June 25 merge w/ mv-wri
                                                        # June 29 merge w/ mv-compress-msg for
                                                        # compression LOG fix
                                                        # July 18 merge w/ BLOCK.bad fixes
-                                                       $ July 30 merge w/ cache lru fixes
+                                                       # July 30 merge w/ cache lru fixes
 SNAPPY_VSN="1.0.4"
 
 set -e
