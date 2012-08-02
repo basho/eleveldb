@@ -1,11 +1,12 @@
+REBAR := ./rebar
 
 all: compile
 
 compile:
-	./rebar compile
+	$(REBAR) compile
 
 test: compile
-	./rebar eunit
+	$(REBAR) eunit
 
 clean:
-	./rebar clean
+	$(REBAR) clean
