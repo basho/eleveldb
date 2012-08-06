@@ -1,3 +1,4 @@
+#include <iostream>// JFW: debugging-- remove me!
 // -------------------------------------------------------------------
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
@@ -28,29 +29,20 @@
 #include "leveldb/filter_policy.h"
 
 #include <set>
+#include <deque>
+#include <queue>
+#include <vector>
+#include <algorithm>
 
+using std::for_each;
+
+/* JFW: The preponderance of forward declarations suggests to me that we might want to
+move eleveldb.cc support into eleveldb.hpp and put the bindings for erlang into eleveldb_nif.h
+or something. */
+
+static ErlNifResourceType* eleveldb_write_thread_RESOURCE;
 static ErlNifResourceType* eleveldb_db_RESOURCE;
 static ErlNifResourceType* eleveldb_itr_RESOURCE;
-
-struct eleveldb_itr_handle;
-
-typedef struct
-{
-    leveldb::DB* db;
-    ErlNifMutex* db_lock; // protects access to db
-    leveldb::Options options;
-    std::set<struct eleveldb_itr_handle*>* iters;
-} eleveldb_db_handle;
-
-struct eleveldb_itr_handle
-{
-    leveldb::Iterator*   itr;
-    ErlNifMutex*         itr_lock; // acquire *after* db_lock if both needed
-    const leveldb::Snapshot*   snapshot;
-    eleveldb_db_handle* db_handle;
-    bool keys_only;
-};
-typedef struct eleveldb_itr_handle eleveldb_itr_handle;
 
 // Atoms (initialized in on_load)
 static ERL_NIF_TERM ATOM_TRUE;
@@ -92,6 +84,31 @@ static ERL_NIF_TERM ATOM_COMPRESSION;
 static ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
 static ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 
+struct eleveldb_itr_handle;
+struct eleveldb_db_handle;
+
+ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Options& opts);
+ERL_NIF_TERM parse_read_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::ReadOptions& opts);
+ERL_NIF_TERM parse_write_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::WriteOptions& opts);
+ERL_NIF_TERM write_batch_item(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::WriteBatch& batch);
+ERL_NIF_TERM error_einval(ErlNifEnv* env);
+ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Status& status);
+ERL_NIF_TERM eleveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM eleveldb_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+static ERL_NIF_TERM slice_to_binary(ErlNifEnv* env, leveldb::Slice s);
+ERL_NIF_TERM eleveldb_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM eleveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM eleveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM eleveldb_repair(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM eleveldb_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg);
+static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg);
+static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info);
+
 static ErlNifFunc nif_funcs[] =
 {
     {"open", 2, eleveldb_open},
@@ -107,6 +124,185 @@ static ErlNifFunc nif_funcs[] =
     {"repair", 2, eleveldb_repair},
     {"is_empty", 1, eleveldb_is_empty},
 };
+
+extern "C" {
+    ERL_NIF_INIT(eleveldb, nif_funcs, &on_load, NULL, NULL, NULL);
+}
+
+/* JFW: The border of C++ land shall soon stand here: 
+         - I'm in favor of separate header and even source files. It makes
+         life a little easier. Something for the next pass.
+*/
+
+template <typename Acc> 
+ERL_NIF_TERM fold(ErlNifEnv* env, ERL_NIF_TERM list,
+                  ERL_NIF_TERM(*fun)(ErlNifEnv*, ERL_NIF_TERM, Acc&),
+                  Acc& acc);
+
+static void free_itr(eleveldb_itr_handle* itr_handle);
+
+typedef std::set<eleveldb_itr_handle *> itr_handle_set;
+
+namespace util {
+void release(itr_handle_set::value_type itr_handle);
+void release(itr_handle_set& itr_handles);
+} // namespace util
+
+/* JFW: These need to be kept quite C-friendly for the moment, I've tried to avoid anything
+fancy: */
+struct eleveldb_itr_handle
+{
+    leveldb::Iterator*          itr;
+    ErlNifMutex*                itr_lock; // acquire *after* db_lock if both needed
+    const leveldb::Snapshot*    snapshot;
+    eleveldb_db_handle*         db_handle;
+    bool                        keys_only;
+};
+
+struct eleveldb_db_handle
+{
+    leveldb::DB*        db;
+    leveldb::Options    options;
+
+    ErlNifMutex*        db_lock; // protects access to member db
+
+    itr_handle_set*     iters;
+
+    void lock()          { enif_mutex_lock(db_lock); }
+    void unlock()        { enif_mutex_unlock(db_lock); }
+
+    static eleveldb_db_handle *construct(leveldb::DB *db, leveldb::Options& options); 
+    static void destroy(eleveldb_db_handle *handle);
+};
+
+eleveldb_db_handle *eleveldb_db_handle::construct(leveldb::DB *db, leveldb::Options& options)
+{
+ eleveldb_db_handle *ret = 0;
+
+ ret = (eleveldb_db_handle *)enif_alloc_resource(eleveldb_db_RESOURCE, sizeof(eleveldb_db_handle));
+
+ if(0 == ret)
+  return 0;
+
+ memset(ret, 0, sizeof(eleveldb_db_handle));
+
+ try
+  {
+        ret->db      = db;
+        ret->options = options;
+
+        ret->db_lock = enif_mutex_create((char *)"eleveldb_db_lock");
+        if(0 == ret->db_lock)
+         throw;
+
+        ret->iters = new itr_handle_set;
+
+        return ret;
+  }
+ catch(...)
+  {
+// JFW release partial construction here
+std::cout << "JFW: FAIL release resources" << std::endl;
+  }
+
+ return 0;
+}
+
+void eleveldb_db_handle::destroy(eleveldb_db_handle *db_handle)
+{
+ if(0 == db_handle or 0 == db_handle->db)
+  return;
+
+ util::release(*db_handle->iters);
+
+ delete db_handle->db, db_handle->db = 0;
+ delete db_handle->iters, db_handle->iters = 0;
+
+ if(db_handle->options.block_cache)
+  delete db_handle->options.block_cache, db_handle->options.block_cache = 0;
+
+ if(db_handle->options.filter_policy)
+  delete db_handle->options.filter_policy, db_handle->options.filter_policy = 0;
+}
+
+namespace eleveldb {
+/* Write thread support: */
+class write_queue_mgr_t
+{
+    typedef std::vector<char>                   buffer_t;
+    typedef std::pair<buffer_t, buffer_t>       kvpair_t;
+
+    /* Note: Erlang has special rules for thread management, do not manage them in RAII style here-- we might
+    be able to do that, but not with an object with static lifetime: */
+    static ErlNifTid*                           write_thread;
+
+    static std::queue<kvpair_t>                 write_queue;
+
+    public:
+    static bool erlang_init(ErlNifEnv *env)
+    {
+std::cout << "JFW: erlang_init() starting write thread" << std::endl;
+/*
+        int result = enif_thread_create("eleveldb_write_thread", write_thread, write_thread_submit, this 0);
+
+        if(0 == result)
+         {
+                // JFW: errno should contain information -- how are we to handle it?
+                return false;
+         }
+*/
+        return true;
+    }
+
+    static bool erlang_close(ErlNifEnv *env)
+    {
+std::cout << "JFW: erlang_close()" << std::endl;
+void *result;
+        if(false == enif_thread_join(*write_thread, &result))
+         return false; // JFW: what error action is appropriate?
+
+std::cout << "JFW: erlang_close() ok" << std::endl;
+        return true;
+    }
+};
+
+ErlNifTid* write_queue_mgr_t::write_thread = 0;
+static write_queue_mgr_t write_queue_mgr;
+
+// JFW: experimenting to see if this is reliably called:
+static void eleveldb_write_thread_reap(ErlNifEnv* env, void* arg)
+{
+ write_queue_mgr.erlang_close(env);
+}
+
+} // namespace eleveldb
+
+// JFW: this should also go in the eleveldb namespace-- next cleanup pass:
+namespace util {
+
+void release(itr_handle_set::value_type itr_handle)
+{
+ /* Grab the lock as another thread could still be in eleveldb::fold, which will 
+ get {error, einval} returned next time: */
+ enif_mutex_lock(itr_handle->itr_lock);
+
+ if(0 != itr_handle->itr)
+  {
+        delete itr_handle->itr;
+        itr_handle->itr = 0;
+        itr_handle->db_handle->db->ReleaseSnapshot(itr_handle->snapshot);
+  }
+         
+ enif_mutex_unlock(itr_handle->itr_lock);
+}
+
+void release(itr_handle_set& itr_handles)
+{
+ for_each(itr_handles.begin(), itr_handles.end(), 
+          static_cast<void(*)(itr_handle_set::value_type)>(util::release));
+}
+
+} // namespace util
 
 ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Options& opts)
 {
@@ -250,9 +446,10 @@ ERL_NIF_TERM write_batch_item(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::WriteB
     return item;
 }
 
-template <typename Acc> ERL_NIF_TERM fold(ErlNifEnv* env, ERL_NIF_TERM list,
-                                          ERL_NIF_TERM(*fun)(ErlNifEnv*, ERL_NIF_TERM, Acc&),
-                                          Acc& acc)
+template <typename Acc> 
+ERL_NIF_TERM fold(ErlNifEnv* env, ERL_NIF_TERM list,
+                  ERL_NIF_TERM(*fun)(ErlNifEnv*, ERL_NIF_TERM, Acc&),
+                  Acc& acc)
 {
     ERL_NIF_TERM head, tail = list;
     while (enif_get_list_cell(env, tail, &head, &tail))
@@ -278,47 +475,8 @@ static void free_itr(eleveldb_itr_handle* itr_handle)
     }
 }
 
-// Free dynamic elements of database - acquire lock before calling
-static void free_db(eleveldb_db_handle* db_handle)
-{
-    if (db_handle->db)
-    {
-        // shutdown all the iterators - grab the lock as
-        // another thread could still be in eleveldb:fold
-        // which will get {error, einval} returned next time
-        for (std::set<eleveldb_itr_handle*>::iterator iters_it = db_handle->iters->begin();
-             iters_it != db_handle->iters->end();
-             ++iters_it)
-        {
-            eleveldb_itr_handle* itr_handle = *iters_it;
-            enif_mutex_lock(itr_handle->itr_lock);
-            free_itr(*iters_it);
-            enif_mutex_unlock(itr_handle->itr_lock);
-        }
-
-        // close the db 
-        delete db_handle->db;
-        db_handle->db = NULL;
-        
-        // delete the iters
-        delete db_handle->iters;
-        db_handle->iters = NULL;
-
-        // Release any cache we explicitly allocated when setting up options
-        if (db_handle->options.block_cache)
-        {
-            delete db_handle->options.block_cache;
-        }
-        
-        // Clean up any filter policies
-        if (db_handle->options.filter_policy)
-        {
-            delete db_handle->options.filter_policy;
-        }
-    }
-}
-
-
+/* JFW: It might be nice to unify these into a single error interface-- as well as provide a mapping
+of C++ flavor tuples (Boost or C++11) on the next pass: */
 ERL_NIF_TERM error_einval(ErlNifEnv* env)
 {
     return enif_make_tuple2(env, ATOM_ERROR, ATOM_EINVAL);
@@ -349,18 +507,15 @@ ERL_NIF_TERM eleveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         {
             return error_tuple(env, ATOM_ERROR_DB_OPEN, status);
         }
+        
+        eleveldb_db_handle* handle = eleveldb_db_handle::construct(db, opts);
+        if(0 == handle)
+         return enif_make_badarg(env); // JFW: appropriate or not?-- how to signal failure?
 
-        // Setup handle
-        eleveldb_db_handle* handle =
-            (eleveldb_db_handle*) enif_alloc_resource(eleveldb_db_RESOURCE,
-                                                       sizeof(eleveldb_db_handle));
-        memset(handle, '\0', sizeof(eleveldb_db_handle));
-        handle->db = db;
-        handle->db_lock = enif_mutex_create((char*)"eleveldb_db_lock");
-        handle->options = opts;
-        handle->iters = new std::set<struct eleveldb_itr_handle*>();
+        // Make the leveldb handle an Erlang resource and relenquish control to Erlang:
         ERL_NIF_TERM result = enif_make_resource(env, handle);
         enif_release_resource(handle);
+
         return enif_make_tuple2(env, ATOM_OK, result);
     }
     else
@@ -376,17 +531,20 @@ ERL_NIF_TERM eleveldb_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     {
         ERL_NIF_TERM result;
 
-        enif_mutex_lock(db_handle->db_lock);
+        db_handle->lock();
+
         if (db_handle->db)
         {
-            free_db(db_handle);
+            eleveldb_db_handle::destroy(db_handle);
             result = ATOM_OK;
         }
         else
         {
             result = error_einval(env);
         }
-        enif_mutex_unlock(db_handle->db_lock);
+
+        db_handle->unlock();
+
         return result;
     }
     else
@@ -397,20 +555,22 @@ ERL_NIF_TERM eleveldb_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    eleveldb_db_handle* handle;
+    eleveldb_db_handle* db_handle;
     ErlNifBinary key;
-    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&handle) &&
+    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
         enif_inspect_binary(env, argv[1], &key) &&
         enif_is_list(env, argv[2]))
     {
-        enif_mutex_lock(handle->db_lock);
-        if (handle->db == NULL)
+        db_handle->lock(); 
+
+        if (db_handle->db == NULL)
         {
-            enif_mutex_unlock(handle->db_lock);
+            db_handle->unlock();
+
             return error_einval(env);
         }
 
-        leveldb::DB* db = handle->db;
+        leveldb::DB* db = db_handle->db;
         leveldb::Slice key_slice((const char*)key.data, key.size);
 
         // Parse out the read options
@@ -425,12 +585,15 @@ ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
             ERL_NIF_TERM value_bin;
             unsigned char* value = enif_make_new_binary(env, size, &value_bin);
             memcpy(value, sval.data(), size);
-            enif_mutex_unlock(handle->db_lock);
+
+            db_handle->unlock();
+
             return enif_make_tuple2(env, ATOM_OK, value_bin);
         }
         else
         {
-            enif_mutex_unlock(handle->db_lock);
+            db_handle->unlock();
+
             return ATOM_NOT_FOUND;
         }
     }
@@ -442,15 +605,19 @@ ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    eleveldb_db_handle* handle;
-    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&handle) &&
+//JFW std::cout << "JFW: eleveldb_write(): argc = " << argc << '\n';
+
+    eleveldb_db_handle* db_handle;
+    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
         enif_is_list(env, argv[1]) && // Actions
         enif_is_list(env, argv[2]))   // Opts
     {
-        enif_mutex_lock(handle->db_lock);
-        if (handle->db == NULL)
+        db_handle->lock();
+
+        if (db_handle->db == NULL)
         {
-            enif_mutex_unlock(handle->db_lock);
+            db_handle->unlock();
+
             return error_einval(env);
         }
 
@@ -465,22 +632,25 @@ ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
             leveldb::WriteOptions opts;
             fold(env, argv[2], parse_write_option, opts);
 
-            // TODO: Why does the API want a WriteBatch* versus a ref?
-            leveldb::Status status = handle->db->Write(opts, &batch);
+            leveldb::Status status = db_handle->db->Write(opts, &batch);
+
             if (status.ok())
             {
-                enif_mutex_unlock(handle->db_lock);
+                db_handle->unlock();
+
                 return ATOM_OK;
             }
             else
             {
-                enif_mutex_unlock(handle->db_lock);
+                db_handle->unlock();
+
                 return error_tuple(env, ATOM_ERROR_DB_WRITE, status);
             }
         }
         else
         {
-            enif_mutex_unlock(handle->db_lock);
+            db_handle->unlock();
+
             // Failed to parse out batch commands; bad item was returned from fold.
             return enif_make_tuple2(env, ATOM_ERROR,
                                     enif_make_tuple2(env, ATOM_BAD_WRITE_ACTION,
@@ -499,10 +669,12 @@ ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
         enif_is_list(env, argv[1])) // Options
     {
-        enif_mutex_lock(db_handle->db_lock);
+        db_handle->lock();
+
         if (db_handle->db == NULL)
         {
-            enif_mutex_unlock(db_handle->db_lock);
+            db_handle->unlock();
+
             return error_einval(env);
         }
 
@@ -534,7 +706,9 @@ ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
         enif_release_resource(itr_handle);
 
         db_handle->iters->insert(itr_handle);
-        enif_mutex_unlock(db_handle->db_lock);
+
+        db_handle->unlock();
+
         return enif_make_tuple2(env, ATOM_OK, result);
     }
     else
@@ -619,15 +793,14 @@ ERL_NIF_TERM eleveldb_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM
     }
 }
 
-
 ERL_NIF_TERM eleveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     eleveldb_itr_handle* itr_handle;
     if (enif_get_resource(env, argv[0], eleveldb_itr_RESOURCE, (void**)&itr_handle))
     {
-        // Make sure locks are acquired in the same order to close/free_db
+        // Make sure locks are acquired in the same order to close
         // to avoid a deadlock.
-        enif_mutex_lock(itr_handle->db_handle->db_lock);
+        itr_handle->db_handle->lock();
         enif_mutex_lock(itr_handle->itr_lock);
 
         if (itr_handle->db_handle->iters)
@@ -639,7 +812,7 @@ ERL_NIF_TERM eleveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TER
         free_itr(itr_handle);
 
         enif_mutex_unlock(itr_handle->itr_lock);
-        enif_mutex_unlock(itr_handle->db_handle->db_lock);
+        itr_handle->db_handle->unlock();
 
         enif_release_resource(itr_handle->db_handle); // matches keep in eleveldb_iterator()
 
@@ -658,10 +831,12 @@ ERL_NIF_TERM eleveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
         enif_inspect_binary(env, argv[1], &name_bin))
     {
-        enif_mutex_lock(db_handle->db_lock);
+        db_handle->lock();
+
         if (db_handle->db == NULL)
         {
-            enif_mutex_unlock(db_handle->db_lock);
+            db_handle->unlock();
+
             return error_einval(env);
         }
 
@@ -672,12 +847,15 @@ ERL_NIF_TERM eleveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
             ERL_NIF_TERM result;
             unsigned char* result_buf = enif_make_new_binary(env, value.size(), &result);
             memcpy(result_buf, value.c_str(), value.size());
-            enif_mutex_unlock(db_handle->db_lock);
+
+            db_handle->unlock();
+
             return enif_make_tuple2(env, ATOM_OK, result);
         }
         else
         {
-            enif_mutex_unlock(db_handle->db_lock);
+            db_handle->unlock();
+
             return ATOM_ERROR;
         }
     }
@@ -742,10 +920,12 @@ ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
     eleveldb_db_handle* db_handle;
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
     {
-        enif_mutex_lock(db_handle->db_lock);
+        db_handle->lock();
+
         if (db_handle->db == NULL)
         {
-            enif_mutex_unlock(db_handle->db_lock);
+            db_handle->unlock();
+
             return error_einval(env);
         }
 
@@ -761,8 +941,11 @@ ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
         {
             result = ATOM_TRUE;
         }
+
         delete itr;
-        enif_mutex_unlock(db_handle->db_lock);
+
+        db_handle->unlock();
+
         return result;
     }
     else
@@ -776,7 +959,7 @@ static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
     // Delete any dynamically allocated memory stored in eleveldb_db_handle
     eleveldb_db_handle* handle = (eleveldb_db_handle*)arg;
 
-    free_db(handle);
+    eleveldb_db_handle::destroy(handle);
 
     enif_mutex_destroy(handle->db_lock);
 }
@@ -789,34 +972,50 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
     // No need to lock iter - it's the last reference
     if (itr_handle->itr != 0)
     {
-        enif_mutex_lock(itr_handle->db_handle->db_lock);
+        itr_handle->db_handle->lock();
 
         if (itr_handle->db_handle->iters)
         {
             itr_handle->db_handle->iters->erase(itr_handle);
         }
+
         free_itr(itr_handle);
 
-        enif_mutex_unlock(itr_handle->db_handle->db_lock);
+        itr_handle->db_handle->lock();
+
         enif_release_resource(itr_handle->db_handle);  // matches keep in eleveldb_iterator()
     }
 
     enif_mutex_destroy(itr_handle->itr_lock);
 }
 
-#define ATOM(Id, Value) { Id = enif_make_atom(env, Value); }
-
 static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 {
+std::cout << "JFW: on_load() [note: modify for thread]" << std::endl;
+
     ErlNifResourceFlags flags = (ErlNifResourceFlags)(ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER);
-    eleveldb_db_RESOURCE = enif_open_resource_type(env, NULL, "eleveldb_db_resource",
+
+    /* JFW: Note that enif_open_resource_type() can return NULL, and we should check it. A nice function
+    here for doing that might be helpful (perhaps wrap this in an exception block). */
+
+//JFW: going to see if this is reliably called in reverse-order:
+    eleveldb_write_thread_RESOURCE = enif_open_resource_type(env, 0, "eleveldb_write_thread_reap", &eleveldb::eleveldb_write_thread_reap, flags, 0);
+
+    eleveldb_db_RESOURCE =  enif_open_resource_type(env, NULL, "eleveldb_db_resource",
                                                     &eleveldb_db_resource_cleanup,
                                                     flags, NULL);
+
     eleveldb_itr_RESOURCE = enif_open_resource_type(env, NULL, "eleveldb_itr_resource",
-                                                     &eleveldb_itr_resource_cleanup,
-                                                     flags, NULL);
+                                                    &eleveldb_itr_resource_cleanup,
+                                                    flags, NULL);
+
+    // JFW: I hate doing this here, but it appears to be the best option at the moment:
+    if(false == eleveldb::write_queue_mgr.erlang_init(env))
+     ; // JFW: do some meaningful error action here
 
     // Initialize common atoms
+// JFW: We might want to turn this into a nice inline function (or at least check for defined-ness):
+#define ATOM(Id, Value) { Id = enif_make_atom(env, Value); }
     ATOM(ATOM_OK, "ok");
     ATOM(ATOM_ERROR, "error");
     ATOM(ATOM_EINVAL, "einval");
@@ -855,9 +1054,8 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_KEYS_ONLY, "keys_only");
     ATOM(ATOM_COMPRESSION, "compression");
     ATOM(ATOM_USE_BLOOMFILTER, "use_bloomfilter");
+#undef ATOM
+
     return 0;
 }
 
-extern "C" {
-    ERL_NIF_INIT(eleveldb, nif_funcs, &on_load, NULL, NULL, NULL);
-}
