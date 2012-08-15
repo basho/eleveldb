@@ -170,10 +170,10 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         }
         else if (option[0] == ATOM_USE_BLOOMFILTER)
         {
-            // By default, we want to use a 10-bit-per-key bloom filter on a
+            // By default, we want to use a 16-bit-per-key bloom filter on a
             // per-table basis. We only disable it if explicitly asked. Alternatively,
             // one can provide a value for # of bits-per-key.
-            unsigned long bfsize = 10;
+            unsigned long bfsize = 16;
             if (option[1] == ATOM_TRUE || enif_get_ulong(env, option[1], &bfsize))
             {
                 opts.filter_policy = leveldb::NewBloomFilterPolicy(bfsize);
