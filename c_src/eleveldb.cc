@@ -148,8 +148,6 @@ bool eleveldb_thread_pool_handle::initialize(ErlNifEnv *nif_env)
         std::ostringstream thread_name;
         thread_name << "eleveldb_write_thread_" << i;
 
-std::cout << "JFW: spin up thread: " << thread_name.str() << std::endl;
-
         const int result = enif_thread_create(const_cast<char *>(thread_name.str().c_str()), thread_id, 
                                               eleveldb_write_thread_worker, 
                                               static_cast<void *>(this),
