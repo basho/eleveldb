@@ -25,6 +25,7 @@
 extern "C" {
 
 #include "erl_nif.h"
+#include "erl_driver.h"
 
 // Prototypes
 ERL_NIF_TERM eleveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
