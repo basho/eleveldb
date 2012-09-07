@@ -1,7 +1,7 @@
 {application, eleveldb,
  [
   {description, ""},
-  {vsn, "1.2.2p3"},
+  {vsn, "1.2.2p4"},
   {registered, []},
   {applications, [
                   kernel,
