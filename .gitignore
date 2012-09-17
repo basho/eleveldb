@@ -1,3 +1,5 @@
+*.a
+build_config.mk
 .eunit/*
 deps/*
 priv/*

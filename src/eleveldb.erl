@@ -59,7 +59,12 @@ init() ->
                  {error, bad_name} ->
                      case code:which(?MODULE) of
                          Filename when is_list(Filename) ->
-                             filename:join([filename:dirname(Filename),"../priv", "eleveldb"]);
+                             case filelib:is_file(filename:dirname(Filename)) of
+                                 true -> %% It's inside an escript. We assume whoever did that has zipped the .so file next to the script file
+                                     filename:join(filename:dirname(filename:dirname(Filename)), "eleveldb");
+                                 false ->
+                                     filename:join([filename:dirname(Filename),"../priv", "eleveldb"])
+                             end;
                          _ ->
                              filename:join("../priv", "eleveldb")
                      end;
@@ -165,6 +170,7 @@ status(_Ref, _Key) ->
 destroy(_Name, _Opts) ->
     erlang:nif_error({erlang, not_loaded}).
 
+-spec repair(string(), open_options()) -> ok.
 repair(_Name, _Opts) ->
     ok.
 

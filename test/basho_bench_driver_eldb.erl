@@ -1,7 +1,7 @@
 
 -module(basho_bench_driver_eldb).
 
--record(state, { ref }).
+-record(state, { ref  :: e_leveldb:db_ref() }).
 
 -export([new/1,
          run/4]).
@@ -9,10 +9,10 @@
 %% ====================================================================
 %% API
 %% ====================================================================
-
+-spec new(pos_integer()) -> {ok, #state{}} | {error, term()}.
 new(Id) ->
-    %% Pull the eleveldb_config key which has all the key/value pairs for the
-    %% engine -- stuff everything into the eleveldb application namespace
+    %% Pull the e_leveldb_config key which has all the key/value pairs for the
+    %% engine -- stuff everything into the e_leveldb application namespace
     %% so that starting the app will pull it in.
     application:load(eleveldb),
     Config = basho_bench_config:get(eleveldb_config, [{max_open_files, 50}]),
@@ -44,6 +44,7 @@ new(Id) ->
             {error, Reason}
     end.
 
+-spec run(get|put, fun(() -> e_leveldb:iterator_action()), _, #state{}) -> {ok, #state{}} | {error, term(), #state{}}.
 run(get, KeyGen, _ValueGen, State) ->
     Key = iolist_to_binary(KeyGen()),
     case eleveldb:get(State#state.ref, Key, []) of
