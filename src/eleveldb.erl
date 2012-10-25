@@ -65,7 +65,7 @@ init() ->
                  Dir ->
                      filename:join(Dir, "eleveldb")
              end,
-    erlang:load_nif(SoName, 0).
+    erlang:load_nif(SoName, 0). %% JFW: set up thread pool here: application:get_env() 
 
 -type open_options() :: [{create_if_missing, boolean()} |
                          {error_if_exists, boolean()} |
@@ -112,10 +112,11 @@ put(Ref, Key, Value, Opts) ->
     CallerRef = make_ref(),
     case write(CallerRef, Ref, [{put, Key, Value}], Opts) of
     ok ->
-io:print_chars("JFW: write() waiting for message after put()..."),
+io:format("JFW: write() waiting for message after put()..."),
         receive
             {ok, CallerRef} -> ok;
             {error, CallerRef, Info} -> {error, Info}
+; X -> io:format("JFW: bad result: ~p\n\r", [X])
         end
     end.
 
@@ -258,12 +259,12 @@ validate_type(_, _)                                          -> false.
 -ifdef(TEST).
 
 open_test() ->
-io:format("\n\rJFW: ABOUT TO rm before db open\n"),
     os:cmd("rm -rf /tmp/eleveldb.open.test"),
+io:format("\n\rJFW: about to call db_open():\n\r"),
     {ok, Ref} = open("/tmp/eleveldb.open.test", [{create_if_missing, true}, {write_threads, 5}]),
-io:format("JFW: db open\n"),
+io:format("JFW: db_open() OK\n\r"),
     ok = ?MODULE:put(Ref, <<"abc">>, <<"123">>, []),
-io:format("JFW BACK FROM put()\n"),
+io:format("JFW BACK FROM put()\n\r"),
     {ok, <<"123">>} = ?MODULE:get(Ref, <<"abc">>, []),
     not_found = ?MODULE:get(Ref, <<"def">>, []).
 

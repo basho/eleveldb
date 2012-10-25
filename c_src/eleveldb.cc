@@ -475,8 +475,9 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             {
                 /* JFW: This is slightly problematic since we don't really want to set the size of the
                 thread pool per leveldb, but rather for all leveldb handles. I'm not sure I see the right
-                way to propegate a global setting, this is "symbolic" plumbing: */
-std::cout << "JFW: setting n_write_threads to " << n_write_threads << " but will have no effect for now. (FIXME)" << std::endl;
+                way to propegate a global setting, this is "symbolic" plumbing (and, we will probably want a way
+                for users to resize the thread pool dynamically down the line): */
+std::cout << "JFW: setting n_write_threads to " << n_write_threads << ", but this will have no effect for now. (FIXME)" << std::endl;
                 eleveldb_priv_data *priv = static_cast<eleveldb_priv_data *>(enif_priv_data(env));
                 priv->n_threads = n_write_threads;
             }
@@ -535,6 +536,7 @@ ERL_NIF_TERM write_batch_item(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::WriteB
         {
             leveldb::Slice key_slice((const char*)key.data, key.size);
             leveldb::Slice value_slice((const char*)value.data, value.size);
+/* JFW: if batch.Put() copies, great; otherwise, inc refcount on Slice data */
             batch.Put(key_slice, value_slice);
             return ATOM_OK;
         }
@@ -761,7 +763,7 @@ ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 // JFW: variable batch should be a pointer (turns out to be tricky-- maybe needs to be a resource? How to preserve object lifetime?):
         // Traverse actions and build a write batch
-        leveldb::WriteBatch batch;
+        leveldb::WriteBatch batch; // JFW: might need to make this a pointer to a binary: look at write_batch_item(); 
 
         ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, batch);
         if (result == ATOM_OK)
@@ -1124,7 +1126,6 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
 
 static void on_unload(ErlNifEnv *env, void *priv_data)
 {
-std::cout << "JFW: on_unload()" << std::endl;
  eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(enif_priv_data(env));
  destroy(p);
 }
