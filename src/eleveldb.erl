@@ -26,7 +26,7 @@
          get/3,
          put/4,
          delete/3,
-         write/3,
+         write/4,
          fold/4,
          fold_keys/4,
          status/2,
@@ -77,7 +77,8 @@ init() ->
                          {cache_size, pos_integer()} |
                          {paranoid_checks, boolean()} |
                          {compression, boolean()} |
-                         {use_bloomfilter, boolean() | pos_integer()}].
+                         {use_bloomfilter, boolean() | pos_integer()} |
+                         {write_threads, pos_integer()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()}].
@@ -108,14 +109,30 @@ get(_Ref, _Key, _Opts) ->
 
 -spec put(db_ref(), binary(), binary(), write_options()) -> ok | {error, any()}.
 put(Ref, Key, Value, Opts) ->
-    write(Ref, [{put, Key, Value}], Opts).
+    CallerRef = make_ref(),
+    case write(CallerRef, Ref, [{put, Key, Value}], Opts) of
+    ok ->
+io:print_chars("JFW: write() waiting for message after put()..."),
+        receive
+            {ok, CallerRef} -> ok;
+            {error, CallerRef, Info} -> {error, Info}
+        end
+    end.
 
 -spec delete(db_ref(), binary(), write_options()) -> ok | {error, any()}.
 delete(Ref, Key, Opts) ->
-    write(Ref, [{delete, Key}], Opts).
+    CallerRef = make_ref(),
+io:print_chars("JFW: write() waiting for message after delete()..."),
+    case write(CallerRef, Ref, [{delete, Key}], Opts) of
+    ok ->
+        receive
+            {ok, CallerRef} -> ok;
+            {error, CallerRef, Info} -> {error, Info}
+        end
+    end.
 
--spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
-write(_Ref, _Updates, _Opts) ->
+-spec write(reference(), db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
+write(_CallerRef, _Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec iterator(db_ref(), read_options()) -> {ok, itr_ref()}.
@@ -183,7 +200,8 @@ option_types(open) ->
      {cache_size, integer},
      {paranoid_checks, bool},
      {compression, bool},
-     {use_bloomfilter, any}];
+     {use_bloomfilter, any},
+     {write_threads, integer}];
 option_types(read) ->
     [{verify_checksums, bool},
      {fill_cache, bool}];
@@ -240,9 +258,12 @@ validate_type(_, _)                                          -> false.
 -ifdef(TEST).
 
 open_test() ->
+io:format("\n\rJFW: ABOUT TO rm before db open\n"),
     os:cmd("rm -rf /tmp/eleveldb.open.test"),
-    {ok, Ref} = open("/tmp/eleveldb.open.test", [{create_if_missing, true}]),
+    {ok, Ref} = open("/tmp/eleveldb.open.test", [{create_if_missing, true}, {write_threads, 5}]),
+io:format("JFW: db open\n"),
     ok = ?MODULE:put(Ref, <<"abc">>, <<"123">>, []),
+io:format("JFW BACK FROM put()\n"),
     {ok, <<"123">>} = ?MODULE:get(Ref, <<"abc">>, []),
     not_found = ?MODULE:get(Ref, <<"def">>, []).
 

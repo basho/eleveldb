@@ -1,3 +1,4 @@
+#include <iostream> // JFW: for debugging
 // -------------------------------------------------------------------
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
@@ -32,283 +33,6 @@
 #include "leveldb/write_batch.h"
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
-
-using std::copy;
-using std::nothrow;
-
-static ErlNifResourceType* eleveldb_db_RESOURCE;
-static ErlNifResourceType* eleveldb_itr_RESOURCE;
-static ErlNifResourceType* eleveldb_thread_pool_RESOURCE;
-
-struct eleveldb_db_handle;
-struct eleveldb_itr_handle;
-struct eleveldb_thread_pool_handle;
-struct eleveldb_priv_data;
-
-struct eleveldb_db_handle
-{
-    leveldb::DB* db;
-    ErlNifMutex* db_lock; // protects access to db
-    leveldb::Options options;
-    std::set<struct eleveldb_itr_handle*>* iters;
-};
-
-struct eleveldb_itr_handle
-{
-    leveldb::Iterator*   itr;
-    ErlNifMutex*         itr_lock; // acquire *after* db_lock if both needed
-    const leveldb::Snapshot*   snapshot;
-    eleveldb_db_handle* db_handle;
-    bool keys_only;
-};
-typedef struct eleveldb_itr_handle eleveldb_itr_handle;
-
-void *eleveldb_write_thread_worker(void *args);
-
-struct eleveldb_thread_pool_handle
-{
- typedef std::set<ErlNifTid *> thread_pool_t;
-
- // Group submitting DB handles and their work together:
- typedef std::pair<leveldb::WriteBatch, leveldb::WriteOptions> job_t;
- typedef std::pair<eleveldb_db_handle*, job_t>                 work_item_t;
- typedef std::queue<work_item_t>                               work_queue_t; 
-
- thread_pool_t* threads;
-
- /* JFW: I'd like to look at combining these lock/container pairs into a single type (eventually
-    working toward scoped_lock<>, etc.): */
- ErlNifCond* work_queue_pending;    // flags job present in the work queue
- ErlNifMutex* work_queue_lock;      // protects access to work_queue
- work_queue_t*  work_queue;
- void lock()                    { enif_mutex_lock(work_queue_lock); }
- void unlock()                  { enif_mutex_unlock(work_queue_lock); }
-
- // JFW: I'm not sure I like these flag variables, but I'm going with them for now:
- bool initialized;              // were we already initialized?
- bool shutdown;                 // should we shut down?
-
- static eleveldb_thread_pool_handle* construct();      // create uninitialized object
-
- bool initialize(ErlNifEnv *nif_env);
- bool finalize();
-};
-
-eleveldb_thread_pool_handle* eleveldb_thread_pool_handle::construct()
-{
- eleveldb_thread_pool_handle* ret(0);
-
- ret = static_cast<eleveldb_thread_pool_handle*>(
-        enif_alloc_resource(eleveldb_thread_pool_RESOURCE, sizeof(eleveldb_thread_pool_handle)));
- if(0 == ret)
-  return 0;
-
- /* JFW: Redundant if we do member initialization, but we might be able to use this idea 
- to make an enif-friendly factory later on: */
- memset(ret, 0, sizeof(eleveldb_thread_pool_handle));
-
- ret->threads = new(nothrow) thread_pool_t;
- if(0 == ret->threads)
-  ; // JFW fixme
-
- ret->work_queue = new(nothrow) work_queue_t;
- if(0 == ret->work_queue)
-  ; // JFW fixme
-
- ret->work_queue_pending = 0;
- ret->work_queue_lock = 0;
-
- ret->initialized = false;
- ret->shutdown = false;
- 
- return ret; 
-}
-
-bool eleveldb_thread_pool_handle::initialize(ErlNifEnv *nif_env)
-{
- if(initialized)
-  return true; // don't double-init
-
- work_queue_pending = enif_cond_create(const_cast<char *>("work_queue_pending"));
- if(0 == work_queue_pending)
-  ; // JFW: handle this
-
- work_queue_lock = enif_mutex_create(const_cast<char *>("work_queue_lock"));
- if(0 == work_queue_lock)
-  ; // JFW: handle this
-
- const size_t nthreads = 3; // JFW: TODO: make configurable
-
- for(size_t i = nthreads; i; --i)
-  {
-        ErlNifTid *thread_id = static_cast<ErlNifTid *>(enif_alloc(sizeof(ErlNifTid)));
-        if(0 == thread_id)
-         ; // JFW: error, handle partial initialization
-
-        std::ostringstream thread_name;
-        thread_name << "eleveldb_write_thread_" << i;
-
-        const int result = enif_thread_create(const_cast<char *>(thread_name.str().c_str()), thread_id, 
-                                              eleveldb_write_thread_worker, 
-                                              static_cast<void *>(this),
-                                              0);
-
-        if(0 != result)
-         {
-                // JFW: ruh-roh (important: be sure to handle partial construction-- need to release threads via Erlang)
-         }
-
-        threads->insert(thread_id);
-  }
-
- // Don't repeat construction for this object:
- initialized = true;
-
- return true;
-}
-
-bool eleveldb_thread_pool_handle::finalize()
-{
- // Signal shutdown (regardless of whether we are initialized):
- shutdown = true;
-
- if(not initialized)
-  return true;  // nothing to do
-
- // The time of the Final Reckoning is here: raise all the threads:
- enif_cond_broadcast(work_queue_pending); 
-
- // Join all worker threads and release the pointers:
- for(thread_pool_t::iterator i = threads->begin(); threads->end() != i; ++i)
-  {
-        int *exit_value = 0;
-        if(0 != enif_thread_join( *(*i), (void **)(&exit_value)))
-         ;      // JFW: errno contains information about failure
-
-        if(false == exit_value)
-         ;      // JFW: handle failure
-
-        enif_free(*i); // JFW: we might want to make these managed resources instead?
-  }
-
- threads->clear();
-
- delete threads, threads = 0;
- delete work_queue, work_queue = 0;
-
- enif_mutex_destroy(work_queue_lock), work_queue_lock = 0;
- enif_cond_destroy(work_queue_pending), work_queue_pending = 0;
-
- initialized = false;
-
- return true;
-}
-
-struct eleveldb_priv_data
-{
- eleveldb_thread_pool_handle *thread_pool; 
-
- static eleveldb_priv_data * construct();   // create uninitialized object
- bool initialize(ErlNifEnv *env);
- bool finalize();
-};
-
-eleveldb_priv_data* eleveldb_priv_data::construct()
-{
- eleveldb_priv_data *ret = static_cast<eleveldb_priv_data *>(enif_alloc(sizeof(eleveldb_priv_data)));
-
- if(0 == ret)
-  return 0; 
-
- ret->thread_pool = 0;
-
- return ret;
-}
-
-bool eleveldb_priv_data::initialize(ErlNifEnv *env)
-{
-// JFW: should we set an initialized flag, or avoid?
- // Construct our thread pool:
- thread_pool = eleveldb_thread_pool_handle::construct();
-
- if(0 == thread_pool)
-  return false;
-
- if(0 == thread_pool->initialize(env))
-  {
-    thread_pool->finalize();
-    return false;
-  }
-
- return true;
-}
-
-bool eleveldb_priv_data::finalize()
-{
- if(0 != thread_pool)
-  thread_pool->finalize();
-
- thread_pool = 0;
-
- return true;
-}
-
-/* Poll the work queue and take a pending job: */
-void *eleveldb_write_thread_worker(void *args)
-{
- if(0 == args)
-  return 0; // JFW: we should define nice return values
-
- eleveldb_thread_pool_handle& h = *reinterpret_cast<eleveldb_thread_pool_handle *>(args);
-
-// JFW: Explore a way to simplify this a little:
- for(;;)
-  {
-    h.lock();
-
-    if(h.shutdown)
-     {
-        h.unlock();
-        break;
-     }
-
-    enif_cond_wait(h.work_queue_pending, h.work_queue_lock);
-
-    /* Note that it's possible for enif_cond_wait() to return even though the condition has not, so
-    we still need to check this and re-wait if there's no work: */
-    if(h.shutdown)
-     {
-        h.unlock();
-        break;
-     }
-
-    if(h.work_queue->empty())
-     {
-        h.unlock(); 
-        continue;
-     }
-
-    // Accept the job and remove it from the queue:    
-    const eleveldb_thread_pool_handle::work_item_t&  submission = h.work_queue->front(); 
-
-    // Make copies of the work item (may be problematic-- job entries can be up to 15kb):
-    eleveldb_db_handle* dbh = submission.first;
-    eleveldb_thread_pool_handle::job_t job = submission.second;
-
-    h.work_queue->pop(), h.unlock();
-
-    // Write to the database:
-    enif_mutex_lock(dbh->db_lock);
-    leveldb::Status status = dbh->db->Write(job.second, &job.first);
-    if(not status.ok())
-     ; // JFW: need to find a way to handle the error
-
-    driver_binary_dec_refc(reinterpret_cast<ErlDrvBinary*>(dbh));
-    enif_mutex_unlock(dbh->db_lock);
-  }
-
- return 0; // JFW: consistent return values would be nice...
-}
 
 // Atoms (initialized in on_load)
 static ERL_NIF_TERM ATOM_TRUE;
@@ -349,13 +73,14 @@ static ERL_NIF_TERM ATOM_KEYS_ONLY;
 static ERL_NIF_TERM ATOM_COMPRESSION;
 static ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
 static ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
+static ERL_NIF_TERM ATOM_WRITE_THREADS;
 
 static ErlNifFunc nif_funcs[] =
 {
     {"open", 2, eleveldb_open},
     {"close", 1, eleveldb_close},
     {"get", 3, eleveldb_get},
-    {"write", 3, eleveldb_write},
+    {"write", 4, eleveldb_write},
     {"iterator", 2, eleveldb_iterator},
     {"iterator", 3, eleveldb_iterator},
     {"iterator_move", 2, eleveldb_iterator_move},
@@ -365,6 +90,311 @@ static ErlNifFunc nif_funcs[] =
     {"repair", 2, eleveldb_repair},
     {"is_empty", 1, eleveldb_is_empty},
 };
+
+using std::copy;
+using std::nothrow;
+
+static ErlNifResourceType* eleveldb_db_RESOURCE;
+static ErlNifResourceType* eleveldb_itr_RESOURCE;
+
+struct eleveldb_db_handle;
+struct eleveldb_itr_handle;
+
+struct eleveldb_thread_pool;
+struct eleveldb_priv_data;
+
+/* Some hacky NIF helpers: 
+    (Placement new might let us avoid this initialization problem.) */
+namespace {
+
+template <class InitializableT>
+InitializableT* construct()
+{
+ InitializableT* ret = static_cast<InitializableT*>(enif_alloc(sizeof(InitializableT)));
+
+ if(0 == ret)
+  return 0;
+
+ memset(ret, 0, sizeof(InitializableT));
+
+ if(false == ret->initialize())
+  return 0;
+
+ return ret;
+}
+
+template <class FinalizableT>
+bool destroy(FinalizableT*& object)
+{
+ if(0 == object)
+  return true; // not an error
+
+ if(false == object->finalize())
+  return false;
+
+ enif_free(object), object = 0;
+
+ return true;
+}
+
+} // namespace
+
+struct eleveldb_db_handle
+{
+    leveldb::DB* db;
+    ErlNifMutex* db_lock; // protects access to db
+    leveldb::Options options;
+    std::set<struct eleveldb_itr_handle*>* iters;
+};
+
+struct eleveldb_itr_handle
+{
+    leveldb::Iterator*   itr;
+    ErlNifMutex*         itr_lock; // acquire *after* db_lock if both needed
+    const leveldb::Snapshot*   snapshot;
+    eleveldb_db_handle* db_handle;
+    bool keys_only;
+};
+typedef struct eleveldb_itr_handle eleveldb_itr_handle;
+
+void *eleveldb_write_thread_worker(void *args);
+
+struct eleveldb_thread_pool
+{
+ typedef std::set<ErlNifTid *> thread_pool_t;
+
+ struct work_item_t
+ {
+    ERL_NIF_TERM                    caller_ref;
+    ErlNifPid                       pid;
+    mutable eleveldb_db_handle*     db_handle;
+    mutable leveldb::WriteBatch     data;
+    leveldb::WriteOptions           options;
+
+    work_item_t(ERL_NIF_TERM _caller_ref, ErlNifPid _pid, 
+                eleveldb_db_handle* _db_handle, 
+                leveldb::WriteBatch& _data, leveldb::WriteOptions& _options)
+     : caller_ref(_caller_ref), pid(_pid), 
+       db_handle(_db_handle), 
+       data(_data), options(_options)
+    {}
+ };
+
+//JFW maybe this needs to be work_item_t * to make Erlang happy?
+ typedef std::queue<work_item_t> work_queue_t; 
+
+ thread_pool_t* threads;
+
+ ErlNifCond* work_queue_pending;    // flags job present in the work queue
+ ErlNifMutex* work_queue_lock;      // protects access to work_queue
+ work_queue_t* work_queue;
+
+ void lock()                    { enif_mutex_lock(work_queue_lock); }
+ void unlock()                  { enif_mutex_unlock(work_queue_lock); }
+
+ // JFW: I'm not sure I like these flag variables, but I'm going with them for now:
+ volatile bool shutdown;            // should we shut down?
+
+ // JFW: Placement new would let us do away with these:
+ bool initialized;                  // were we already initialized? 
+
+ bool initialize();              
+ bool finalize();
+
+ private:
+ static bool notify_caller(const work_item_t& work_item, const bool job_result);
+
+ friend void *eleveldb_write_thread_worker(void *args);
+};
+
+bool eleveldb_thread_pool::initialize()
+{
+ if(initialized)
+  return true; // don't double-init
+
+ threads = new(nothrow) thread_pool_t;
+ if(0 == threads)
+  ; // JFW fixme
+
+ work_queue = new(nothrow) work_queue_t;
+ if(0 == work_queue)
+  ; // JFW fixme
+
+ work_queue_pending = enif_cond_create(const_cast<char *>("work_queue_pending"));
+ if(0 == work_queue_pending)
+  ; // JFW: fixme 
+
+ work_queue_lock = enif_mutex_create(const_cast<char *>("work_queue_lock"));
+ if(0 == work_queue_lock)
+  ; // JFW: fixme 
+
+ // JFW: Needs to be configurable (partially-complete, available in private env)
+ const size_t nthreads = 3; 
+
+ for(size_t i = nthreads; i; --i)
+  {
+        ErlNifTid *thread_id = static_cast<ErlNifTid *>(enif_alloc(sizeof(ErlNifTid)));
+        if(0 == thread_id)
+         ; // JFW: error, handle partial initialization
+
+        std::ostringstream thread_name;
+        thread_name << "eleveldb_write_thread_" << i;
+
+        const int result = enif_thread_create(const_cast<char *>(thread_name.str().c_str()), thread_id, 
+                                              eleveldb_write_thread_worker, 
+                                              static_cast<void *>(this),
+                                              0);
+
+        if(0 != result)
+         ; // JFW: handle errors (handle partial construction and release threads via Erlang)
+
+        threads->insert(thread_id);
+  }
+
+ shutdown = false;
+
+ initialized = true;
+
+ return true;
+}
+
+bool eleveldb_thread_pool::finalize()
+{
+ // Signal shutdown (regardless of whether we are initialized):
+ shutdown = true;
+
+ if(not initialized)
+  return true;  // nothing to do
+
+ // The time of the Final Reckoning is here: raise all the threads:
+ enif_cond_broadcast(work_queue_pending); 
+
+ // Join all worker threads and release the pointers:
+ for(thread_pool_t::iterator i = threads->begin(); threads->end() != i; ++i)
+  {
+        int *exit_value = 0;
+
+        if(0 != enif_thread_join( *(*i), (void **)(&exit_value)))
+         ;      // JFW: errno contains information about failure
+
+        if(false == exit_value)
+         ;      // JFW: handle failure
+
+        enif_free(*i);
+  }
+
+ delete threads, threads = 0;
+ delete work_queue, work_queue = 0;
+
+ enif_mutex_destroy(work_queue_lock), work_queue_lock = 0;
+ enif_cond_destroy(work_queue_pending), work_queue_pending = 0;
+
+ initialized = false;
+
+ return true;
+}
+
+bool eleveldb_thread_pool::notify_caller(const work_item_t& work_item, const bool job_result)
+{
+ // We need a local environment for the message: 
+ ErlNifEnv* msg_env = enif_alloc_env();
+ if(0 == msg_env)
+  return false; 
+
+ // Supposedly, this operation can't fail:
+ ERL_NIF_TERM result_tuple = 
+                enif_make_tuple2(msg_env, 
+                                 (job_result ? ATOM_OK : ATOM_ERROR),
+                                  enif_make_copy(msg_env, work_item.caller_ref)); 
+
+ bool result = (0 != enif_send(0, &work_item.pid, msg_env, result_tuple));
+
+ enif_free_env(msg_env);
+
+ return result;
+}
+
+/* Module-level private data: */
+struct eleveldb_priv_data
+{
+ static eleveldb_thread_pool* thread_pool; 
+ static unsigned int n_threads;
+
+ bool initialize();
+ bool finalize();
+};
+
+eleveldb_thread_pool* eleveldb_priv_data::thread_pool = 0;  // Static members are zero-initialized. But, I'm paranoid.
+unsigned int eleveldb_priv_data::n_threads = 3;             // JFW: Is this a good "reasonable default"?
+
+bool eleveldb_priv_data::initialize()
+{
+ thread_pool = construct<eleveldb_thread_pool>();
+
+ if(0 == thread_pool)
+  return false;
+
+ return true;
+}
+
+bool eleveldb_priv_data::finalize()
+{
+ return destroy(thread_pool);
+}
+
+/* Poll the work queue, submit jobs to leveldb: */
+void *eleveldb_write_thread_worker(void *args)
+{
+ eleveldb_thread_pool& h = *reinterpret_cast<eleveldb_thread_pool*>(args);
+
+ // JFW: Explore a way to simplify this a little:
+ for(;;)
+  {
+    h.lock();
+
+    if(h.shutdown)
+     {
+        h.unlock();
+        break;
+     }
+
+    enif_cond_wait(h.work_queue_pending, h.work_queue_lock);
+
+    /* It's possible for enif_cond_wait() to return even though the condition has not, so
+    we still need to check this and re-wait if there's no work: */
+    if(h.shutdown)
+     {
+        h.unlock();
+        break;
+     }
+
+    if(h.work_queue->empty())
+     {
+        h.unlock(); 
+        continue;
+     }
+
+    // Take a job from the queue:
+    eleveldb_thread_pool::work_item_t submission = h.work_queue->front(); 
+    h.work_queue->pop();
+    h.unlock();
+
+    // Submit the job to leveldb:
+    eleveldb_db_handle* dbh = submission.db_handle;
+    enif_mutex_lock(dbh->db_lock);
+
+    leveldb::Status status = dbh->db->Write(submission.options, &submission.data);
+
+    enif_mutex_unlock(dbh->db_lock);
+    enif_release_resource(dbh);         // decrement the refcount of dbh
+
+    // Ping the caller back in Erlang-land:
+    if(false == eleveldb_thread_pool::notify_caller(submission, status.ok() ? true : false))
+     ; // JFW: couldn't notify caller; how to handle?
+  }
+
+ return 0; 
+}
 
 ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Options& opts)
 {
@@ -435,6 +465,20 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (option[1] == ATOM_TRUE || enif_get_ulong(env, option[1], &bfsize))
             {
                 opts.filter_policy = leveldb::NewBloomFilterPolicy(bfsize);
+            }
+        }
+        else if (option[0] == ATOM_WRITE_THREADS)
+        {
+            unsigned long n_write_threads = 3;
+
+            if (option[1] == ATOM_TRUE || enif_get_ulong(env, option[1], &n_write_threads))
+            {
+                /* JFW: This is slightly problematic since we don't really want to set the size of the
+                thread pool per leveldb, but rather for all leveldb handles. I'm not sure I see the right
+                way to propegate a global setting, this is "symbolic" plumbing: */
+std::cout << "JFW: setting n_write_threads to " << n_write_threads << " but will have no effect for now. (FIXME)" << std::endl;
+                eleveldb_priv_data *priv = static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+                priv->n_threads = n_write_threads;
             }
         }
     }
@@ -621,10 +665,12 @@ ERL_NIF_TERM eleveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         ERL_NIF_TERM result = enif_make_resource(env, handle);
         enif_release_resource(handle);
 
+std::cout << "JFW: eleveldb_open(): success after DB::Open()" << std::endl;
         return enif_make_tuple2(env, ATOM_OK, result);
     }
     else
     {
+std::cout << "JFW: eleveldb_open() error getting args for DB::Open()" << std::endl;
         return enif_make_badarg(env);
     }
 }
@@ -702,35 +748,49 @@ ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    using std::make_pair;
-
     eleveldb_db_handle* handle;
 
-    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&handle) &&
-        enif_is_list(env, argv[1]) && // Actions
-        enif_is_list(env, argv[2]))   // Opts
+    ERL_NIF_TERM caller_ref = argv[0];
+
+    if (enif_get_resource(env, argv[1], eleveldb_db_RESOURCE, (void**)&handle) &&
+        enif_is_list(env, argv[2]) && // Actions
+        enif_is_list(env, argv[3]))   // Opts
     {
         if (handle->db == NULL)
          return error_einval(env);
 
+// JFW: variable batch should be a pointer (turns out to be tricky-- maybe needs to be a resource? How to preserve object lifetime?):
         // Traverse actions and build a write batch
         leveldb::WriteBatch batch;
-        ERL_NIF_TERM result = fold(env, argv[1], write_batch_item, batch);
+
+        ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, batch);
         if (result == ATOM_OK)
         {
             // Was able to fold across all items cleanly -- apply the batch
 
             // Parse out the write options
             leveldb::WriteOptions opts;
-            fold(env, argv[2], parse_write_option, opts);
+            fold(env, argv[3], parse_write_option, opts);
 
             // Increment the refcount on the database handle so it doesn't vanish:
-            driver_binary_inc_refc(reinterpret_cast<ErlDrvBinary*>(handle));
+            enif_keep_resource(handle);
 
-            // Build and submit a job entry:
+            // Build a job entry and submit it into the queue:
+            ErlNifPid local_pid;
+
+            enif_self(env, &local_pid);
+
             eleveldb_priv_data *priv = static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-            eleveldb_thread_pool_handle::work_item_t work_item(make_pair(handle, make_pair(batch, opts)));
-            priv->thread_pool->work_queue->push(work_item);
+
+            // Enqueue the job:
+            {
+            eleveldb_thread_pool::work_item_t work_item(caller_ref, local_pid, handle, batch, opts);
+
+            priv->thread_pool->lock();
+            priv->thread_pool->work_queue->push(work_item); // JFW: makes a potentially large copy (TODO)
+            priv->thread_pool->unlock();
+            }
+
             enif_cond_signal(priv->thread_pool->work_queue_pending);
 
             return ATOM_OK;
@@ -738,7 +798,7 @@ ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         else
         {
             // Failed to parse out batch commands; bad item was returned from fold.
-            return enif_make_tuple2(env, ATOM_ERROR,
+            return enif_make_tuple3(env, ATOM_ERROR, caller_ref,
                                     enif_make_tuple2(env, ATOM_BAD_WRITE_ACTION,
                                                      result));
         }
@@ -772,7 +832,7 @@ ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
         // Setup handle
         eleveldb_itr_handle* itr_handle =
             (eleveldb_itr_handle*) enif_alloc_resource(eleveldb_itr_RESOURCE,
-                                                        sizeof(eleveldb_itr_handle));
+                                                       sizeof(eleveldb_itr_handle));
         memset(itr_handle, '\0', sizeof(eleveldb_itr_handle));
 
         // Initialize itr handle
@@ -1060,22 +1120,13 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
     enif_mutex_destroy(itr_handle->itr_lock);
 }
 
-static void eleveldb_thread_pool_resource_cleanup(ErlNifEnv* env, void* arg)
-{
-   eleveldb_thread_pool_handle* thread_pool_handle = (eleveldb_thread_pool_handle*)arg;
-   thread_pool_handle->finalize();
-}
-
 #define ATOM(Id, Value) { Id = enif_make_atom(env, Value); }
 
-// JFW: TODO: what's the last parameter for? A result code?
-static void on_unload(ErlNifEnv *env, void *JFW_mysterious)
+static void on_unload(ErlNifEnv *env, void *priv_data)
 {
+std::cout << "JFW: on_unload()" << std::endl;
  eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
- p->finalize();
-
- enif_free(p);
+ destroy(p);
 }
 
 static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
@@ -1089,19 +1140,12 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
                                                      &eleveldb_itr_resource_cleanup,
                                                      flags, NULL);
 
-    eleveldb_thread_pool_RESOURCE = enif_open_resource_type(env, NULL, "elevedb_thread_pool_resource",
-                                                             &eleveldb_thread_pool_resource_cleanup,
-                                                             flags, NULL); 
-    if(0 == eleveldb_thread_pool_RESOURCE)
-     ; // JFW: handle failure
-
+/* JFW: I wonder if the indirect environment-free enif_alloc() is an issue here? Nobody seems to be
+able to explain much about the private data pointer, may require a trip to erlnif source: */
     /* Establish private data: */
-    eleveldb_priv_data *priv = eleveldb_priv_data::construct();
+    eleveldb_priv_data *priv = construct<eleveldb_priv_data>();
     if(0 == priv)
      ; // JFW: handle failure
-
-    if(false == priv->initialize(env))
-     ; // JFW handle failure
 
     *priv_data = priv;
 
@@ -1144,6 +1188,7 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_KEYS_ONLY, "keys_only");
     ATOM(ATOM_COMPRESSION, "compression");
     ATOM(ATOM_USE_BLOOMFILTER, "use_bloomfilter");
+    ATOM(ATOM_WRITE_THREADS, "write_threads");
 
     return 0;
 }
