@@ -26,7 +26,8 @@
          get/3,
          put/4,
          delete/3,
-         write/4,
+         write/3,
+         submit_job/4,
          fold/4,
          fold_keys/4,
          status/2,
@@ -108,29 +109,25 @@ get(_Ref, _Key, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec put(db_ref(), binary(), binary(), write_options()) -> ok | {error, any()}.
-put(Ref, Key, Value, Opts) ->
-    CallerRef = make_ref(),
-    case write(CallerRef, Ref, [{put, Key, Value}], Opts) of
-    ok ->
-        receive
-            {ok, CallerRef} -> ok;
-            {error, CallerRef, Info} -> {error, Info}
-        end
-    end.
+put(Ref, Key, Value, Opts) -> write(Ref, [{put, Key, Value}], Opts).
 
 -spec delete(db_ref(), binary(), write_options()) -> ok | {error, any()}.
-delete(Ref, Key, Opts) ->
-    CallerRef = make_ref(),
-    case write(CallerRef, Ref, [{delete, Key}], Opts) of
+delete(Ref, Key, Opts) -> write(Ref, [{delete, Key}], Opts).
+
+-spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
+write(_Ref, _Updates, _Opts) -> 
+    _CallerRef = make_ref(),
+    case submit_job(_CallerRef, _Ref, _Updates, _Opts) of
     ok ->
         receive
-            {ok, CallerRef} -> ok;
-            {error, CallerRef, Info} -> {error, Info}
+            {ok, _CallerRef} -> ok;
+            {error, _CallerRef, Info} -> {error, Info}
         end
     end.
 
--spec write(reference(), db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
-write(_CallerRef, _Ref, _Updates, _Opts) ->
+
+-spec submit_job(reference(), db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
+submit_job(_CallerRef, _Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec iterator(db_ref(), read_options()) -> {ok, itr_ref()}.
@@ -255,17 +252,35 @@ validate_type(_, _)                                          -> false.
 %% ===================================================================
 -ifdef(TEST).
 
-open_test() ->
+open_test() -> [{open_test_Z(), l} || l <- lists:seq(1, 20000000)].
+open_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.open.test"),
-io:format("\n\rJFW: about to call db_open():\n\r"),
     {ok, Ref} = open("/tmp/eleveldb.open.test", [{create_if_missing, true}]),
-io:format("JFW: db_open() OK\n\r"),
     ok = ?MODULE:put(Ref, <<"abc">>, <<"123">>, []),
-io:format("JFW BACK FROM put()\n\r"),
     {ok, <<"123">>} = ?MODULE:get(Ref, <<"abc">>, []),
     not_found = ?MODULE:get(Ref, <<"def">>, []).
 
-fold_test() ->
+reopen_test() -> 
+    os:cmd("rm -rf /tmp/eleveldb.reopen.test"),
+    {ok, Ref} = open("/tmp/eleveldb.reopen.test", [{create_if_missing, true}]),
+    erlang:garbage_collect(),
+    {ok, Ref} = open("/tmp/eleveldb.reopen.test", [{create_if_missing, true}]).
+
+% Does the first Ref go away? The answer appears to be "yes"-- this works:
+reopen_test_new_ref() -> 
+    os:cmd("rm -rf /tmp/eleveldb.reopen_new_ref.test"),
+    {ok, Ref} = open("/tmp/eleveldb.reopen_new_ref.test", [{create_if_missing, true}]),
+    {ok, AnotherRef} = open("/tmp/eleveldb.reopen_new_ref.test", [{create_if_missing, true}]).
+
+% This one passes after the close():
+another_reopen_test() -> 
+    os:cmd("rm -rf /tmp/eleveldb.reopen2.test"),
+    {ok, Ref} = open("/tmp/eleveldb.reopen2.test", [{create_if_missing, true}]),
+    {ok} = close(Ref),
+    {ok, Ref} = open("/tmp/eleveldb.reopen2.test", [{create_if_missing, true}]).
+
+fold_test() -> [{fold_test_Z(), l} || l <- lists:seq(1, 30000000)].
+fold_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.test"),
     {ok, Ref} = open("/tmp/eleveldb.fold.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
@@ -276,7 +291,8 @@ fold_test() ->
      {<<"hij">>, <<"789">>}] = lists:reverse(fold(Ref, fun({K, V}, Acc) -> [{K, V} | Acc] end,
                                                   [], [])).
 
-fold_keys_test() ->
+fold_keys_test() -> [{fold_keys_test_Z(), l} || l <- lists:seq(1, 30000000)].
+fold_keys_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.keys.test"),
     {ok, Ref} = open("/tmp/eleveldb.fold.keys.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
@@ -286,7 +302,8 @@ fold_keys_test() ->
                                                                 fun(K, Acc) -> [K | Acc] end,
                                                                 [], [])).
 
-fold_from_key_test() ->
+fold_from_key_test() -> [{fold_from_key_test_Z(), l} || l <- lists:seq(1, 30000000)].
+fold_from_key_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.fromkeys.test"),
     {ok, Ref} = open("/tmp/eleveldb.fromfold.keys.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
@@ -296,7 +313,8 @@ fold_from_key_test() ->
                                                      fun(K, Acc) -> [K | Acc] end,
                                                      [], [{first_key, <<"d">>}])).
 
-destroy_test() ->
+destroy_test() -> [{destroy_test_Z(), l} || l <- lists:seq(1, 30000000)].
+destroy_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.destroy.test"),
     {ok, Ref} = open("/tmp/eleveldb.destroy.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
@@ -305,7 +323,8 @@ destroy_test() ->
     ok = ?MODULE:destroy("/tmp/eleveldb.destroy.test", []),
     {error, {db_open, _}} = open("/tmp/eleveldb.destroy.test", [{error_if_exists, true}]).
 
-compression_test() ->
+compression_test() -> [{compression_test_Z(), l} || l <- lists:seq(1, 30000000)].
+compression_test_Z() ->
     CompressibleData = list_to_binary([0 || _X <- lists:seq(1,50000)]),
     os:cmd("rm -rf /tmp/eleveldb.compress.0 /tmp/eleveldb.compress.1"),
     {ok, Ref0} = open("/tmp/eleveldb.compress.0", [{write_buffer_size, 5},
@@ -333,13 +352,15 @@ compression_test() ->
 	?assert(Log0Option =:= match andalso Log1Option =:= match).
 
 
-close_test() ->
+close_test() -> [{close_test_Z(), l} || l <- lists:seq(1, 30000000)].
+close_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.close.test"),
     {ok, Ref} = open("/tmp/eleveldb.close.test", [{create_if_missing, true}]),
     ?assertEqual(ok, close(Ref)),
     ?assertEqual({error, einval}, close(Ref)).
 
-close_fold_test() ->
+close_fold_test() -> [{close_fold_test_Z(), l} || l <- lists:seq(1, 30000000)].
+close_fold_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.close_fold.test"),
     {ok, Ref} = open("/tmp/eleveldb.close_fold.test", [{create_if_missing, true}]),
     ok = eleveldb:put(Ref, <<"k">>,<<"v">>,[]),
