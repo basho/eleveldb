@@ -252,7 +252,7 @@ validate_type(_, _)                                          -> false.
 %% ===================================================================
 -ifdef(TEST).
 
-open_test() -> [{open_test_Z(), l} || l <- lists:seq(1, 20000000)].
+open_test() -> [{open_test_Z(), l} || l <- lists:seq(1, 20)].
 open_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.open.test"),
     {ok, Ref} = open("/tmp/eleveldb.open.test", [{create_if_missing, true}]),
@@ -260,26 +260,7 @@ open_test_Z() ->
     {ok, <<"123">>} = ?MODULE:get(Ref, <<"abc">>, []),
     not_found = ?MODULE:get(Ref, <<"def">>, []).
 
-reopen_test() -> 
-    os:cmd("rm -rf /tmp/eleveldb.reopen.test"),
-    {ok, Ref} = open("/tmp/eleveldb.reopen.test", [{create_if_missing, true}]),
-    erlang:garbage_collect(),
-    {ok, Ref} = open("/tmp/eleveldb.reopen.test", [{create_if_missing, true}]).
-
-% Does the first Ref go away? The answer appears to be "yes"-- this works:
-reopen_test_new_ref() -> 
-    os:cmd("rm -rf /tmp/eleveldb.reopen_new_ref.test"),
-    {ok, Ref} = open("/tmp/eleveldb.reopen_new_ref.test", [{create_if_missing, true}]),
-    {ok, AnotherRef} = open("/tmp/eleveldb.reopen_new_ref.test", [{create_if_missing, true}]).
-
-% This one passes after the close():
-another_reopen_test() -> 
-    os:cmd("rm -rf /tmp/eleveldb.reopen2.test"),
-    {ok, Ref} = open("/tmp/eleveldb.reopen2.test", [{create_if_missing, true}]),
-    {ok} = close(Ref),
-    {ok, Ref} = open("/tmp/eleveldb.reopen2.test", [{create_if_missing, true}]).
-
-fold_test() -> [{fold_test_Z(), l} || l <- lists:seq(1, 30000000)].
+fold_test() -> [{fold_test_Z(), l} || l <- lists:seq(1, 20)].
 fold_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.test"),
     {ok, Ref} = open("/tmp/eleveldb.fold.test", [{create_if_missing, true}]),
@@ -291,7 +272,7 @@ fold_test_Z() ->
      {<<"hij">>, <<"789">>}] = lists:reverse(fold(Ref, fun({K, V}, Acc) -> [{K, V} | Acc] end,
                                                   [], [])).
 
-fold_keys_test() -> [{fold_keys_test_Z(), l} || l <- lists:seq(1, 30000000)].
+fold_keys_test() -> [{fold_keys_test_Z(), l} || l <- lists:seq(1, 20)].
 fold_keys_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.keys.test"),
     {ok, Ref} = open("/tmp/eleveldb.fold.keys.test", [{create_if_missing, true}]),
@@ -302,7 +283,7 @@ fold_keys_test_Z() ->
                                                                 fun(K, Acc) -> [K | Acc] end,
                                                                 [], [])).
 
-fold_from_key_test() -> [{fold_from_key_test_Z(), l} || l <- lists:seq(1, 30000000)].
+fold_from_key_test() -> [{fold_from_key_test_Z(), l} || l <- lists:seq(1, 20)].
 fold_from_key_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.fromkeys.test"),
     {ok, Ref} = open("/tmp/eleveldb.fromfold.keys.test", [{create_if_missing, true}]),
@@ -313,7 +294,7 @@ fold_from_key_test_Z() ->
                                                      fun(K, Acc) -> [K | Acc] end,
                                                      [], [{first_key, <<"d">>}])).
 
-destroy_test() -> [{destroy_test_Z(), l} || l <- lists:seq(1, 30000000)].
+destroy_test() -> [{destroy_test_Z(), l} || l <- lists:seq(1, 20)].
 destroy_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.destroy.test"),
     {ok, Ref} = open("/tmp/eleveldb.destroy.test", [{create_if_missing, true}]),
@@ -323,9 +304,9 @@ destroy_test_Z() ->
     ok = ?MODULE:destroy("/tmp/eleveldb.destroy.test", []),
     {error, {db_open, _}} = open("/tmp/eleveldb.destroy.test", [{error_if_exists, true}]).
 
-compression_test() -> [{compression_test_Z(), l} || l <- lists:seq(1, 30000000)].
+compression_test() -> [{compression_test_Z(), l} || l <- lists:seq(1, 20)].
 compression_test_Z() ->
-    CompressibleData = list_to_binary([0 || _X <- lists:seq(1,50000)]),
+    CompressibleData = list_to_binary([0 || _X <- lists:seq(1,20)]),
     os:cmd("rm -rf /tmp/eleveldb.compress.0 /tmp/eleveldb.compress.1"),
     {ok, Ref0} = open("/tmp/eleveldb.compress.0", [{write_buffer_size, 5},
                                                    {create_if_missing, true},
@@ -352,14 +333,14 @@ compression_test_Z() ->
 	?assert(Log0Option =:= match andalso Log1Option =:= match).
 
 
-close_test() -> [{close_test_Z(), l} || l <- lists:seq(1, 30000000)].
+close_test() -> [{close_test_Z(), l} || l <- lists:seq(1, 20)].
 close_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.close.test"),
     {ok, Ref} = open("/tmp/eleveldb.close.test", [{create_if_missing, true}]),
     ?assertEqual(ok, close(Ref)),
     ?assertEqual({error, einval}, close(Ref)).
 
-close_fold_test() -> [{close_fold_test_Z(), l} || l <- lists:seq(1, 30000000)].
+close_fold_test() -> [{close_fold_test_Z(), l} || l <- lists:seq(1, 20)].
 close_fold_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.close_fold.test"),
     {ok, Ref} = open("/tmp/eleveldb.close_fold.test", [{create_if_missing, true}]),

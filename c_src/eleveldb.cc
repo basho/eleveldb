@@ -103,7 +103,7 @@ struct eleveldb_itr_handle;
 struct eleveldb_thread_pool;
 struct eleveldb_priv_data;
 
-/* Some primitive-yet-useful NIF helpers: */
+/* Some primitive-yet-useful NIF helpers for making this process a bit more C++ friendly: */
 namespace {
 
 template <class T>
@@ -140,7 +140,6 @@ T *placement_ctor(P0 p0, P1 p1, P2 p2)
  return new(placement_alloc<T>()) T(p0, p1, p2);
 }
 
-// Helper: The type of T can be difficult to type (with the fingers) in C++03: 
 template <class T>
 void placement_dtor(T *& x)
 {
@@ -214,7 +213,7 @@ class eleveldb_thread_pool
  ErlNifMutex*   work_queue_lock;    // protects access to work_queue
 
 
- bool shutdown;                     // should we shut down?
+ bool shutdown;                     // should we stop threads and shut down?
 
  public:
  eleveldb_thread_pool(const size_t thread_pool_size);
@@ -306,8 +305,9 @@ bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
     thread_name << "eleveldb_write_thread_" << threads.size() + 1;
 
     ErlNifTid *thread_id = static_cast<ErlNifTid *>(enif_alloc(sizeof(ErlNifTid)));
+
     if(0 == thread_id)
-     ; // JFW: error, handle partial initialization
+     return false;
 
     const int result = enif_thread_create(const_cast<char *>(thread_name.str().c_str()), thread_id, 
                                           eleveldb_write_thread_worker, 
@@ -315,7 +315,7 @@ bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
                                           0);
 
     if(0 != result)
-     ; // JFW: handle errors (handle partial construction and release threads via Erlang)
+     return false;
 
     threads.push(thread_id);
   }
@@ -330,23 +330,31 @@ bool eleveldb_thread_pool::drain_thread_pool()
 {
  struct release_thread
  {
+    bool state;
+
+    release_thread()
+     : state(true)
+    {}
+
     void operator()(ErlNifTid* tid)
     {
         if(0 != enif_thread_join(*tid, 0)) 
-         ;      // JFW: errno contains information about failure
+         state = false; 
 
         enif_free(tid);
     }
+
+    bool operator()()   { return state; }
  } rt;
 
  // Signal shutdown:
  shutdown = true;
 
  // Raise all threads to complete jobs:
- enif_cond_broadcast(work_queue_pending); // JFW: should we sleep after this?
+ enif_cond_broadcast(work_queue_pending);
 
  enif_mutex_lock(threads_lock);
-// JFW: big question: should we additionally add some mechanism to ensure JOBS are drained (a shutdown_pending and rename shutdown to thread_shutdown)
+
  while(!threads.empty())
   {
     rt(threads.top());
@@ -355,7 +363,7 @@ bool eleveldb_thread_pool::drain_thread_pool()
 
  enif_mutex_unlock(threads_lock);
 
- return true;
+ return rt();
 }
 
 bool eleveldb_thread_pool::notify_caller(const work_item_t& work_item, const bool job_result)
@@ -397,7 +405,6 @@ void *eleveldb_write_thread_worker(void *args)
 {
  eleveldb_thread_pool& h = *reinterpret_cast<eleveldb_thread_pool*>(args);
 
- // JFW: Explore a way to simplify this a little:
  for(;;)
   {
     h.lock();
@@ -438,7 +445,7 @@ void *eleveldb_write_thread_worker(void *args)
 
     // Ping the caller back in Erlang-land:
     if(false == eleveldb_thread_pool::notify_caller(submission, status.ok() ? true : false))
-     ; // JFW: couldn't notify caller; how to handle?
+     ; // There isn't much to be done if this has failed. We have no supervisor process.
   }
 
  return 0; 
@@ -1220,7 +1227,7 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     /* Spin up the thread pool, set up all private data: */
     eleveldb_priv_data *priv = placement_ctor<eleveldb_priv_data>(local.n_threads);
     if(0 == priv)
-     ; // JFW: handle failure
+     return 1; // refuse to load the NIF module
 
     *priv_data = priv;
 
