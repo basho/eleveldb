@@ -100,8 +100,8 @@ static ErlNifResourceType* eleveldb_itr_RESOURCE;
 struct eleveldb_db_handle;
 struct eleveldb_itr_handle;
 
-struct eleveldb_thread_pool;
-struct eleveldb_priv_data;
+class eleveldb_thread_pool;
+class eleveldb_priv_data;
 
 /* Some primitive-yet-useful NIF helpers for making this process a bit more C++ friendly: */
 namespace {
@@ -1161,7 +1161,7 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
 
 static void on_unload(ErlNifEnv *env, void *priv_data)
 {
- eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+ eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(priv_data);
  placement_dtor(p);
 }
 
