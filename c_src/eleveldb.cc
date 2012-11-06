@@ -179,6 +179,8 @@ class eleveldb_thread_pool
  public:
  struct work_item_t
  {
+    ErlNifEnv*                      local_env;
+
     ERL_NIF_TERM                    caller_ref;
     ErlNifPid                       pid;
 
@@ -189,11 +191,13 @@ class eleveldb_thread_pool
 
     leveldb::WriteOptions           options;
 
-    work_item_t(ERL_NIF_TERM _caller_ref, ErlNifPid _pid, 
+    work_item_t(ErlNifEnv* _local_env,
+                ERL_NIF_TERM _caller_ref, ErlNifPid _pid, 
                 eleveldb_db_handle* _db_handle,
                 leveldb::WriteBatch* _data,
                 leveldb::WriteOptions& _options)
-     : caller_ref(_caller_ref), pid(_pid), 
+     : local_env(_local_env),
+       caller_ref(_caller_ref), pid(_pid), 
        db_handle(_db_handle), 
        data(_data),
        options(_options)
@@ -211,7 +215,6 @@ class eleveldb_thread_pool
  work_queue_t   work_queue;
  ErlNifCond*    work_queue_pending; // flags job present in the work queue
  ErlNifMutex*   work_queue_lock;    // protects access to work_queue
-
 
  bool shutdown;                     // should we stop threads and shut down?
 
@@ -344,7 +347,7 @@ bool eleveldb_thread_pool::drain_thread_pool()
         enif_free(tid);
     }
 
-    bool operator()()   { return state; }
+    bool operator()() const { return state; }
  } rt;
 
  // Signal shutdown:
@@ -368,22 +371,12 @@ bool eleveldb_thread_pool::drain_thread_pool()
 
 bool eleveldb_thread_pool::notify_caller(const work_item_t& work_item, const bool job_result)
 {
- // We need a local environment for the message: 
- ErlNifEnv* msg_env = enif_alloc_env();
- if(0 == msg_env)
-  return false; 
-
- // Supposedly, this operation can't fail:
  ERL_NIF_TERM result_tuple = 
-                enif_make_tuple2(msg_env, 
+                enif_make_tuple2(work_item.local_env, 
                                  (job_result ? ATOM_OK : ATOM_ERROR),
-                                  enif_make_copy(msg_env, work_item.caller_ref)); 
-
- bool result = (0 != enif_send(0, &work_item.pid, msg_env, result_tuple));
-
- enif_free_env(msg_env);
-
- return result;
+                                 work_item.caller_ref); 
+ 
+ return (0 != enif_send(0, &work_item.pid, work_item.local_env, result_tuple));
 }
 
 /* Module-level private data: */
@@ -446,6 +439,9 @@ void *eleveldb_write_thread_worker(void *args)
     // Ping the caller back in Erlang-land:
     if(false == eleveldb_thread_pool::notify_caller(submission, status.ok() ? true : false))
      ; // There isn't much to be done if this has failed. We have no supervisor process.
+
+    // Finally, free the local environment (no shared_ptr<>):
+    enif_free_env(submission.local_env); 
   }
 
  return 0; 
@@ -826,8 +822,16 @@ ERL_NIF_TERM eleveldb_submit_job(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
 
             enif_self(env, &local_pid);
 
+            // Construct a local environment to store terms and messages:
+            ErlNifEnv* local_env = enif_alloc_env();
+            if(0 == local_env)
+             return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+
             // Enqueue the job:
-            eleveldb_thread_pool::work_item_t work_item(caller_ref, local_pid, handle, batch, opts);
+            eleveldb_thread_pool::work_item_t work_item(local_env, 
+                                                        enif_make_copy(local_env, caller_ref), 
+                                                        local_pid, handle, batch, opts);
+
             priv.thread_pool.submit(work_item);
 
             return ATOM_OK;
