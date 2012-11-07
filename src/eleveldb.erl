@@ -66,7 +66,7 @@ init() ->
                  Dir ->
                      filename:join(Dir, "eleveldb")
              end,
-    erlang:load_nif(SoName, [{write_threads,3}]). 
+    erlang:load_nif(SoName, [{write_threads,10}]). 
 
 -type open_options() :: [{create_if_missing, boolean()} |
                          {error_if_exists, boolean()} |

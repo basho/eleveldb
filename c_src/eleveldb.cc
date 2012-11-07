@@ -402,21 +402,8 @@ void *eleveldb_write_thread_worker(void *args)
   {
     h.lock();
 
-    if(h.shutdown)
-     {
-        h.unlock();
-        break;
-     }
-
-    enif_cond_wait(h.work_queue_pending, h.work_queue_lock);
-
-    /* It's possible for enif_cond_wait() to return even though the condition has not, so
-    we still need to check this and re-wait if there's no work: */
-    if(h.work_queue.empty())
-     {
-        h.unlock(); 
-        continue;
-     }
+    while(h.work_queue.empty() && not h.shutdown)
+     enif_cond_wait(h.work_queue_pending, h.work_queue_lock);
 
     // Take a job from the queue:
     eleveldb_thread_pool::work_item_t submission = h.work_queue.front(); 
@@ -1213,7 +1200,7 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 
             const unsigned int atom_max = 128;
             char atom[atom_max];
-            if((atom_len + 1) != enif_get_atom(env, tuple_data[0], atom, atom_max, ERL_NIF_LATIN1))
+            if((atom_len + 1) != static_cast<unsigned int>(enif_get_atom(env, tuple_data[0], atom, atom_max, ERL_NIF_LATIN1)))
              continue;
 
             if(0 != strncmp(atom, "write_threads", atom_max))
