@@ -27,6 +27,7 @@
          put/4,
          delete/3,
          write/3,
+         submit_job/4,
          fold/4,
          fold_keys/4,
          status/2,
@@ -66,7 +67,7 @@ init() ->
                  Dir ->
                      filename:join(Dir, "eleveldb")
              end,
-    erlang:load_nif(SoName, 0).
+    erlang:load_nif(SoName, [{write_threads,10}]). 
 
 -type open_options() :: [{create_if_missing, boolean()} |
                          {error_if_exists, boolean()} |
@@ -78,7 +79,8 @@ init() ->
                          {cache_size, pos_integer()} |
                          {paranoid_checks, boolean()} |
                          {compression, boolean()} |
-                         {use_bloomfilter, boolean() | pos_integer()}].
+                         {use_bloomfilter, boolean() | pos_integer()} |
+                         {write_threads, pos_integer()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()}].
@@ -108,15 +110,25 @@ get(_Ref, _Key, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec put(db_ref(), binary(), binary(), write_options()) -> ok | {error, any()}.
-put(Ref, Key, Value, Opts) ->
-    write(Ref, [{put, Key, Value}], Opts).
+put(Ref, Key, Value, Opts) -> write(Ref, [{put, Key, Value}], Opts).
 
 -spec delete(db_ref(), binary(), write_options()) -> ok | {error, any()}.
-delete(Ref, Key, Opts) ->
-    write(Ref, [{delete, Key}], Opts).
+delete(Ref, Key, Opts) -> write(Ref, [{delete, Key}], Opts).
 
 -spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
-write(_Ref, _Updates, _Opts) ->
+write(_Ref, _Updates, _Opts) -> 
+    _CallerRef = make_ref(),
+    case submit_job(_CallerRef, _Ref, _Updates, _Opts) of
+    ok ->
+        receive
+            {ok, _CallerRef} -> ok;
+            {error, _CallerRef, Info} -> {error, Info}
+        end
+    end.
+
+
+-spec submit_job(reference(), db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
+submit_job(_CallerRef, _Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec iterator(db_ref(), read_options()) -> {ok, itr_ref()}.
@@ -184,7 +196,8 @@ option_types(open) ->
      {cache_size, integer},
      {paranoid_checks, bool},
      {compression, bool},
-     {use_bloomfilter, any}];
+     {use_bloomfilter, any},
+     {write_threads, integer}];
 option_types(read) ->
     [{verify_checksums, bool},
      {fill_cache, bool}];
@@ -240,14 +253,16 @@ validate_type(_, _)                                          -> false.
 %% ===================================================================
 -ifdef(TEST).
 
-open_test() ->
+open_test() -> [{open_test_Z(), l} || l <- lists:seq(1, 20)].
+open_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.open.test"),
     {ok, Ref} = open("/tmp/eleveldb.open.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"abc">>, <<"123">>, []),
     {ok, <<"123">>} = ?MODULE:get(Ref, <<"abc">>, []),
     not_found = ?MODULE:get(Ref, <<"def">>, []).
 
-fold_test() ->
+fold_test() -> [{fold_test_Z(), l} || l <- lists:seq(1, 20)].
+fold_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.test"),
     {ok, Ref} = open("/tmp/eleveldb.fold.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
@@ -258,7 +273,8 @@ fold_test() ->
      {<<"hij">>, <<"789">>}] = lists:reverse(fold(Ref, fun({K, V}, Acc) -> [{K, V} | Acc] end,
                                                   [], [])).
 
-fold_keys_test() ->
+fold_keys_test() -> [{fold_keys_test_Z(), l} || l <- lists:seq(1, 20)].
+fold_keys_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.keys.test"),
     {ok, Ref} = open("/tmp/eleveldb.fold.keys.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
@@ -268,7 +284,8 @@ fold_keys_test() ->
                                                                 fun(K, Acc) -> [K | Acc] end,
                                                                 [], [])).
 
-fold_from_key_test() ->
+fold_from_key_test() -> [{fold_from_key_test_Z(), l} || l <- lists:seq(1, 20)].
+fold_from_key_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.fromkeys.test"),
     {ok, Ref} = open("/tmp/eleveldb.fromfold.keys.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
@@ -278,7 +295,8 @@ fold_from_key_test() ->
                                                      fun(K, Acc) -> [K | Acc] end,
                                                      [], [{first_key, <<"d">>}])).
 
-destroy_test() ->
+destroy_test() -> [{destroy_test_Z(), l} || l <- lists:seq(1, 20)].
+destroy_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.destroy.test"),
     {ok, Ref} = open("/tmp/eleveldb.destroy.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
@@ -287,8 +305,9 @@ destroy_test() ->
     ok = ?MODULE:destroy("/tmp/eleveldb.destroy.test", []),
     {error, {db_open, _}} = open("/tmp/eleveldb.destroy.test", [{error_if_exists, true}]).
 
-compression_test() ->
-    CompressibleData = list_to_binary([0 || _X <- lists:seq(1,50000)]),
+compression_test() -> [{compression_test_Z(), l} || l <- lists:seq(1, 20)].
+compression_test_Z() ->
+    CompressibleData = list_to_binary([0 || _X <- lists:seq(1,20)]),
     os:cmd("rm -rf /tmp/eleveldb.compress.0 /tmp/eleveldb.compress.1"),
     {ok, Ref0} = open("/tmp/eleveldb.compress.0", [{write_buffer_size, 5},
                                                    {create_if_missing, true},
@@ -315,13 +334,15 @@ compression_test() ->
 	?assert(Log0Option =:= match andalso Log1Option =:= match).
 
 
-close_test() ->
+close_test() -> [{close_test_Z(), l} || l <- lists:seq(1, 20)].
+close_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.close.test"),
     {ok, Ref} = open("/tmp/eleveldb.close.test", [{create_if_missing, true}]),
     ?assertEqual(ok, close(Ref)),
     ?assertEqual({error, einval}, close(Ref)).
 
-close_fold_test() ->
+close_fold_test() -> [{close_fold_test_Z(), l} || l <- lists:seq(1, 20)].
+close_fold_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.close_fold.test"),
     {ok, Ref} = open("/tmp/eleveldb.close_fold.test", [{create_if_missing, true}]),
     ok = eleveldb:put(Ref, <<"k">>,<<"v">>,[]),
