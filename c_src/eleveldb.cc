@@ -493,7 +493,6 @@ void *eleveldb_write_thread_worker(void *args)
 
     placement_dtor(submission);
 
-// JFW: if we can do this earlier, great (move back to objects, make a copy of that's cheaper than waiting):
     // Release the queue:
     h.work_queue.pop();
     h.unlock();
