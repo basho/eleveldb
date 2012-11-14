@@ -512,6 +512,10 @@ void *eleveldb_write_thread_worker(void *args)
      ; // There isn't much to be done if this has failed. We have no supervisor process.
 
     placement_dtor(submission);
+
+    // Release the queue:
+    h.work_queue.pop();
+    h.unlock();
   }
 
  return 0; 
