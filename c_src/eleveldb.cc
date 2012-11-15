@@ -415,7 +415,7 @@ bool eleveldb_thread_pool::drain_thread_pool()
   {
     rt(threads.top());
     threads.pop();    
-    enif_cond_signal(work_queue_pending);
+//JFW likely not an issue    enif_cond_signal(work_queue_pending);
   }
 
  enif_mutex_unlock(threads_lock);
@@ -470,26 +470,26 @@ void *eleveldb_write_thread_worker(void *args)
         break;
      }
 
-    // Take a job from the queue:
+    // Take a job from and release the queue:
     eleveldb_thread_pool::work_item_t* submission = h.work_queue.front(); 
+
+    h.work_queue.pop();
+    h.unlock();
 
     // Submit the job to leveldb:
     eleveldb_db_handle* dbh = submission->db_handle;
 
     enif_mutex_lock(dbh->db_lock);
     leveldb::Status status = dbh->db->Write(*(submission->options), submission->batch);
-    enif_release_resource(dbh);         // decrement the refcount of the leveldb handle
     enif_mutex_unlock(dbh->db_lock);
+
+    enif_release_resource(dbh);         // decrement the refcount of the leveldb handle
 
     // Ping the caller back in Erlang-land:
     if(false == eleveldb_thread_pool::notify_caller(*submission, status.ok() ? true : false))
      ; // There isn't much to be done if this has failed. We have no supervisor process.
 
     placement_dtor(submission);
-
-    // Release the queue:
-    h.work_queue.pop();
-    h.unlock();
   }
 
  return 0; 
@@ -670,7 +670,7 @@ static void free_itr(eleveldb_itr_handle* itr_handle)
 // Free dynamic elements of database - acquire lock before calling
 static bool free_db(eleveldb_db_handle* db_handle)
 {
-    if(0 == db_handle)
+    if (0 == db_handle)
      return false;
 
     if (db_handle->db_lock)
@@ -716,7 +716,7 @@ static bool free_db(eleveldb_db_handle* db_handle)
     if (db_handle->db_lock)
      {
         enif_mutex_unlock(db_handle->db_lock);
-        enif_mutex_destroy(db_handle->db_lock);
+        enif_mutex_destroy(db_handle->db_lock), db_handle->db_lock = 0;
      }
 
     return true;
