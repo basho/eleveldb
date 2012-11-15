@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -19,6 +19,14 @@
 // under the License.
 //
 // -------------------------------------------------------------------
+
+#include <new>
+#include <set>
+#include <stack>
+#include <queue>
+#include <sstream>
+#include <algorithm>
+
 #include "eleveldb.h"
 
 #include "leveldb/db.h"
@@ -26,31 +34,6 @@
 #include "leveldb/write_batch.h"
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
-
-#include <set>
-
-static ErlNifResourceType* eleveldb_db_RESOURCE;
-static ErlNifResourceType* eleveldb_itr_RESOURCE;
-
-struct eleveldb_itr_handle;
-
-typedef struct
-{
-    leveldb::DB* db;
-    ErlNifMutex* db_lock; // protects access to db
-    leveldb::Options options;
-    std::set<struct eleveldb_itr_handle*>* iters;
-} eleveldb_db_handle;
-
-struct eleveldb_itr_handle
-{
-    leveldb::Iterator*   itr;
-    ErlNifMutex*         itr_lock; // acquire *after* db_lock if both needed
-    const leveldb::Snapshot*   snapshot;
-    eleveldb_db_handle* db_handle;
-    bool keys_only;
-};
-typedef struct eleveldb_itr_handle eleveldb_itr_handle;
 
 // Atoms (initialized in on_load)
 static ERL_NIF_TERM ATOM_TRUE;
@@ -97,7 +80,7 @@ static ErlNifFunc nif_funcs[] =
     {"open", 2, eleveldb_open},
     {"close", 1, eleveldb_close},
     {"get", 3, eleveldb_get},
-    {"write", 3, eleveldb_write},
+    {"submit_job", 4, eleveldb_submit_job},
     {"iterator", 2, eleveldb_iterator},
     {"iterator", 3, eleveldb_iterator},
     {"iterator_move", 2, eleveldb_iterator_move},
@@ -193,15 +176,15 @@ void placement_dtor(T *& x)
 struct eleveldb_db_handle
 {
     leveldb::DB* db;
-    ErlNifMutex* db_lock;                   // protects access to db
+    ErlNifMutex* db_lock;                                       // protects access to db
 
     leveldb::Options *options;
 
     std::set<struct eleveldb_itr_handle*>* iters;
 
     private:
-    eleveldb_db_handle();                   // nodefault
-    eleveldb_db_handle(const eleveldb_db_handle&);      // nocopy
+    eleveldb_db_handle();                                       // nodefault
+    eleveldb_db_handle(const eleveldb_db_handle&);              // nocopy
     eleveldb_db_handle& operator=(const eleveldb_db_handle&);   // nocopyassign
 };
 
@@ -261,7 +244,7 @@ class eleveldb_thread_pool
     ~work_item_t()
     {
         placement_dtor(batch);
-    placement_dtor(options);
+        placement_dtor(options);
 
         enif_free_env(local_env);
     }
@@ -487,11 +470,8 @@ void *eleveldb_write_thread_worker(void *args)
         break;
      }
 
-    // Take a job from and release the queue:
+    // Take a job from the queue:
     eleveldb_thread_pool::work_item_t* submission = h.work_queue.front(); 
-
-    h.work_queue.pop();
-    h.unlock();
 
     // Submit the job to leveldb:
     eleveldb_db_handle* dbh = submission->db_handle;
@@ -525,22 +505,22 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             opts.create_if_missing = (option[1] == ATOM_TRUE);
         else if (option[0] == ATOM_ERROR_IF_EXISTS)
             opts.error_if_exists = (option[1] == ATOM_TRUE);
-        else if (option[0] == ATOM_PARANOID_CHECKS)
+        else if (option[0] == ATOM_PARANOID_CHECKS) 
             opts.paranoid_checks = (option[1] == ATOM_TRUE);
-        else if (option[0] == ATOM_MAX_OPEN_FILES)
+        else if (option[0] == ATOM_MAX_OPEN_FILES) 
         {
             int max_open_files;
             if (enif_get_int(env, option[1], &max_open_files))
                 opts.max_open_files = max_open_files;
         }
-        else if (option[0] == ATOM_WRITE_BUFFER_SIZE)
-        {
+        else if (option[0] == ATOM_WRITE_BUFFER_SIZE) 
+        { 
             unsigned long write_buffer_sz;
             if (enif_get_ulong(env, option[1], &write_buffer_sz))
                 opts.write_buffer_size = write_buffer_sz;
         }
-        else if (option[0] == ATOM_BLOCK_SIZE)
-        {
+        else if (option[0] == ATOM_BLOCK_SIZE) 
+        { 
             /* DEPRECATED: the old block_size atom was actually ignored. */
             unsigned long block_sz;
             enif_get_ulong(env, option[1], &block_sz); // ignore
@@ -549,15 +529,15 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         {
             unsigned long sst_block_sz(0);
             if (enif_get_ulong(env, option[1], &sst_block_sz))
-             opts.block_size = sst_block_sz; // Note: We just set the "old" block_size option.
+             opts.block_size = sst_block_sz; // Note: We just set the "old" block_size option. 
         }
-        else if (option[0] == ATOM_BLOCK_RESTART_INTERVAL)
-        {
+        else if (option[0] == ATOM_BLOCK_RESTART_INTERVAL) 
+        { 
             int block_restart_interval;
             if (enif_get_int(env, option[1], &block_restart_interval))
                 opts.block_restart_interval = block_restart_interval;
         }
-        else if (option[0] == ATOM_CACHE_SIZE)
+        else if (option[0] == ATOM_CACHE_SIZE) 
         {
             unsigned long cache_sz;
             if (enif_get_ulong(env, option[1], &cache_sz)) 
@@ -582,10 +562,10 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             // By default, we want to use a 10-bit-per-key bloom filter on a
             // per-table basis. We only disable it if explicitly asked. Alternatively,
             // one can provide a value for # of bits-per-key.
-            unsigned long bfsize = 16;
+            unsigned long bfsize = 10;
             if (option[1] == ATOM_TRUE || enif_get_ulong(env, option[1], &bfsize))
             {
-                opts.filter_policy = leveldb::NewBloomFilterPolicy2(bfsize);
+                opts.filter_policy = leveldb::NewBloomFilterPolicy(bfsize);
             }
         }
     }
@@ -711,7 +691,7 @@ static bool free_db(eleveldb_db_handle* db_handle)
             enif_mutex_unlock(itr_handle->itr_lock);
         }
 
-        // close the db
+        // close the db 
         delete db_handle->db;
         db_handle->db = NULL;
 
@@ -784,8 +764,10 @@ ERL_NIF_TERM eleveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         handle->db_lock = enif_mutex_create((char*)"eleveldb_db_lock");
         handle->options = opts;
         handle->iters = new std::set<struct eleveldb_itr_handle*>();
+
         ERL_NIF_TERM result = enif_make_resource(env, handle);
         enif_release_resource(handle);
+
         return enif_make_tuple2(env, ATOM_OK, result);
     }
     else
@@ -849,23 +831,30 @@ ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     }
 }
 
-ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM eleveldb_submit_job(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     eleveldb_db_handle* handle;
-    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&handle) &&
-        enif_is_list(env, argv[1]) && // Actions
-        enif_is_list(env, argv[2]))   // Opts
-    {
-        enif_mutex_lock(handle->db_lock);
-        if (handle->db == NULL)
-        {
-            enif_mutex_unlock(handle->db_lock);
-            return error_einval(env);
-        }
 
-        // Traverse actions and build a write batch
-        leveldb::WriteBatch batch;
-        ERL_NIF_TERM result = fold(env, argv[1], write_batch_item, batch);
+    ERL_NIF_TERM caller_ref = argv[0];
+
+    if (enif_get_resource(env, argv[1], eleveldb_db_RESOURCE, (void**)&handle) &&
+        enif_is_list(env, argv[2]) && // Actions
+        enif_is_list(env, argv[3]))   // Opts
+    {
+        if (handle->db == NULL)
+         return error_einval(env);
+
+        eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+        // Stop taking requests if we've been asked to shut down:
+        if(priv.thread_pool.shutdown_pending())
+         return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+
+        // Construct a write batch:
+        leveldb::WriteBatch* batch = placement_ctor<leveldb::WriteBatch>();
+
+        // Seed the batch's data:
+        ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, *batch);
         if (result == ATOM_OK)
         {
             // Was able to fold across all items cleanly -- apply the batch
@@ -901,9 +890,8 @@ ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         }
         else
         {
-            enif_mutex_unlock(handle->db_lock);
             // Failed to parse out batch commands; bad item was returned from fold.
-            return enif_make_tuple2(env, ATOM_ERROR,
+            return enif_make_tuple3(env, ATOM_ERROR, caller_ref,
                                     enif_make_tuple2(env, ATOM_BAD_WRITE_ACTION,
                                                      result));
         }
@@ -937,7 +925,7 @@ ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
         // Setup handle
         eleveldb_itr_handle* itr_handle =
             (eleveldb_itr_handle*) enif_alloc_resource(eleveldb_itr_RESOURCE,
-                                                        sizeof(eleveldb_itr_handle));
+                                                       sizeof(eleveldb_itr_handle));
         memset(itr_handle, '\0', sizeof(eleveldb_itr_handle));
 
         // Initialize itr handle
@@ -1194,7 +1182,7 @@ ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
 
 static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
 {
-    free_db((eleveldb_handle *)arg);
+ free_db(reinterpret_cast<eleveldb_db_handle *>(arg));
 }
 
 static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
@@ -1232,6 +1220,7 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 try
 {
     ErlNifResourceFlags flags = (ErlNifResourceFlags)(ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER);
+
     eleveldb_db_RESOURCE = enif_open_resource_type(env, NULL, "eleveldb_db_resource",
                                                     &eleveldb_db_resource_cleanup,
                                                     flags, NULL);
@@ -1331,6 +1320,7 @@ try
     ATOM(ATOM_KEYS_ONLY, "keys_only");
     ATOM(ATOM_COMPRESSION, "compression");
     ATOM(ATOM_USE_BLOOMFILTER, "use_bloomfilter");
+
     return 0;
 }
 catch(...)
@@ -1339,5 +1329,5 @@ catch(...)
 }
 
 extern "C" {
-    ERL_NIF_INIT(eleveldb, nif_funcs, &on_load, NULL, NULL, NULL);
+    ERL_NIF_INIT(eleveldb, nif_funcs, &on_load, NULL, NULL, &on_unload);
 }
