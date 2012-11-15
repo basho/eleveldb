@@ -1,6 +1,3 @@
-#include <iostream> // JFW
-#include <sstream> // JFW
-#include <fstream> // JFW
 // -------------------------------------------------------------------
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
@@ -123,7 +120,7 @@ struct eleveldb_itr_handle;
 class eleveldb_thread_pool;
 class eleveldb_priv_data;
 
-/* Some primitive-yet-useful NIF helpers for making this process a bit more C++ friendly: */
+/* Some primitive-yet-useful NIF helpers: */
 namespace {
 
 template <class T>
@@ -196,14 +193,16 @@ void placement_dtor(T *& x)
 struct eleveldb_db_handle
 {
     leveldb::DB* db;
-    ErlNifMutex* db_lock; // protects access to db
+    ErlNifMutex* db_lock;                   // protects access to db
+
     leveldb::Options *options;
+
     std::set<struct eleveldb_itr_handle*>* iters;
 
     private:
-    eleveldb_db_handle(); //nodefault
-    eleveldb_db_handle(const eleveldb_db_handle&); // nocopy
-    eleveldb_db_handle& operator=(const eleveldb_db_handle&); // nocopyassign
+    eleveldb_db_handle();                   // nodefault
+    eleveldb_db_handle(const eleveldb_db_handle&);      // nocopy
+    eleveldb_db_handle& operator=(const eleveldb_db_handle&);   // nocopyassign
 };
 
 struct eleveldb_itr_handle
@@ -222,6 +221,7 @@ class eleveldb_thread_pool
 {
  friend void *eleveldb_write_thread_worker(void *args);
 
+ private:
  eleveldb_thread_pool(const eleveldb_thread_pool&);             // nocopy
  eleveldb_thread_pool& operator=(const eleveldb_thread_pool&);  // nocopyassign
 
@@ -240,7 +240,6 @@ class eleveldb_thread_pool
 
     mutable eleveldb_db_handle*     db_handle;
 
-    // We can't release these ourselves because of copies (no shared_ptr<>):
     mutable leveldb::WriteBatch*    batch; 
     leveldb::WriteOptions*          options;
 
@@ -262,7 +261,7 @@ class eleveldb_thread_pool
     ~work_item_t()
     {
         placement_dtor(batch);
-        placement_dtor(options);
+    placement_dtor(options);
 
         enif_free_env(local_env);
     }
@@ -347,15 +346,12 @@ eleveldb_thread_pool::eleveldb_thread_pool(const size_t thread_pool_size)
 
 eleveldb_thread_pool::~eleveldb_thread_pool()
 {
-std::cerr << "JFW: ~eleveldb_thread_pool()" << std::endl;
-
  drain_thread_pool();   // all kids out of the pool
 
  enif_mutex_destroy(work_queue_lock);
  enif_cond_destroy(work_queue_pending);
 
  enif_mutex_destroy(threads_lock);
-std::cerr << "JFW: ~eleveldb_thread_pool() completed" << std::endl;
 }
 
 // Grow the thread pool by nthreads threads:
@@ -471,8 +467,6 @@ class eleveldb_priv_data
  eleveldb_priv_data(const size_t n_write_threads)
   : thread_pool(n_write_threads)
  {}
-
- ~eleveldb_priv_data() { std::cerr << "JFW: ~eleveldb_priv_data()" << std::endl; }
 };
 
 /* Poll the work queue, submit jobs to leveldb: */
@@ -694,8 +688,14 @@ static void free_itr(eleveldb_itr_handle* itr_handle)
 }
 
 // Free dynamic elements of database - acquire lock before calling
-static void free_db(eleveldb_db_handle* db_handle)
+static bool free_db(eleveldb_db_handle* db_handle)
 {
+    if(0 == db_handle)
+     return false;
+
+    if (db_handle->db_lock)
+     enif_mutex_lock(db_handle->db_lock);
+
     if (db_handle->db)
     {
         // shutdown all the iterators - grab the lock as
@@ -724,18 +724,22 @@ static void free_db(eleveldb_db_handle* db_handle)
     {
         // Release any cache we explicitly allocated when setting up options
         if (db_handle->options->block_cache)
-        {
-            delete db_handle->options->block_cache, db_handle->options->block_cache = 0;
-        }
-
+         delete db_handle->options->block_cache, db_handle->options->block_cache = 0;
+        
         // Clean up any filter policies
         if (db_handle->options->filter_policy)
-        {
-            delete db_handle->options->filter_policy, db_handle->options->filter_policy = 0;
-        }
+         delete db_handle->options->filter_policy, db_handle->options->filter_policy = 0;
 
         placement_dtor(db_handle->options), db_handle->options = 0;
      }
+
+    if (db_handle->db_lock)
+     {
+        enif_mutex_unlock(db_handle->db_lock);
+        enif_mutex_destroy(db_handle->db_lock);
+     }
+
+    return true;
 }
 
 
@@ -793,27 +797,11 @@ ERL_NIF_TERM eleveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 ERL_NIF_TERM eleveldb_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     eleveldb_db_handle* db_handle;
-    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
-    {
-        ERL_NIF_TERM result;
 
-        enif_mutex_lock(db_handle->db_lock);
-        if (db_handle->db)
-        {
-            free_db(db_handle);
-            result = ATOM_OK;
-        }
-        else
-        {
-            result = error_einval(env);
-        }
-        enif_mutex_unlock(db_handle->db_lock);
-        return result;
-    }
-    else
-    {
-        return enif_make_badarg(env);
-    }
+    if (!enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
+     return enif_make_badarg(env);
+
+    return free_db(db_handle) ? ATOM_OK : error_einval(env);
 }
 
 ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
@@ -884,7 +872,6 @@ ERL_NIF_TERM eleveldb_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
             // Parse out the write options
             leveldb::WriteOptions* opts = placement_ctor<leveldb::WriteOptions>();;
-
             fold(env, argv[3], parse_write_option, *opts);
 
             // Increment the refcount on the database handle so it doesn't vanish:
@@ -1147,7 +1134,6 @@ ERL_NIF_TERM eleveldb_repair(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
 
 ERL_NIF_TERM eleveldb_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-std::cerr << "JFW: this is eleveldb_destroy()" << std::endl;
     char name[4096];
     if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1) &&
         enif_is_list(env, argv[1]))
@@ -1302,8 +1288,8 @@ try
      }
 
     /* Spin up the thread pool, set up all private data: */
-std::cerr << "JFW: spinning up " << local.n_threads << " threads." << std::endl;
     eleveldb_priv_data *priv = placement_ctor<eleveldb_priv_data>(local.n_threads);
+
     *priv_data = priv;
 
     // Initialize common atoms
