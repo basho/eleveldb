@@ -94,18 +94,18 @@ static ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 
 static ErlNifFunc nif_funcs[] =
 {
-    {"open", 2, eleveldb_open},
-    {"close", 1, eleveldb_close},
-    {"get", 3, eleveldb_get},
-    {"write", 3, eleveldb_write},
-    {"iterator", 2, eleveldb_iterator},
-    {"iterator", 3, eleveldb_iterator},
-    {"iterator_move", 2, eleveldb_iterator_move},
-    {"iterator_close", 1, eleveldb_iterator_close},
-    {"status", 2, eleveldb_status},
-    {"destroy", 2, eleveldb_destroy},
-    {"repair", 2, eleveldb_repair},
-    {"is_empty", 1, eleveldb_is_empty},
+    {"open_int", 2, eleveldb_open},
+    {"close_int", 1, eleveldb_close},
+    {"get_int", 3, eleveldb_get},
+    {"write_int", 3, eleveldb_write},
+    {"iterator_int", 2, eleveldb_iterator},
+    {"iterator_int", 3, eleveldb_iterator},
+    {"iterator_move_int", 2, eleveldb_iterator_move},
+    {"iterator_close_int", 1, eleveldb_iterator_close},
+    {"status_int", 2, eleveldb_status},
+    {"destroy_int", 2, eleveldb_destroy},
+    {"repair_int", 2, eleveldb_repair},
+    {"is_empty_int", 1, eleveldb_is_empty},
 };
 
 ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Options& opts)

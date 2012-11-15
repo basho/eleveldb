@@ -95,47 +95,87 @@ init() ->
 -opaque itr_ref() :: binary().
 
 -spec open(string(), open_options()) -> {ok, db_ref()} | {error, any()}.
-open(_Name, _Opts) ->
+open(Name, Opts) ->
+    eleveldb_bump:big(),
+    open_int(Name, Opts).
+
+open_int(_Name, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec close(db_ref()) -> ok | {error, any()}.
-close(_Ref) ->
+close(Ref) ->
+    eleveldb_bump:big(),
+    close_int(Ref).
+
+close_int(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec get(db_ref(), binary(), read_options()) -> {ok, binary()} | not_found | {error, any()}.
-get(_Ref, _Key, _Opts) ->
+get(Ref, Key, Opts) ->
+    eleveldb_bump:big(),
+    get_int(Ref, Key, Opts).
+
+get_int(_Ref, _Key, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec put(db_ref(), binary(), binary(), write_options()) -> ok | {error, any()}.
 put(Ref, Key, Value, Opts) ->
+    eleveldb_bump:big(),
+    put_int(Ref, Key, Value, Opts).
+
+put_int(Ref, Key, Value, Opts) ->
     write(Ref, [{put, Key, Value}], Opts).
 
 -spec delete(db_ref(), binary(), write_options()) -> ok | {error, any()}.
 delete(Ref, Key, Opts) ->
+    eleveldb_bump:big(),
+    delete_int(Ref, Key, Opts).
+
+delete_int(Ref, Key, Opts) ->
     write(Ref, [{delete, Key}], Opts).
 
 -spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
-write(_Ref, _Updates, _Opts) ->
+write(Ref, Updates, Opts) ->
+    eleveldb_bump:big(),
+    write_int(Ref, Updates, Opts).
+
+write_int(_Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec iterator(db_ref(), read_options()) -> {ok, itr_ref()}.
-iterator(_Ref, _Opts) ->
+iterator(Ref, Opts) ->
+    eleveldb_bump:small(),
+    iterator_int(Ref, Opts).
+
+iterator_int(_Ref, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec iterator(db_ref(), read_options(), keys_only) -> {ok, itr_ref()}.
-iterator(_Ref, _Opts, keys_only) ->
+iterator(Ref, Opts, keys_only) ->
+    eleveldb_bump:small(),
+    iterator_int(Ref, Opts, keys_only).
+
+iterator_int(_Ref, _Opts, keys_only) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec iterator_move(itr_ref(), iterator_action()) -> {ok, Key::binary(), Value::binary()} |
                                                      {ok, Key::binary()} |
                                                      {error, invalid_iterator} |
                                                      {error, iterator_closed}.
-iterator_move(_IRef, _Loc) ->
+iterator_move(IRef, Loc) ->
+    eleveldb_bump:big(),
+    iterator_move_int(IRef, Loc).
+
+iterator_move_int(_IRef, _Loc) ->
     erlang:nif_error({error, not_loaded}).
 
 
 -spec iterator_close(itr_ref()) -> ok.
-iterator_close(_IRef) ->
+iterator_close(IRef) ->
+    eleveldb_bump:small(),
+    iterator_close_int(IRef).
+
+iterator_close_int(_IRef) ->
     erlang:nif_error({error, not_loaded}).
 
 -type fold_fun() :: fun(({Key::binary(), Value::binary()}, any()) -> any()).
@@ -157,18 +197,34 @@ fold_keys(Ref, Fun, Acc0, Opts) ->
     do_fold(Itr, Fun, Acc0, Opts).
 
 -spec status(db_ref(), Key::binary()) -> {ok, binary()} | error.
-status(_Ref, _Key) ->
+status(Ref, Key) ->
+    eleveldb_bump:small(),
+    status_int(Ref, Key).
+
+status_int(_Ref, _Key) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec destroy(string(), open_options()) -> ok | {error, any()}.
-destroy(_Name, _Opts) ->
+destroy(Name, Opts) ->
+    eleveldb_bump:big(),
+    destroy_int(Name, Opts).
+
+destroy_int(_Name, _Opts) ->
     erlang:nif_error({erlang, not_loaded}).
 
-repair(_Name, _Opts) ->
-    ok.
+repair(Name, Opts) ->
+    eleveldb_bump:big(),
+    repair_int(Name, Opts).
+
+repair_int(_Name, _Opts) ->
+    erlang:nif_error({erlang, not_loaded}).
 
 -spec is_empty(db_ref()) -> boolean().
-is_empty(_Ref) ->
+is_empty(Ref) ->
+    eleveldb_bump:big(),
+    is_empty_int(Ref).
+
+is_empty_int(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec option_types(open | read | write) -> [{atom(), bool | integer | any}].
