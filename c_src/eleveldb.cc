@@ -167,9 +167,35 @@ T *placement_ctor(P0 p0, P1 p1, P2 p2, P3 p3, P4 p4, P5 p5)
 template <class T>
 void placement_dtor(T *& x)
 {
+ if(0 == x)
+  return;
+
  x->~T();
  enif_free(x);
 }
+
+// Scoped lock that is not ownership-aware:
+class simple_scoped_lock
+{
+ ErlNifMutex* lock;
+
+ private:
+ simple_scoped_lock();                                        // nodefault
+ simple_scoped_lock(const simple_scoped_lock&);               // nocopy
+ simple_scoped_lock& operator=(const simple_scoped_lock&);    // nocopyassign
+
+ public:
+ simple_scoped_lock(ErlNifMutex* _lock)
+  : lock(_lock)
+ {
+    enif_mutex_lock(lock);
+ }
+
+ ~simple_scoped_lock()
+ {
+    enif_mutex_unlock(lock);
+ }
+};
 
 } // namespace
 
@@ -236,10 +262,7 @@ class eleveldb_thread_pool
        db_handle(_db_handle), 
        batch(_batch),
        options(_options)
-    {
-        if(0 == local_env)
-         throw;
-    }
+    {}
 
     ~work_item_t()
     {
@@ -340,15 +363,10 @@ eleveldb_thread_pool::~eleveldb_thread_pool()
 // Grow the thread pool by nthreads threads:
 bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
 {
- enif_mutex_lock(threads_lock);
-
- bool result = false;
+ simple_scoped_lock l(threads_lock);
 
  if(0 >= nthreads)
-  {
-        result = true;  // nothing to do, but also not failure
-        goto DONE; 
-  }
+  return true;  // nothing to do, but also not failure
 
  // At least one thread means that we don't shut threads down:
  shutdown = false;
@@ -361,7 +379,7 @@ bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
     ErlNifTid *thread_id = static_cast<ErlNifTid *>(enif_alloc(sizeof(ErlNifTid)));
 
     if(0 == thread_id)
-     goto DONE;
+     return false;
 
     const int result = enif_thread_create(const_cast<char *>(thread_name.str().c_str()), thread_id, 
                                           eleveldb_write_thread_worker, 
@@ -369,18 +387,12 @@ bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
                                           0);
 
     if(0 != result)
-     goto DONE;
+     return false;
 
     threads.push(thread_id);
   }
 
- // If we're here, things went okay:
- result = true;
-
-DONE:
- enif_mutex_unlock(threads_lock);
-
- return result;
+ return true;
 }
 
 // Shut down and destroy all threads in the thread pool:
@@ -409,16 +421,12 @@ bool eleveldb_thread_pool::drain_thread_pool()
  shutdown = true;
  enif_cond_broadcast(work_queue_pending);
 
- enif_mutex_lock(threads_lock);
-
+ simple_scoped_lock l(threads_lock);
  while(!threads.empty())
   {
     rt(threads.top());
     threads.pop();    
-//JFW likely not an issue    enif_cond_signal(work_queue_pending);
   }
-
- enif_mutex_unlock(threads_lock);
 
  return rt();
 }
