@@ -26,6 +26,7 @@
 #include <queue>
 #include <sstream>
 #include <algorithm>
+#include <stdexcept>
 
 #include "eleveldb.h"
 
@@ -167,9 +168,35 @@ T *placement_ctor(P0 p0, P1 p1, P2 p2, P3 p3, P4 p4, P5 p5)
 template <class T>
 void placement_dtor(T *& x)
 {
+ if(0 == x)
+  return;
+
  x->~T();
  enif_free(x);
 }
+
+// Scoped lock that is not ownership-aware:
+class simple_scoped_lock
+{
+ ErlNifMutex* lock;
+
+ private:
+ simple_scoped_lock();                                        // nodefault
+ simple_scoped_lock(const simple_scoped_lock&);               // nocopy
+ simple_scoped_lock& operator=(const simple_scoped_lock&);    // nocopyassign
+
+ public:
+ simple_scoped_lock(ErlNifMutex* _lock)
+  : lock(_lock)
+ {
+    enif_mutex_lock(lock);
+ }
+
+ ~simple_scoped_lock()
+ {
+    enif_mutex_unlock(lock);
+ }
+};
 
 } // namespace
 
@@ -236,10 +263,7 @@ class eleveldb_thread_pool
        db_handle(_db_handle), 
        batch(_batch),
        options(_options)
-    {
-        if(0 == local_env)
-         throw;
-    }
+    {}
 
     ~work_item_t()
     {
@@ -274,7 +298,10 @@ class eleveldb_thread_pool
 
  void submit(work_item_t* item) 
  { 
-    lock(), work_queue.push(item), unlock(); 
+    lock();
+     work_queue.push(item); 
+    unlock(); 
+
     enif_cond_signal(work_queue_pending);
  }
 
@@ -314,17 +341,18 @@ eleveldb_thread_pool::eleveldb_thread_pool(const size_t thread_pool_size)
 {
  threads_lock = enif_mutex_create(const_cast<char *>("threads_lock"));
  if(0 == threads_lock)
-  throw;
+  throw std::runtime_error("cannot create threads_lock");
 
  work_queue_pending = enif_cond_create(const_cast<char *>("work_queue_pending"));
  if(0 == work_queue_pending)
-  throw;
+  throw std::runtime_error("cannot create condition work_queue_pending");
 
  work_queue_lock = enif_mutex_create(const_cast<char *>("work_queue_lock"));
  if(0 == work_queue_lock)
-  throw;
+  throw std::runtime_error("cannot create work_queue_lock");
 
- grow_thread_pool(thread_pool_size);
+ if(false == grow_thread_pool(thread_pool_size))
+  throw std::runtime_error("cannot resize thread pool");
 }
 
 eleveldb_thread_pool::~eleveldb_thread_pool()
@@ -340,15 +368,10 @@ eleveldb_thread_pool::~eleveldb_thread_pool()
 // Grow the thread pool by nthreads threads:
 bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
 {
- enif_mutex_lock(threads_lock);
-
- bool result = false;
+ simple_scoped_lock l(threads_lock);
 
  if(0 >= nthreads)
-  {
-        result = true;  // nothing to do, but also not failure
-        goto DONE; 
-  }
+  return true;  // nothing to do, but also not failure
 
  // At least one thread means that we don't shut threads down:
  shutdown = false;
@@ -361,7 +384,7 @@ bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
     ErlNifTid *thread_id = static_cast<ErlNifTid *>(enif_alloc(sizeof(ErlNifTid)));
 
     if(0 == thread_id)
-     goto DONE;
+     return false;
 
     const int result = enif_thread_create(const_cast<char *>(thread_name.str().c_str()), thread_id, 
                                           eleveldb_write_thread_worker, 
@@ -369,18 +392,12 @@ bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
                                           0);
 
     if(0 != result)
-     goto DONE;
+     return false;
 
     threads.push(thread_id);
   }
 
- // If we're here, things went okay:
- result = true;
-
-DONE:
- enif_mutex_unlock(threads_lock);
-
- return result;
+ return true;
 }
 
 // Shut down and destroy all threads in the thread pool:
@@ -409,16 +426,12 @@ bool eleveldb_thread_pool::drain_thread_pool()
  shutdown = true;
  enif_cond_broadcast(work_queue_pending);
 
- enif_mutex_lock(threads_lock);
-
+ simple_scoped_lock l(threads_lock);
  while(!threads.empty())
   {
     rt(threads.top());
     threads.pop();    
-//JFW likely not an issue    enif_cond_signal(work_queue_pending);
   }
-
- enif_mutex_unlock(threads_lock);
 
  return rt();
 }
@@ -479,9 +492,12 @@ void *eleveldb_write_thread_worker(void *args)
     // Submit the job to leveldb:
     eleveldb_db_handle* dbh = submission->db_handle;
 
-    enif_mutex_lock(dbh->db_lock);
-    leveldb::Status status = dbh->db->Write(*(submission->options), submission->batch);
-    enif_mutex_unlock(dbh->db_lock);
+    leveldb::Status status;
+
+    {
+    simple_scoped_lock(dbh->db_lock);
+    status = dbh->db->Write(*(submission->options), submission->batch);
+    }
 
     enif_release_resource(dbh);         // decrement the refcount of the leveldb handle
 
@@ -686,9 +702,8 @@ static bool free_db(eleveldb_db_handle* db_handle)
              ++iters_it)
         {
             eleveldb_itr_handle* itr_handle = *iters_it;
-            enif_mutex_lock(itr_handle->itr_lock);
+	    simple_scoped_lock l(itr_handle->itr_lock);
             free_itr(*iters_it);
-            enif_mutex_unlock(itr_handle->itr_lock);
         }
 
         // close the db 
@@ -794,10 +809,10 @@ ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         enif_inspect_binary(env, argv[1], &key) &&
         enif_is_list(env, argv[2]))
     {
-        enif_mutex_lock(handle->db_lock);
-        if (handle->db == NULL)
+        simple_scoped_lock(handle->db_lock);
+
+        if(handle->db == NULL)
         {
-            enif_mutex_unlock(handle->db_lock);
             return error_einval(env);
         }
 
@@ -816,12 +831,11 @@ ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
             ERL_NIF_TERM value_bin;
             unsigned char* value = enif_make_new_binary(env, size, &value_bin);
             memcpy(value, sval.data(), size);
-            enif_mutex_unlock(handle->db_lock);
+
             return enif_make_tuple2(env, ATOM_OK, value_bin);
         }
         else
         {
-            enif_mutex_unlock(handle->db_lock);
             return ATOM_NOT_FOUND;
         }
     }
@@ -908,10 +922,10 @@ ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
         enif_is_list(env, argv[1])) // Options
     {
-        enif_mutex_lock(db_handle->db_lock);
+        simple_scoped_lock(db_handle->db_lock);
+
         if (db_handle->db == NULL)
         {
-            enif_mutex_unlock(db_handle->db_lock);
             return error_einval(env);
         }
 
@@ -943,7 +957,7 @@ ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
         enif_release_resource(itr_handle);
 
         db_handle->iters->insert(itr_handle);
-        enif_mutex_unlock(db_handle->db_lock);
+
         return enif_make_tuple2(env, ATOM_OK, result);
     }
     else
@@ -965,13 +979,12 @@ ERL_NIF_TERM eleveldb_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM
     eleveldb_itr_handle* itr_handle;
     if (enif_get_resource(env, argv[0], eleveldb_itr_RESOURCE, (void**)&itr_handle))
     {
-        enif_mutex_lock(itr_handle->itr_lock);
+	simple_scoped_lock l(itr_handle->itr_lock);
 
         leveldb::Iterator* itr = itr_handle->itr;
 
         if (itr == NULL)
         {
-            enif_mutex_unlock(itr_handle->itr_lock);
             return enif_make_tuple2(env, ATOM_ERROR, ATOM_ITERATOR_CLOSED);
         }
 
@@ -1019,7 +1032,6 @@ ERL_NIF_TERM eleveldb_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM
             result = enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
         }
 
-        enif_mutex_unlock(itr_handle->itr_lock);
         return result;
     }
     else
@@ -1064,13 +1076,14 @@ ERL_NIF_TERM eleveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
 {
     eleveldb_db_handle* db_handle;
     ErlNifBinary name_bin;
+
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
         enif_inspect_binary(env, argv[1], &name_bin))
     {
-        enif_mutex_lock(db_handle->db_lock);
+        simple_scoped_lock(db_handle->db_lock);
+
         if (db_handle->db == NULL)
         {
-            enif_mutex_unlock(db_handle->db_lock);
             return error_einval(env);
         }
 
@@ -1081,12 +1094,11 @@ ERL_NIF_TERM eleveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
             ERL_NIF_TERM result;
             unsigned char* result_buf = enif_make_new_binary(env, value.size(), &result);
             memcpy(result_buf, value.c_str(), value.size());
-            enif_mutex_unlock(db_handle->db_lock);
+
             return enif_make_tuple2(env, ATOM_OK, result);
         }
         else
         {
-            enif_mutex_unlock(db_handle->db_lock);
             return ATOM_ERROR;
         }
     }
@@ -1151,10 +1163,10 @@ ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
     eleveldb_db_handle* db_handle;
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
     {
-        enif_mutex_lock(db_handle->db_lock);
+        simple_scoped_lock(db_handle->db_lock);
+
         if (db_handle->db == NULL)
         {
-            enif_mutex_unlock(db_handle->db_lock);
             return error_einval(env);
         }
 
@@ -1171,7 +1183,7 @@ ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
             result = ATOM_TRUE;
         }
         delete itr;
-        enif_mutex_unlock(db_handle->db_lock);
+
         return result;
     }
     else
@@ -1193,7 +1205,7 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
     // No need to lock iter - it's the last reference
     if (itr_handle->itr != 0)
     {
-        enif_mutex_lock(itr_handle->db_handle->db_lock);
+	simple_scoped_lock l(itr_handle->db_handle->db_lock);
 
         if (itr_handle->db_handle->iters)
         {
@@ -1201,14 +1213,11 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
         }
         free_itr(itr_handle);
 
-        enif_mutex_unlock(itr_handle->db_handle->db_lock);
         enif_release_resource(itr_handle->db_handle);  // matches keep in eleveldb_iterator()
     }
 
     enif_mutex_destroy(itr_handle->itr_lock);
 }
-
-#define ATOM(Id, Value) { Id = enif_make_atom(env, Value); }
 
 static void on_unload(ErlNifEnv *env, void *priv_data)
 {
@@ -1282,6 +1291,9 @@ try
     *priv_data = priv;
 
     // Initialize common atoms
+
+#define ATOM(Id, Value) { Id = enif_make_atom(env, Value); }
+
     ATOM(ATOM_OK, "ok");
     ATOM(ATOM_ERROR, "error");
     ATOM(ATOM_EINVAL, "einval");
@@ -1321,11 +1333,14 @@ try
     ATOM(ATOM_COMPRESSION, "compression");
     ATOM(ATOM_USE_BLOOMFILTER, "use_bloomfilter");
 
+#undef ATOM
+
     return 0;
 }
 catch(...)
 {
-    return 1; // refuse to load the NIF module
+    // Refuse to load the NIF module (I see no way right now to return a more specific exception):
+    return 1; 
 }
 
 extern "C" {
