@@ -1,3 +1,4 @@
+#include <iostream>//JFW
 // -------------------------------------------------------------------
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
@@ -23,7 +24,7 @@
 #include <new>
 #include <set>
 #include <stack>
-#include <queue>
+#include <deque>
 #include <sstream>
 #include <algorithm>
 #include <stdexcept>
@@ -275,8 +276,8 @@ class eleveldb_thread_pool
  };
 
  private:
- typedef std::queue<work_item_t*> work_queue_t; 
- typedef std::stack<ErlNifTid *>  thread_pool_t;
+ typedef std::deque<work_item_t*>   work_queue_t; 
+ typedef std::stack<ErlNifTid *>    thread_pool_t;
 
  private:
  thread_pool_t  threads;
@@ -299,7 +300,7 @@ class eleveldb_thread_pool
  void submit(work_item_t* item) 
  { 
     lock();
-     work_queue.push(item); 
+     work_queue.push_back(item); 
     unlock(); 
 
     enif_cond_signal(work_queue_pending);
@@ -322,6 +323,8 @@ class eleveldb_thread_pool
 
     return grow_thread_pool(n);
  }
+
+ bool complete_jobs_for(eleveldb_db_handle* dbh);
 
  size_t work_queue_size() const { return work_queue.size(); } 
  bool shutdown_pending() const  { return shutdown; }
@@ -396,6 +399,51 @@ bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
 
     threads.push(thread_id);
   }
+
+ return true;
+}
+
+namespace {
+ struct db_matches
+ {
+    const eleveldb_db_handle* dbh;
+
+    db_matches(const eleveldb_db_handle* _dbh)
+     : dbh(_dbh)
+    {}
+
+    bool operator()(eleveldb_thread_pool::work_item_t*& rhs) const { return dbh == rhs->db_handle; }
+ };
+} // namespace
+
+bool eleveldb_thread_pool::complete_jobs_for(eleveldb_db_handle* dbh)
+{
+ if(0 == dbh)
+  return true;  // nothing to do, but not a failure
+
+ db_matches m(dbh);
+
+ // We don't want more than one close operation to reshuffle:
+ ErlNifMutex *complete_jobs_mutex = enif_mutex_create((char*)"complete_jobs_lock");
+ if(0 == complete_jobs_mutex)
+  return false;
+
+ {
+ simple_scoped_lock complete_jobs_lock(complete_jobs_mutex);
+
+ // Stop new jobs coming in during shuffle; after that, appending jobs is fine: 
+ {
+ simple_scoped_lock l(work_queue_lock);
+ std::stable_partition(work_queue.begin(), work_queue.end(), m);
+ }
+
+ // Signal all threads and drain our work first:
+ enif_cond_broadcast(work_queue_pending);
+ while(not work_queue.empty() and m(work_queue.front()))
+  ;
+ }
+
+ enif_mutex_destroy(complete_jobs_mutex);
 
  return true;
 }
@@ -483,10 +531,10 @@ void *eleveldb_write_thread_worker(void *args)
         break;
      }
 
-    // Take a job from and release the queue:
+    // Take a job from and release the queue head:
     eleveldb_thread_pool::work_item_t* submission = h.work_queue.front(); 
 
-    h.work_queue.pop();
+    h.work_queue.pop_front();
     h.unlock();
 
     // Submit the job to leveldb:
@@ -684,10 +732,18 @@ static void free_itr(eleveldb_itr_handle* itr_handle)
 }
 
 // Free dynamic elements of database - acquire lock before calling
-static bool free_db(eleveldb_db_handle* db_handle)
+static bool free_db(ErlNifEnv* env, eleveldb_db_handle* db_handle)
 {
     if (0 == db_handle)
      return false;
+
+    bool result = true;
+
+    // Tidy up any pending jobs:
+    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+    if (false == priv.thread_pool.complete_jobs_for(db_handle))
+     result = false;
 
     if (db_handle->db_lock)
      enif_mutex_lock(db_handle->db_lock);
@@ -702,7 +758,7 @@ static bool free_db(eleveldb_db_handle* db_handle)
              ++iters_it)
         {
             eleveldb_itr_handle* itr_handle = *iters_it;
-	    simple_scoped_lock l(itr_handle->itr_lock);
+            simple_scoped_lock l(itr_handle->itr_lock);
             free_itr(*iters_it);
         }
 
@@ -734,7 +790,7 @@ static bool free_db(eleveldb_db_handle* db_handle)
         enif_mutex_destroy(db_handle->db_lock), db_handle->db_lock = 0;
      }
 
-    return true;
+    return result;
 }
 
 
@@ -798,7 +854,7 @@ ERL_NIF_TERM eleveldb_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     if (!enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
      return enif_make_badarg(env);
 
-    return free_db(db_handle) ? ATOM_OK : error_einval(env);
+    return free_db(env, db_handle) ? ATOM_OK : error_einval(env);
 }
 
 ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
@@ -979,7 +1035,7 @@ ERL_NIF_TERM eleveldb_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM
     eleveldb_itr_handle* itr_handle;
     if (enif_get_resource(env, argv[0], eleveldb_itr_RESOURCE, (void**)&itr_handle))
     {
-	simple_scoped_lock l(itr_handle->itr_lock);
+    simple_scoped_lock l(itr_handle->itr_lock);
 
         leveldb::Iterator* itr = itr_handle->itr;
 
@@ -1194,7 +1250,7 @@ ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
 
 static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
 {
- free_db(reinterpret_cast<eleveldb_db_handle *>(arg));
+ free_db(env, reinterpret_cast<eleveldb_db_handle *>(arg));
 }
 
 static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
@@ -1205,7 +1261,7 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
     // No need to lock iter - it's the last reference
     if (itr_handle->itr != 0)
     {
-	simple_scoped_lock l(itr_handle->db_handle->db_lock);
+    simple_scoped_lock l(itr_handle->db_handle->db_lock);
 
         if (itr_handle->db_handle->iters)
         {
