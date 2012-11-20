@@ -106,8 +106,8 @@ open(_Name, _Opts) ->
     case async_open(_CallerRef, _Name, _Opts) of
     ok ->
         receive
-            { ok, _CallerRef, Dbh}        -> {ok, Dbh};
-            { error, _CallerRef, Info}    -> {error, Info}
+            { _CallerRef, ok, Dbh}        -> {ok, Dbh};
+            { _CallerRef, error, Info}    -> {error, Info}
         end
     end.
    
@@ -125,9 +125,9 @@ get(_Dbh, _Key, _Opts) ->
     case async_get(_CallerRef, _Dbh, _Key, _Opts) of
     ok ->
         receive
-            { ok, _CallerRef, not_found} -> not_found;
-            { ok, _CallerRef, Value}     -> {ok, Value};
-            { error, _CallerRef, Info}   -> {error, Info}
+            { _CallerRef, ok, not_found} -> not_found;
+            { _CallerRef, ok, Value}     -> {ok, Value};
+            { _CallerRef, error, Info}   -> {error, Info}
         end
     end.
 
@@ -137,17 +137,15 @@ put(Ref, Key, Value, Opts) -> write(Ref, [{put, Key, Value}], Opts).
 -spec delete(db_ref(), binary(), write_options()) -> ok | {error, any()}.
 delete(Ref, Key, Opts) -> write(Ref, [{delete, Key}], Opts).
 
-% This mechanism should be revisted and made a bit more generic:
-
 -spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
 write(_Ref, _Updates, _Opts) -> 
     _CallerRef = make_ref(),
     case submit_job(_CallerRef, _Ref, _Updates, _Opts) of
     ok ->
         receive
-            {ok, _CallerRef} -> ok;
-            {ok, _CallerRef, _} -> ok;
-            {error, _CallerRef, Info} -> {error, Info}
+            {_CallerRef, ok} -> ok;
+            {_CallerRef, ok, _} -> ok;
+            {_CallerRef, error, Info} -> {error, Info}
         end
     end.
 
@@ -169,7 +167,7 @@ iterator(_Ref, _Opts) ->
     case async_iterator(_CallerRef, _Ref, _Opts) of
     ok ->
         receive
-            {ok, _CallerRef, IterRef} -> {ok, IterRef}
+            {_CallerRef, ok, IterRef} -> {ok, IterRef}
         end
     end.
 
@@ -179,7 +177,7 @@ iterator(_Ref, _Opts, keys_only) ->
     case async_iterator(_CallerRef, _Ref, _Opts, keys_only) of
     ok ->
         receive
-            {ok, _CallerRef, IterRef} -> {ok, IterRef}
+            {_CallerRef, ok, IterRef} -> {ok, IterRef}
         end
     end.
 
@@ -200,12 +198,11 @@ iterator_move(_IRef, _Loc) ->
     case async_iterator_move(_CallerRef, _IRef, _Loc) of
     ok ->
         receive
-            { ok, _CallerRef, Key, Value } -> {ok, Key, Value };
-            { ok, _CallerRef, Key } -> {ok, Key };
-            { error, _CallerRef, invalid_iterator } -> {error, invalid_iterator};
-            { error, _CallerRef, iterator_closed } -> {error, iterator_closed};
-            { error, _CallerRef } -> {error, invalid_iterator}; % JFW: is this the right thing to do..?
-X -> io:format("JFW: iterator_move() returned: ~p\n\r", [X])
+            { _CallerRef, ok, Key, Value } -> {ok, Key, Value };
+            { _CallerRef, ok, Key } -> {ok, Key };
+            { _CallerRef, error, invalid_iterator } -> {error, invalid_iterator};
+            { _CallerRef, error, iterator_closed } -> {error, iterator_closed};
+            { _CallerRef, error } -> {error, invalid_iterator} % JFW: is this the right thing to do..?
         end
     end.
 

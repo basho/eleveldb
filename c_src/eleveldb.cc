@@ -812,8 +812,8 @@ bool eleveldb_thread_pool::notify_caller(eleveldb::work_task_t& work_item)
         { ATOM Status, PID CallerHandle, ERL_NIF_TERM result } */
  ERL_NIF_TERM result_tuple = 
                 enif_make_tuple3(work_item.local_env(), 
-                                 (result.first ? ATOM_OK : ATOM_ERROR),
                                  work_item.caller_ref(),
+                                 (result.first ? ATOM_OK : ATOM_ERROR),
                                  result.second);
  
  return (0 != enif_send(0, &pid, work_item.local_env(), result_tuple));
