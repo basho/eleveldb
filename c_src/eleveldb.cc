@@ -83,7 +83,6 @@ static ErlNifFunc nif_funcs[] =
     {"submit_job", 4, eleveldb_submit_job},
     {"iterator", 2, eleveldb_iterator},
     {"iterator", 3, eleveldb_iterator},
-    {"iterator_move", 2, eleveldb_iterator_move},
     {"iterator_close", 1, eleveldb_iterator_close},
     {"status", 2, eleveldb_status},
     {"destroy", 2, eleveldb_destroy},
@@ -91,7 +90,9 @@ static ErlNifFunc nif_funcs[] =
     {"is_empty", 1, eleveldb_is_empty},
 
     {"async_open", 3, eleveldb::async_open},
-    {"async_get", 4, eleveldb::async_get}
+    {"async_get", 4, eleveldb::async_get},
+
+    {"async_iterator_move", 3, eleveldb::async_iterator_move}
 };
 
 using std::copy;
@@ -203,7 +204,7 @@ class simple_scoped_lock
 
 } // namespace
 
-// Tuple helpers:
+// Erlang helpers:
 namespace {
 ERL_NIF_TERM error_einval(ErlNifEnv* env)
 {
@@ -216,6 +217,31 @@ ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Status& st
                                            ERL_NIF_LATIN1);
     return enif_make_tuple2(env, ATOM_ERROR,
                             enif_make_tuple2(env, error, reason));
+}
+
+static ERL_NIF_TERM slice_to_binary(ErlNifEnv* env, leveldb::Slice s)
+{
+    ERL_NIF_TERM result;
+    unsigned char* value = enif_make_new_binary(env, s.size(), &result);
+    memcpy(value, s.data(), s.size());
+    return result;
+}
+
+template <typename Acc> ERL_NIF_TERM fold(ErlNifEnv* env, ERL_NIF_TERM list,
+                                          ERL_NIF_TERM(*fun)(ErlNifEnv*, ERL_NIF_TERM, Acc&),
+                                          Acc& acc)
+{
+    ERL_NIF_TERM head, tail = list;
+    while (enif_get_list_cell(env, tail, &head, &tail))
+    {
+        ERL_NIF_TERM result = fun(env, head, acc);
+        if (result != ATOM_OK)
+        {
+            return result;
+        }
+    }
+
+    return ATOM_OK;
 }
 
 } // namespace
@@ -314,6 +340,97 @@ struct open_task_t : public work_task_t
     enif_release_resource(handle);
 
     return make_pair(true, result);
+ }
+};
+
+struct iter_move_task_t : public work_task_t
+{
+ typedef enum { FIRST, LAST, NEXT, PREV, SEEK } action_t;
+
+ mutable eleveldb_itr_handle*       itr_handle;
+
+ action_t                           action;
+
+ ERL_NIF_TERM                       seek_target;
+
+ iter_move_task_t(ErlNifEnv *_local_env, ERL_NIF_TERM& _caller_ref, ERL_NIF_TERM& _pid_term,
+                  eleveldb_itr_handle *_itr_handle,
+                  action_t& _action,
+                  ERL_NIF_TERM& _seek_target) 
+ : work_task_t(_local_env, _caller_ref, _pid_term),
+    itr_handle(_itr_handle),
+    action(_action),
+    seek_target(seek_target)
+ {
+    enif_keep_resource(itr_handle);     // increment refcount 
+ }
+
+ ~iter_move_task_t()
+ {
+    enif_release_resource(itr_handle);  // decrement refcount
+ }
+
+ work_result_t operator()()
+ {
+    simple_scoped_lock(itr_handle->itr_lock);
+
+    ErlNifBinary key;
+
+    leveldb::Iterator* itr = itr_handle->itr;
+
+    if(0 == itr)
+     return make_pair(false, ATOM_ITERATOR_CLOSED);
+
+    switch(action)
+     {
+        default:    
+                    return make_pair(false, ATOM_ERROR);
+                    break;
+
+        case FIRST:
+                    itr->SeekToFirst();
+                    break;
+
+        case LAST:
+                    itr->SeekToLast();
+                    break;
+
+        case NEXT:
+                    if(!itr->Valid())
+                     return make_pair(false, ATOM_ERROR);
+
+                    itr->Next();
+
+                    break;
+
+        case PREV:
+                    if(!itr->Valid())
+                     return make_pair(false, ATOM_ERROR);
+
+                    itr->Prev();
+
+                    break;
+
+        case SEEK:
+                    if(!enif_inspect_binary(local_env(), seek_target, &key))
+                     return make_pair(false, ATOM_ERROR);
+
+                    leveldb::Slice key_slice(reinterpret_cast<char *>(key.data), key.size);
+    
+                    itr->Seek(key_slice);
+
+                    break;
+     }
+
+    if(!itr->Valid())
+     return make_pair(false, ATOM_INVALID_ITERATOR);
+
+    if(itr_handle->keys_only)
+     return make_pair(true, slice_to_binary(local_env(), itr->key()));
+
+    return make_pair(true, enif_make_tuple2(local_env(),
+                                            slice_to_binary(local_env(), itr->key()),
+                                            slice_to_binary(local_env(), itr->value())));
  }
 };
 
@@ -847,23 +964,6 @@ ERL_NIF_TERM write_batch_item(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::WriteB
     return item;
 }
 
-template <typename Acc> ERL_NIF_TERM fold(ErlNifEnv* env, ERL_NIF_TERM list,
-                                          ERL_NIF_TERM(*fun)(ErlNifEnv*, ERL_NIF_TERM, Acc&),
-                                          Acc& acc)
-{
-    ERL_NIF_TERM head, tail = list;
-    while (enif_get_list_cell(env, tail, &head, &tail))
-    {
-        ERL_NIF_TERM result = fun(env, head, acc);
-        if (result != ATOM_OK)
-        {
-            return result;
-        }
-    }
-
-    return ATOM_OK;
-}
-
 // Free dynamic elements of iterator - acquire lock before calling
 static void free_itr(eleveldb_itr_handle* itr_handle)
 {
@@ -1028,6 +1128,55 @@ ERL_NIF_TERM async_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
  return ATOM_OK;
 }
 
+ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+ const ERL_NIF_TERM& caller_ref     = argv[0];
+ const ERL_NIF_TERM& itr_handle_ref = argv[1];
+ const ERL_NIF_TERM& action_atom    = argv[2];
+
+ eleveldb_itr_handle *itr_handle = 0;
+
+ if(!enif_get_resource(env, itr_handle_ref, eleveldb_itr_RESOURCE, (void **)&itr_handle) ||
+    !enif_is_atom(env, action_atom))
+  {
+    return enif_make_badarg(env);
+  }
+
+ // If the "action atom" is not an action, it means it's a seek target:
+ eleveldb::iter_move_task_t::action_t action = eleveldb::iter_move_task_t::SEEK;
+
+ if(ATOM_FIRST == action_atom)  action = eleveldb::iter_move_task_t::FIRST;
+ if(ATOM_LAST == action_atom)   action = eleveldb::iter_move_task_t::LAST;
+ if(ATOM_NEXT == action_atom) action = eleveldb::iter_move_task_t::NEXT;
+ if(ATOM_PREV == action_atom) action = eleveldb::iter_move_task_t::PREV;
+
+ eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+ // Stop taking requests if we've been asked to shut down:
+ if(priv.thread_pool.shutdown_pending())
+  return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+
+ ErlNifEnv* local_env = enif_alloc_env();
+ if(0 == local_env)
+  return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+
+ ErlNifPid local_pid;
+ enif_self(env, &local_pid);
+
+ eleveldb::work_task_t *work_item = placement_ctor<eleveldb::iter_move_task_t>(
+                                        local_env,
+                                        enif_make_copy(local_env, caller_ref),
+                                        enif_make_pid(local_env, &local_pid),
+                                        itr_handle,
+                                        action,
+                                        enif_make_copy(local_env, action_atom)
+                                       );
+                   
+ priv.thread_pool.submit(work_item); 
+
+ return ATOM_OK;
+}
+
 } // namespace eleveldb
 
 ERL_NIF_TERM eleveldb_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
@@ -1160,81 +1309,6 @@ ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
         return enif_make_badarg(env);
     }
 }
-
-static ERL_NIF_TERM slice_to_binary(ErlNifEnv* env, leveldb::Slice s)
-{
-    ERL_NIF_TERM result;
-    unsigned char* value = enif_make_new_binary(env, s.size(), &result);
-    memcpy(value, s.data(), s.size());
-    return result;
-}
-
-ERL_NIF_TERM eleveldb_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
-{
-    eleveldb_itr_handle* itr_handle;
-    if (enif_get_resource(env, argv[0], eleveldb_itr_RESOURCE, (void**)&itr_handle))
-    {
-    simple_scoped_lock l(itr_handle->itr_lock);
-
-        leveldb::Iterator* itr = itr_handle->itr;
-
-        if (itr == NULL)
-        {
-            return enif_make_tuple2(env, ATOM_ERROR, ATOM_ITERATOR_CLOSED);
-        }
-
-        ErlNifBinary key;
-
-        if (argv[1] == ATOM_FIRST)
-        {
-            itr->SeekToFirst();
-        }
-        else if (argv[1] == ATOM_LAST)
-        {
-            itr->SeekToLast();
-        }
-        else if (argv[1] == ATOM_NEXT && itr->Valid())
-        {
-            itr->Next();
-        }
-        else if (argv[1] == ATOM_PREV && itr->Valid())
-        {
-            itr->Prev();
-        }
-        else if (enif_inspect_binary(env, argv[1], &key))
-        {
-            leveldb::Slice key_slice((const char*)key.data, key.size);
-            itr->Seek(key_slice);
-        }
-
-        ERL_NIF_TERM result;
-        if (itr->Valid())
-        {
-            if (itr_handle->keys_only)
-            {
-                result = enif_make_tuple2(env, ATOM_OK,
-                                          slice_to_binary(env, itr->key()));
-            }
-            else
-            {
-                result = enif_make_tuple3(env, ATOM_OK,
-                                          slice_to_binary(env, itr->key()),
-                                          slice_to_binary(env, itr->value()));
-            }
-        }
-        else
-        {
-            result = enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
-        }
-
-        return result;
-    }
-    else
-    {
-        return enif_make_badarg(env);
-    }
-}
-
 
 ERL_NIF_TERM eleveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {

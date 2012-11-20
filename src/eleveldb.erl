@@ -163,12 +163,32 @@ iterator(_Ref, _Opts) ->
 iterator(_Ref, _Opts, keys_only) ->
     erlang:nif_error({error, not_loaded}).
 
+-spec async_iterator_move(reference(), itr_ref(), iterator_action()) -> {ok, reference(), Key::binary(), Value::binary()} | 
+                                                                        {ok, reference(), Key::binary()} |
+                                                                        {error, reference(), invalid_iterator} |
+                                                                        {error, reference(), iterator_closed} |
+                                                                        {error, reference()}.
+async_iterator_move(_CallerRef, _IterRef, _IterAction) ->
+    erlang:nif_error({error, not_loaded}).
+
 -spec iterator_move(itr_ref(), iterator_action()) -> {ok, Key::binary(), Value::binary()} |
                                                      {ok, Key::binary()} |
                                                      {error, invalid_iterator} |
                                                      {error, iterator_closed}.
 iterator_move(_IRef, _Loc) ->
-    erlang:nif_error({error, not_loaded}).
+    _CallerRef = make_ref(),
+    case async_iterator_move(_CallerRef, _IRef, _Loc) of
+    ok ->
+        receive
+            { ok, _CallerRef, Key, Value } -> {ok, Key, Value };
+            { ok, _CallerRef, Key } -> {ok, Key };
+            { error, _CallerRef, invalid_iterator } -> {error, invalid_iterator};
+            { error, _CallerRef, iterator_closed } -> {error, iterator_closed};
+            { error, _CallerRef } -> {error, invalid_iterator}; % JFW: is this the right thing to do..?
+X -> io:format("JFW: iterator_move() returned: ~p\n\r", [X])
+        end
+    end.
+
 
 
 -spec iterator_close(itr_ref()) -> ok.
