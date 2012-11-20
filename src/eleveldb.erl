@@ -155,13 +155,33 @@ write(_Ref, _Updates, _Opts) ->
 submit_job(_CallerRef, _Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
+-spec async_iterator(reference(), db_ref(), read_options()) -> {ok, _CallerRef, itr_ref()}.
+async_iterator(_CallerRef, _Ref, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec async_iterator(reference(), db_ref(), read_options(), keys_only) -> {ok, _CallerRef, itr_ref()}.
+async_iterator(_CallerRef, _Ref, _Opts, keys_only) ->
+    erlang:nif_error({error, not_loaded}).
+
 -spec iterator(db_ref(), read_options()) -> {ok, itr_ref()}.
 iterator(_Ref, _Opts) ->
-    erlang:nif_error({error, not_loaded}).
+    _CallerRef = make_ref(),
+    case async_iterator(_CallerRef, _Ref, _Opts) of
+    ok ->
+        receive
+            {ok, _CallerRef, IterRef} -> {ok, IterRef}
+        end
+    end.
 
 -spec iterator(db_ref(), read_options(), keys_only) -> {ok, itr_ref()}.
 iterator(_Ref, _Opts, keys_only) ->
-    erlang:nif_error({error, not_loaded}).
+    _CallerRef = make_ref(),
+    case async_iterator(_CallerRef, _Ref, _Opts, keys_only) of
+    ok ->
+        receive
+            {ok, _CallerRef, IterRef} -> {ok, IterRef}
+        end
+    end.
 
 -spec async_iterator_move(reference(), itr_ref(), iterator_action()) -> {ok, reference(), Key::binary(), Value::binary()} | 
                                                                         {ok, reference(), Key::binary()} |

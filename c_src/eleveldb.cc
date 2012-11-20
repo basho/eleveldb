@@ -81,8 +81,10 @@ static ErlNifFunc nif_funcs[] =
 {
     {"close", 1, eleveldb_close},
     {"submit_job", 4, eleveldb_submit_job},
+/* JFW
     {"iterator", 2, eleveldb_iterator},
     {"iterator", 3, eleveldb_iterator},
+*/
     {"iterator_close", 1, eleveldb_iterator_close},
     {"status", 2, eleveldb_status},
     {"destroy", 2, eleveldb_destroy},
@@ -91,6 +93,9 @@ static ErlNifFunc nif_funcs[] =
 
     {"async_open", 3, eleveldb::async_open},
     {"async_get", 4, eleveldb::async_get},
+
+    {"async_iterator", 3, eleveldb::async_iterator},
+    {"async_iterator", 4, eleveldb::async_iterator},
 
     {"async_iterator_move", 3, eleveldb::async_iterator_move}
 };
@@ -338,6 +343,50 @@ struct open_task_t : public work_task_t
     ERL_NIF_TERM result = enif_make_resource(local_env(), handle);
 
     enif_release_resource(handle);
+
+    return make_pair(true, result);
+ }
+};
+
+struct iter_task_t : public work_task_t
+{
+ eleveldb_db_handle *db_handle;
+ const bool keys_only;
+ leveldb::ReadOptions *options;
+
+ iter_task_t(ErlNifEnv *_local_env, ERL_NIF_TERM& _caller_ref, ERL_NIF_TERM& _pid_term,
+             eleveldb_db_handle *_db_handle, const bool _keys_only, leveldb::ReadOptions *_options)
+  : work_task_t(_local_env, _caller_ref, _pid_term),
+    db_handle(_db_handle), keys_only(_keys_only), options(_options)
+ {}
+
+ ~iter_task_t()
+ {
+    placement_dtor(options);
+ }
+
+ work_result_t operator()()
+ {
+    eleveldb_itr_handle* itr_handle =
+            (eleveldb_itr_handle*) enif_alloc_resource(eleveldb_itr_RESOURCE,
+                                                       sizeof(eleveldb_itr_handle));
+    memset(itr_handle, '\0', sizeof(eleveldb_itr_handle));
+
+    // Initialize itr handle
+    itr_handle->itr_lock = enif_mutex_create((char*)"eleveldb_itr_lock");
+    itr_handle->db_handle = db_handle;
+
+    itr_handle->snapshot = db_handle->db->GetSnapshot();
+    options->snapshot = itr_handle->snapshot;
+
+    itr_handle->itr = db_handle->db->NewIterator(*options);
+    itr_handle->keys_only = keys_only;
+
+    ERL_NIF_TERM result = enif_make_resource(local_env(), itr_handle);
+// JFW: I swapped the two below:
+    db_handle->iters->insert(itr_handle);
+
+    enif_release_resource(itr_handle);
 
     return make_pair(true, result);
  }
@@ -662,8 +711,10 @@ bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
 }
 
 namespace {
- struct db_matches
- {
+
+// Utility predicate: true if db_handle in write task matches given db handle: 
+struct db_matches
+{
     const eleveldb_db_handle* dbh;
 
     db_matches(const eleveldb_db_handle* _dbh)
@@ -680,7 +731,8 @@ namespace {
 
         return dbh == rhs_item->db_handle;
     }
- };
+};
+
 } // namespace
 
 bool eleveldb_thread_pool::complete_jobs_for(eleveldb_db_handle* dbh)
@@ -1126,6 +1178,58 @@ ERL_NIF_TERM async_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
  priv.thread_pool.submit(work_item); 
 
  return ATOM_OK;
+}
+
+ERL_NIF_TERM async_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    const ERL_NIF_TERM& caller_ref  = argv[0];
+    const ERL_NIF_TERM& dbh_ref     = argv[1];
+    const ERL_NIF_TERM& options_ref = argv[2];
+
+    const bool keys_only = (3 == argc && ATOM_KEYS_ONLY == options_ref) ? true : false;
+
+    eleveldb_db_handle* db_handle;
+
+    if (!enif_get_resource(env, dbh_ref, eleveldb_db_RESOURCE, (void**)&db_handle) &&
+        !enif_is_list(env, options_ref)) 
+     {
+        return enif_make_badarg(env);
+     }
+
+    simple_scoped_lock(db_handle->db_lock);
+
+    if(0 == db_handle->db)
+     return error_einval(env);
+
+    // Increment references to db_handle for duration of the iterator
+    enif_keep_resource(db_handle);
+
+    // Parse out the read options
+    leveldb::ReadOptions *opts = placement_ctor<leveldb::ReadOptions>();
+    fold(env, options_ref, parse_read_option, *opts);
+
+    // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
+    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+    ErlNifEnv* local_env = enif_alloc_env();
+    if(0 == local_env)
+     return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+
+    ErlNifPid local_pid;
+    enif_self(env, &local_pid);
+
+    eleveldb::work_task_t *work_item = placement_ctor<eleveldb::iter_task_t>(
+                                            local_env,
+                                            enif_make_copy(local_env, caller_ref),
+                                            enif_make_pid(local_env, &local_pid),
+                                            db_handle,
+                                            keys_only,
+                                            opts
+                                        );
+
+     priv.thread_pool.submit(work_item); 
+
+    return ATOM_OK;
 }
 
 ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
