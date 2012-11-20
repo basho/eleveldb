@@ -96,23 +96,48 @@ init() ->
 
 -opaque itr_ref() :: binary().
 
--spec open(string(), open_options()) -> {ok, db_ref()} | {error, any()}.
-open(_Name, _Opts) ->
+-spec async_open(reference(), string(), open_options()) -> {ok, db_ref()} | {error, any()}.
+async_open(_CallerRef, _Name, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
+-spec open(string(), open_options()) -> {ok, db_ref()} | {error, any()}.
+open(_Name, _Opts) ->
+    _CallerRef = make_ref(),
+    case async_open(_CallerRef, _Name, _Opts) of
+    ok ->
+        receive
+            { ok, _CallerRef, Dbh}        -> {ok, Dbh};
+            { error, _CallerRef, Info}    -> {error, Info}
+        end
+    end.
+   
 -spec close(db_ref()) -> ok | {error, any()}.
 close(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
--spec get(db_ref(), binary(), read_options()) -> {ok, binary()} | not_found | {error, any()}.
-get(_Ref, _Key, _Opts) ->
+-spec async_get(reference(), db_ref(), binary(), read_options()) -> {ok, binary(), not_found} | {ok, binary(), any()} | {error, binary(), any()}.
+async_get(_CallerRef, _Dbh, _Key, _Opts) ->
     erlang:nif_error({error, not_loaded}).
+
+-spec get(db_ref(), binary(), read_options()) -> {ok, binary()} | not_found | {error, any()}.
+get(_Dbh, _Key, _Opts) ->
+    _CallerRef = make_ref(),
+    case async_get(_CallerRef, _Dbh, _Key, _Opts) of
+    ok ->
+        receive
+            { ok, _CallerRef, not_found} -> not_found;
+            { ok, _CallerRef, Value}     -> {ok, Value};
+            { error, _CallerRef, Info}   -> {error, Info}
+        end
+    end.
 
 -spec put(db_ref(), binary(), binary(), write_options()) -> ok | {error, any()}.
 put(Ref, Key, Value, Opts) -> write(Ref, [{put, Key, Value}], Opts).
 
 -spec delete(db_ref(), binary(), write_options()) -> ok | {error, any()}.
 delete(Ref, Key, Opts) -> write(Ref, [{delete, Key}], Opts).
+
+% This mechanism should be revisted and made a bit more generic:
 
 -spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
 write(_Ref, _Updates, _Opts) -> 
@@ -121,10 +146,10 @@ write(_Ref, _Updates, _Opts) ->
     ok ->
         receive
             {ok, _CallerRef} -> ok;
+            {ok, _CallerRef, _} -> ok;
             {error, _CallerRef, Info} -> {error, Info}
         end
     end.
-
 
 -spec submit_job(reference(), db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
 submit_job(_CallerRef, _Ref, _Updates, _Opts) ->
