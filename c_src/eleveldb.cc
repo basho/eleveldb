@@ -81,10 +81,6 @@ static ErlNifFunc nif_funcs[] =
 {
     {"close", 1, eleveldb_close},
     {"submit_job", 4, eleveldb_submit_job},
-/* JFW
-    {"iterator", 2, eleveldb_iterator},
-    {"iterator", 3, eleveldb_iterator},
-*/
     {"iterator_close", 1, eleveldb_iterator_close},
     {"status", 2, eleveldb_status},
     {"destroy", 2, eleveldb_destroy},
@@ -383,7 +379,7 @@ struct iter_task_t : public work_task_t
     itr_handle->keys_only = keys_only;
 
     ERL_NIF_TERM result = enif_make_resource(local_env(), itr_handle);
-// JFW: I swapped the two below:
+
     db_handle->iters->insert(itr_handle);
 
     enif_release_resource(itr_handle);
@@ -1211,6 +1207,10 @@ ERL_NIF_TERM async_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
+    // Stop taking requests if we've been asked to shut down:
+    if(priv.thread_pool.shutdown_pending())
+     return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+
     ErlNifEnv* local_env = enif_alloc_env();
     if(0 == local_env)
      return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
@@ -1357,56 +1357,6 @@ ERL_NIF_TERM eleveldb_submit_job(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
                                     enif_make_tuple2(env, ATOM_BAD_WRITE_ACTION,
                                                      result));
         }
-    }
-    else
-    {
-        return enif_make_badarg(env);
-    }
-}
-
-ERL_NIF_TERM eleveldb_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
-{
-    eleveldb_db_handle* db_handle;
-    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
-        enif_is_list(env, argv[1])) // Options
-    {
-        simple_scoped_lock(db_handle->db_lock);
-
-        if (db_handle->db == NULL)
-        {
-            return error_einval(env);
-        }
-
-        // Increment references to db_handle for duration of the iterator
-        enif_keep_resource(db_handle);
-
-        // Parse out the read options
-        leveldb::ReadOptions opts;
-        fold(env, argv[1], parse_read_option, opts);
-
-        // Setup handle
-        eleveldb_itr_handle* itr_handle =
-            (eleveldb_itr_handle*) enif_alloc_resource(eleveldb_itr_RESOURCE,
-                                                       sizeof(eleveldb_itr_handle));
-        memset(itr_handle, '\0', sizeof(eleveldb_itr_handle));
-
-        // Initialize itr handle
-        // TODO: Should it be possible to iterate WITHOUT a snapshot?
-        itr_handle->itr_lock = enif_mutex_create((char*)"eleveldb_itr_lock");
-        itr_handle->db_handle = db_handle;
-        itr_handle->snapshot = db_handle->db->GetSnapshot();
-        opts.snapshot = itr_handle->snapshot;
-        itr_handle->itr = db_handle->db->NewIterator(opts);
-
-        // Check for keys_only iterator flag
-        itr_handle->keys_only = ((argc == 3) && (argv[2] == ATOM_KEYS_ONLY));
-
-        ERL_NIF_TERM result = enif_make_resource(env, itr_handle);
-        enif_release_resource(itr_handle);
-
-        db_handle->iters->insert(itr_handle);
-
-        return enif_make_tuple2(env, ATOM_OK, result);
     }
     else
     {
