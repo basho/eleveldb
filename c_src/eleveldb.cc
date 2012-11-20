@@ -1,4 +1,3 @@
-#include <iostream>//JFW
 // -------------------------------------------------------------------
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
@@ -26,8 +25,9 @@
 #include <stack>
 #include <deque>
 #include <sstream>
-#include <algorithm>
+#include <utility>
 #include <stdexcept>
+#include <algorithm>
 
 #include "eleveldb.h"
 
@@ -79,9 +79,7 @@ static ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 
 static ErlNifFunc nif_funcs[] =
 {
-    {"open", 2, eleveldb_open},
     {"close", 1, eleveldb_close},
-    {"get", 3, eleveldb_get},
     {"submit_job", 4, eleveldb_submit_job},
     {"iterator", 2, eleveldb_iterator},
     {"iterator", 3, eleveldb_iterator},
@@ -91,10 +89,14 @@ static ErlNifFunc nif_funcs[] =
     {"destroy", 2, eleveldb_destroy},
     {"repair", 2, eleveldb_repair},
     {"is_empty", 1, eleveldb_is_empty},
+
+    {"async_open", 3, eleveldb::async_open},
+    {"async_get", 4, eleveldb::async_get}
 };
 
 using std::copy;
 using std::nothrow;
+using std::make_pair;
 
 static ErlNifResourceType* eleveldb_db_RESOURCE;
 static ErlNifResourceType* eleveldb_itr_RESOURCE;
@@ -201,6 +203,23 @@ class simple_scoped_lock
 
 } // namespace
 
+// Tuple helpers:
+namespace {
+ERL_NIF_TERM error_einval(ErlNifEnv* env)
+{
+    return enif_make_tuple2(env, ATOM_ERROR, ATOM_EINVAL);
+}
+
+ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Status& status)
+{
+    ERL_NIF_TERM reason = enif_make_string(env, status.ToString().c_str(),
+                                           ERL_NIF_LATIN1);
+    return enif_make_tuple2(env, ATOM_ERROR,
+                            enif_make_tuple2(env, error, reason));
+}
+
+} // namespace
+
 struct eleveldb_db_handle
 {
     leveldb::DB* db;
@@ -228,6 +247,167 @@ typedef struct eleveldb_itr_handle eleveldb_itr_handle;
 
 void *eleveldb_write_thread_worker(void *args);
 
+/* This is all a shade hacky, we are in a time crunch: */
+namespace eleveldb {
+
+/* Should be cheap to copy this: */
+typedef std::pair<bool, ERL_NIF_TERM>   work_result_t;
+
+class work_task_t
+{
+ private:
+ ErlNifEnv      *local_env_;
+
+ ERL_NIF_TERM   caller_ref_,
+                pid_;
+
+ public:
+ work_task_t(ErlNifEnv *_local_env, ERL_NIF_TERM _caller_ref, ERL_NIF_TERM _pid)
+  : local_env_(_local_env),
+    caller_ref_(_caller_ref),
+    pid_(_pid)
+ {};
+
+ virtual ~work_task_t() 
+ {
+    enif_free_env(local_env_);
+ }
+
+ ErlNifEnv *local_env() const           { return local_env_; }
+
+ const ERL_NIF_TERM& caller_ref() const { return caller_ref_; }
+ const ERL_NIF_TERM& pid() const        { return pid_; }
+
+ virtual work_result_t operator()()     = 0;
+};
+
+struct open_task_t : public work_task_t
+{
+ std::string         db_name;
+ leveldb::Options   *open_options;  // associated with db handle, we don't free it
+
+ open_task_t(ErlNifEnv* _local_env, ERL_NIF_TERM& _caller_ref, ERL_NIF_TERM _pid_term,
+             const std::string db_name_, leveldb::Options *open_options_)
+  : work_task_t(_local_env, _caller_ref, _pid_term),
+    db_name(db_name_), open_options(open_options_)
+ {}
+
+ work_result_t operator()()
+ {
+    leveldb::DB *db(0);
+
+    leveldb::Status status = leveldb::DB::Open(*open_options, db_name, &db);
+
+    if(!status.ok())
+     return make_pair(false, error_tuple(local_env(), ATOM_ERROR_DB_OPEN, status));
+
+    eleveldb_db_handle* handle = (eleveldb_db_handle*)
+     enif_alloc_resource(eleveldb_db_RESOURCE, sizeof(eleveldb_db_handle));
+    memset(handle, '\0', sizeof(eleveldb_db_handle));
+    handle->db = db;
+    handle->db_lock = enif_mutex_create((char*)"eleveldb_db_lock");
+    handle->options = open_options;
+    handle->iters = new std::set<struct eleveldb_itr_handle*>();
+
+    ERL_NIF_TERM result = enif_make_resource(local_env(), handle);
+
+    enif_release_resource(handle);
+
+    return make_pair(true, result);
+ }
+};
+
+struct get_task_t : public work_task_t
+{
+ mutable eleveldb_db_handle*        db_handle;
+
+ ERL_NIF_TERM                       key_term;
+ leveldb::ReadOptions*              options;
+
+ get_task_t(ErlNifEnv *_local_env,
+            ERL_NIF_TERM& _caller_ref, ERL_NIF_TERM& _pid_term,
+            eleveldb_db_handle *_db_handle,
+            ERL_NIF_TERM& _key_term,
+            leveldb::ReadOptions *_options)
+  : work_task_t(_local_env, _caller_ref, _pid_term),
+    db_handle(_db_handle),
+    key_term(_key_term),
+    options(_options)
+ {}
+
+ ~get_task_t()
+ {
+    placement_dtor(options);
+ }
+
+ work_result_t operator()()
+ {
+    ErlNifBinary key;
+
+    if(!enif_inspect_binary(local_env(), key_term, &key))
+     return make_pair(false, error_einval(local_env()));
+
+    leveldb::Slice key_slice((const char*)key.data, key.size);
+
+    simple_scoped_lock(db_handle->db_lock);
+
+    std::string value;
+
+    leveldb::Status status = db_handle->db->Get(*options, key_slice, &value);
+
+    if(!status.ok())
+     return make_pair(true, ATOM_NOT_FOUND);
+
+    ERL_NIF_TERM value_bin;
+
+    // The documentation does not say if this can fail:
+    unsigned char *result = enif_make_new_binary(local_env(), value.size(), &value_bin);
+
+    copy(value.data(), value.data() + value.size(), result);
+
+    return make_pair(true, value_bin);
+ }
+};
+
+struct write_task_t : public work_task_t
+{
+    mutable eleveldb_db_handle*     db_handle;
+    mutable leveldb::WriteBatch*    batch; 
+
+    leveldb::WriteOptions*          options;
+
+    write_task_t(ErlNifEnv* _local_env,
+                ERL_NIF_TERM& _caller_ref, ERL_NIF_TERM& _pid_term, 
+                eleveldb_db_handle* _db_handle,
+                leveldb::WriteBatch* _batch,
+                leveldb::WriteOptions* _options)
+     :
+       work_task_t(_local_env, _caller_ref, _pid_term),
+       db_handle(_db_handle), 
+       batch(_batch),
+       options(_options)
+    {}
+
+    ~write_task_t()
+    {
+        placement_dtor(batch);
+        placement_dtor(options);
+    }
+
+    work_result_t operator()()
+    {
+        simple_scoped_lock(db_handle->db_lock);
+
+        leveldb::Status status = db_handle->db->Write(*options, batch);
+
+        enif_release_resource(db_handle);   // decrement refcount of leveldb handle
+
+        return std::make_pair(status.ok(), ATOM_OK);
+    }
+ };
+
+} // namespace eleveldb
+
 class eleveldb_thread_pool
 {
  friend void *eleveldb_write_thread_worker(void *args);
@@ -236,48 +416,9 @@ class eleveldb_thread_pool
  eleveldb_thread_pool(const eleveldb_thread_pool&);             // nocopy
  eleveldb_thread_pool& operator=(const eleveldb_thread_pool&);  // nocopyassign
 
- public:
- struct work_item_t
- {
-    private:
-    work_item_t(const work_item_t&);            // nocopy
-    work_item_t& operator=(const work_item_t&); // nocopyassign
-
-    public:
-    ErlNifEnv*                      local_env;
-
-    ERL_NIF_TERM                    caller_ref, 
-                                    pid_term;
-
-    mutable eleveldb_db_handle*     db_handle;
-
-    mutable leveldb::WriteBatch*    batch; 
-    leveldb::WriteOptions*          options;
-
-    work_item_t(ErlNifEnv* _local_env,
-                ERL_NIF_TERM& _caller_ref, ERL_NIF_TERM _pid_term, 
-                eleveldb_db_handle* _db_handle,
-                leveldb::WriteBatch* _batch,
-                leveldb::WriteOptions* _options)
-     : local_env(_local_env),
-       caller_ref(_caller_ref), pid_term(_pid_term), 
-       db_handle(_db_handle), 
-       batch(_batch),
-       options(_options)
-    {}
-
-    ~work_item_t()
-    {
-        placement_dtor(batch);
-        placement_dtor(options);
-
-        enif_free_env(local_env);
-    }
- };
-
  private:
- typedef std::deque<work_item_t*>   work_queue_t; 
- typedef std::stack<ErlNifTid *>    thread_pool_t;
+ typedef std::deque<eleveldb::work_task_t*> work_queue_t; 
+ typedef std::stack<ErlNifTid *>            thread_pool_t;
 
  private:
  thread_pool_t  threads;
@@ -297,7 +438,7 @@ class eleveldb_thread_pool
  void lock()                    { enif_mutex_lock(work_queue_lock); }
  void unlock()                  { enif_mutex_unlock(work_queue_lock); }
 
- void submit(work_item_t* item) 
+ void submit(eleveldb::work_task_t* item) 
  { 
     lock();
      work_queue.push_back(item); 
@@ -334,7 +475,7 @@ class eleveldb_thread_pool
  bool grow_thread_pool(const size_t nthreads);
  bool drain_thread_pool();
 
- static bool notify_caller(const work_item_t& work_item, const bool job_result);
+ static bool notify_caller(eleveldb::work_task_t& work_item);
 };
 
 eleveldb_thread_pool::eleveldb_thread_pool(const size_t thread_pool_size)
@@ -412,7 +553,16 @@ namespace {
      : dbh(_dbh)
     {}
 
-    bool operator()(eleveldb_thread_pool::work_item_t*& rhs) const { return dbh == rhs->db_handle; }
+    bool operator()(eleveldb::work_task_t*& rhs)
+    {
+        // We're only concerned with elements tied to our database handle:
+        eleveldb::write_task_t *rhs_item = dynamic_cast<eleveldb::write_task_t *>(rhs);
+
+        if(0 == rhs_item)
+         return false;
+
+        return dbh == rhs_item->db_handle;
+    }
  };
 } // namespace
 
@@ -484,19 +634,24 @@ bool eleveldb_thread_pool::drain_thread_pool()
  return rt();
 }
 
-bool eleveldb_thread_pool::notify_caller(const work_item_t& work_item, const bool job_result)
+bool eleveldb_thread_pool::notify_caller(eleveldb::work_task_t& work_item)
 {
  ErlNifPid pid;
 
- if(0 == enif_get_local_pid(work_item.local_env, work_item.pid_term, &pid))
+ if(0 == enif_get_local_pid(work_item.local_env(), work_item.pid(), &pid))
   return false;
 
+ eleveldb::work_result_t result = work_item();
+
+ /* Assemble a notification of the following form:
+        { ATOM Status, PID CallerHandle, ERL_NIF_TERM result } */
  ERL_NIF_TERM result_tuple = 
-                enif_make_tuple2(work_item.local_env, 
-                                 (job_result ? ATOM_OK : ATOM_ERROR),
-                                 work_item.caller_ref); 
+                enif_make_tuple3(work_item.local_env(), 
+                                 (result.first ? ATOM_OK : ATOM_ERROR),
+                                 work_item.caller_ref(),
+                                 result.second);
  
- return (0 != enif_send(0, &pid, work_item.local_env, result_tuple));
+ return (0 != enif_send(0, &pid, work_item.local_env(), result_tuple));
 }
 
 /* Module-level private data: */
@@ -532,27 +687,16 @@ void *eleveldb_write_thread_worker(void *args)
      }
 
     // Take a job from and release the queue head:
-    eleveldb_thread_pool::work_item_t* submission = h.work_queue.front(); 
+    eleveldb::work_task_t* submission = h.work_queue.front(); 
 
     h.work_queue.pop_front();
     h.unlock();
 
-    // Submit the job to leveldb:
-    eleveldb_db_handle* dbh = submission->db_handle;
-
-    leveldb::Status status;
-
-    {
-    simple_scoped_lock(dbh->db_lock);
-    status = dbh->db->Write(*(submission->options), submission->batch);
-    }
-
-    enif_release_resource(dbh);         // decrement the refcount of the leveldb handle
-
-    // Ping the caller back in Erlang-land:
-    if(false == eleveldb_thread_pool::notify_caller(*submission, status.ok() ? true : false))
+    // Do the work:
+    if(false == eleveldb_thread_pool::notify_caller(*submission))
      ; // There isn't much to be done if this has failed. We have no supervisor process.
 
+    // Free the job entry:
     placement_dtor(submission);
   }
 
@@ -793,59 +937,98 @@ static bool free_db(ErlNifEnv* env, eleveldb_db_handle* db_handle)
     return result;
 }
 
+namespace eleveldb {
 
-ERL_NIF_TERM error_einval(ErlNifEnv* env)
+ERL_NIF_TERM async_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    return enif_make_tuple2(env, ATOM_ERROR, ATOM_EINVAL);
+ char db_name[4096];
+
+ if(!enif_get_string(env, argv[1], db_name, sizeof(db_name), ERL_NIF_LATIN1) ||
+    !enif_is_list(env, argv[2]))
+  {
+    return enif_make_badarg(env);
+  }
+
+ ERL_NIF_TERM caller_ref = argv[0];
+
+ eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+ // Stop taking requests if we've been asked to shut down:
+ if(priv.thread_pool.shutdown_pending())
+  return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+
+ leveldb::Options *opts = placement_ctor<leveldb::Options>();
+ fold(env, argv[2], parse_open_option, *opts);
+
+ ErlNifEnv* local_env = enif_alloc_env();
+ if(0 == local_env)
+  return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+
+ ErlNifPid local_pid;
+ enif_self(env, &local_pid);
+
+ eleveldb::work_task_t *work_item = placement_ctor<eleveldb::open_task_t>(
+                                        local_env,
+                                        enif_make_copy(local_env, caller_ref),
+                                        enif_make_pid(local_env, & local_pid),
+                                        db_name,
+                                        opts
+                                       );
+                   
+ priv.thread_pool.submit(work_item); 
+
+ return ATOM_OK;
 }
 
-ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Status& status)
+ERL_NIF_TERM async_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-    ERL_NIF_TERM reason = enif_make_string(env, status.ToString().c_str(),
-                                           ERL_NIF_LATIN1);
-    return enif_make_tuple2(env, ATOM_ERROR,
-                            enif_make_tuple2(env, error, reason));
+ eleveldb_db_handle *db_handle = 0;
+
+ const ERL_NIF_TERM& caller_ref = argv[0];
+ const ERL_NIF_TERM& dbh_ref    = argv[1];
+ const ERL_NIF_TERM& key_ref    = argv[2];
+ const ERL_NIF_TERM& opts_ref   = argv[3];
+
+ if(!enif_get_resource(env, dbh_ref, eleveldb_db_RESOURCE, (void **)&db_handle) ||
+    !enif_is_list(env, opts_ref))
+  {
+    return enif_make_badarg(env);
+  }
+
+ if(0 == db_handle->db)
+  return error_einval(env);
+
+ eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+ // Stop taking requests if we've been asked to shut down:
+ if(priv.thread_pool.shutdown_pending())
+  return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+
+ leveldb::ReadOptions *opts = placement_ctor<leveldb::ReadOptions>();
+ fold(env, opts_ref, parse_read_option, *opts);
+
+ ErlNifEnv* local_env = enif_alloc_env();
+ if(0 == local_env)
+  return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+
+ ErlNifPid local_pid;
+ enif_self(env, &local_pid);
+
+ eleveldb::work_task_t *work_item = placement_ctor<eleveldb::get_task_t>(
+                                        local_env,
+                                        enif_make_copy(local_env, caller_ref),
+                                        enif_make_pid(local_env, &local_pid),
+                                        db_handle,
+                                        enif_make_copy(local_env, key_ref),
+                                        opts
+                                       );
+                   
+ priv.thread_pool.submit(work_item); 
+
+ return ATOM_OK;
 }
 
-ERL_NIF_TERM eleveldb_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
-{
-    char name[4096];
-    if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1) &&
-        enif_is_list(env, argv[1]))
-    {
-        // Parse out the options
-        leveldb::Options *opts = placement_ctor<leveldb::Options>();;
-        fold(env, argv[1], parse_open_option, *opts);
-
-        // Open the database
-        leveldb::DB* db;
-
-        leveldb::Status status = leveldb::DB::Open(*opts, name, &db);
-        if (!status.ok())
-        {
-            return error_tuple(env, ATOM_ERROR_DB_OPEN, status);
-        }
-
-        // Setup handle
-        eleveldb_db_handle* handle =
-            (eleveldb_db_handle*) enif_alloc_resource(eleveldb_db_RESOURCE,
-                                                       sizeof(eleveldb_db_handle));
-        memset(handle, '\0', sizeof(eleveldb_db_handle));
-        handle->db = db;
-        handle->db_lock = enif_mutex_create((char*)"eleveldb_db_lock");
-        handle->options = opts;
-        handle->iters = new std::set<struct eleveldb_itr_handle*>();
-
-        ERL_NIF_TERM result = enif_make_resource(env, handle);
-        enif_release_resource(handle);
-
-        return enif_make_tuple2(env, ATOM_OK, result);
-    }
-    else
-    {
-        return enif_make_badarg(env);
-    }
-}
+} // namespace eleveldb
 
 ERL_NIF_TERM eleveldb_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
@@ -855,50 +1038,6 @@ ERL_NIF_TERM eleveldb_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
      return enif_make_badarg(env);
 
     return free_db(env, db_handle) ? ATOM_OK : error_einval(env);
-}
-
-ERL_NIF_TERM eleveldb_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
-{
-    eleveldb_db_handle* handle;
-    ErlNifBinary key;
-    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&handle) &&
-        enif_inspect_binary(env, argv[1], &key) &&
-        enif_is_list(env, argv[2]))
-    {
-        simple_scoped_lock(handle->db_lock);
-
-        if(handle->db == NULL)
-        {
-            return error_einval(env);
-        }
-
-        leveldb::DB* db = handle->db;
-        leveldb::Slice key_slice((const char*)key.data, key.size);
-
-        // Parse out the read options
-        leveldb::ReadOptions opts;
-        fold(env, argv[2], parse_read_option, opts);
-
-        std::string sval;
-        leveldb::Status status = db->Get(opts, key_slice, &sval);
-        if (status.ok())
-        {
-            const size_t size = sval.size();
-            ERL_NIF_TERM value_bin;
-            unsigned char* value = enif_make_new_binary(env, size, &value_bin);
-            memcpy(value, sval.data(), size);
-
-            return enif_make_tuple2(env, ATOM_OK, value_bin);
-        }
-        else
-        {
-            return ATOM_NOT_FOUND;
-        }
-    }
-    else
-    {
-        return enif_make_badarg(env);
-    }
 }
 
 ERL_NIF_TERM eleveldb_submit_job(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
@@ -930,7 +1069,7 @@ ERL_NIF_TERM eleveldb_submit_job(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
             // Was able to fold across all items cleanly -- apply the batch
 
             // Parse out the write options
-            leveldb::WriteOptions* opts = placement_ctor<leveldb::WriteOptions>();;
+            leveldb::WriteOptions* opts = placement_ctor<leveldb::WriteOptions>();
             fold(env, argv[3], parse_write_option, *opts);
 
             // Increment the refcount on the database handle so it doesn't vanish:
@@ -947,12 +1086,12 @@ ERL_NIF_TERM eleveldb_submit_job(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
             enif_self(env, &local_pid);
 
             // Enqueue the job:
-            eleveldb_thread_pool::work_item_t* work_item = placement_ctor<eleveldb_thread_pool::work_item_t>(
-                                                            local_env,
-                                                            enif_make_copy(local_env, caller_ref),
-                                                            enif_make_pid(local_env, &local_pid),
-                                                            handle, batch, opts
-                                                           );
+            eleveldb::work_task_t* work_item = placement_ctor<eleveldb::write_task_t>(
+                                                local_env,
+                                                enif_make_copy(local_env, caller_ref),
+                                                enif_make_pid(local_env, &local_pid),
+                                                handle, batch, opts
+                                              );
 
             priv.thread_pool.submit(work_item);
 
