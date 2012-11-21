@@ -1,4 +1,3 @@
-#include <iostream> // JFW
 // -------------------------------------------------------------------
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
@@ -1494,7 +1493,6 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
 
 static void on_unload(ErlNifEnv *env, void *priv_data)
 {
-std::cerr << "JFW: on_unload() called" << std::endl;
  eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(priv_data);
  placement_dtor(p);
 }
@@ -1562,7 +1560,6 @@ try
      }
 
     /* Spin up the thread pool, set up all private data: */
-std::cerr << "JFW: spinning up " << local.n_threads << std::endl;
     eleveldb_priv_data *priv = placement_ctor<eleveldb_priv_data>(local.n_threads);
 
     *priv_data = priv;
