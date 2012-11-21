@@ -54,6 +54,10 @@
 
 -spec init() -> ok | {error, any()}.
 init() ->
+    NumWriteThreads = case os:getenv("ELEVELDB_N_WRITE_THREADS") of
+                        false -> 32;                     % "sensible default"
+                        N -> erlang:list_to_integer(N)   % exception on bad value
+                      end,
     SoName = case code:priv_dir(?MODULE) of
                  {error, bad_name} ->
                      case code:which(?MODULE) of
@@ -65,7 +69,7 @@ init() ->
                  Dir ->
                      filename:join(Dir, "eleveldb")
              end,
-    erlang:load_nif(SoName, [{write_threads,64}]). 
+    erlang:load_nif(SoName, [{write_threads,NumWriteThreads}]). 
 
 -type open_options() :: [{create_if_missing, boolean()} |
                          {error_if_exists, boolean()} |

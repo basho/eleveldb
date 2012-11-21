@@ -1,4 +1,4 @@
-#include <iostream>
+#include <iostream> // JFW
 // -------------------------------------------------------------------
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
@@ -110,6 +110,10 @@ struct eleveldb_itr_handle;
 class eleveldb_thread_pool;
 class eleveldb_priv_data;
 
+namespace {
+const size_t N_THREADS_MAX = 32767;
+}
+
 /* Some primitive-yet-useful NIF helpers: */
 namespace {
 
@@ -118,7 +122,7 @@ void *placement_alloc()
 {
  void *placement = enif_alloc(sizeof(T));
  if(0 == placement)
-  throw;
+  throw std::bad_alloc();
 
  return placement;
 }
@@ -295,7 +299,7 @@ class work_task_t
     local_env_ = enif_alloc_env();
 
     if(0 == local_env_)
-     throw;
+     throw std::invalid_argument("work_task_t::local_env_");
 
     caller_ref_term = enif_make_copy(local_env_, caller_ref);
 
@@ -692,6 +696,9 @@ bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
 
  if(0 >= nthreads)
   return true;  // nothing to do, but also not failure
+
+ if(N_THREADS_MAX < nthreads + threads.size())
+  return false;
 
  // At least one thread means that we don't shut threads down:
  shutdown = false;
@@ -1487,13 +1494,16 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
 
 static void on_unload(ErlNifEnv *env, void *priv_data)
 {
+std::cerr << "JFW: on_unload() called" << std::endl;
  eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(priv_data);
  placement_dtor(p);
 }
 
 static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 try
-{
+{ 
+    *priv_data = 0;
+
     ErlNifResourceFlags flags = (ErlNifResourceFlags)(ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER);
 
     eleveldb_db_RESOURCE = enif_open_resource_type(env, NULL, "eleveldb_db_resource",
@@ -1515,7 +1525,7 @@ try
 
     /* Seed our private data with appropriate values: */
     if(!enif_is_list(env, load_info))
-     return enif_make_badarg(env);
+     throw std::invalid_argument("on_load::load_info");
 
     ERL_NIF_TERM load_info_head;
 
@@ -1544,14 +1554,15 @@ try
 
             // We have a setting, now peek at the parameter: 
             if(0 == enif_get_int(env, tuple_data[1], &local.n_threads))
-             return enif_make_badarg(env);
+             throw std::invalid_argument("on_load::n_threads");
 
-            if(0 >= local.n_threads)
-             return enif_make_badarg(env);
+            if(0 >= local.n_threads || N_THREADS_MAX < static_cast<size_t>(local.n_threads))
+             throw std::range_error("on_load::n_threads");
          } 
      }
 
     /* Spin up the thread pool, set up all private data: */
+std::cerr << "JFW: spinning up " << local.n_threads << std::endl;
     eleveldb_priv_data *priv = placement_ctor<eleveldb_priv_data>(local.n_threads);
 
     *priv_data = priv;
@@ -1602,10 +1613,15 @@ try
 
     return 0;
 }
+catch(std::exception& e)
+{
+    /* Refuse to load the NIF module (I see no way right now to return a more specific exception
+    or log extra information): */
+    return -1; 
+}
 catch(...)
 {
-    // Refuse to load the NIF module (I see no way right now to return a more specific exception):
-    return 1; 
+    return -1; 
 }
 
 extern "C" {
