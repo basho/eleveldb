@@ -27,7 +27,6 @@
          put/4,
          delete/3,
          write/3,
-         submit_job/4,
          fold/4,
          fold_keys/4,
          status/2,
@@ -108,7 +107,8 @@ open(_Name, _Opts) ->
         receive
             { _CallerRef, ok, Dbh}        -> {ok, Dbh};
             { _CallerRef, error, Info}    -> {error, Info}
-        end
+        end;
+    ER -> ER
     end.
    
 -spec close(db_ref()) -> ok | {error, any()}.
@@ -128,7 +128,8 @@ get(_Dbh, _Key, _Opts) ->
             { _CallerRef, ok, not_found} -> not_found;
             { _CallerRef, ok, Value}     -> {ok, Value};
             { _CallerRef, error, Info}   -> {error, Info}
-        end
+        end;
+    ER -> ER
     end.
 
 -spec put(db_ref(), binary(), binary(), write_options()) -> ok | {error, any()}.
@@ -140,17 +141,18 @@ delete(Ref, Key, Opts) -> write(Ref, [{delete, Key}], Opts).
 -spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
 write(_Ref, _Updates, _Opts) -> 
     _CallerRef = make_ref(),
-    case submit_job(_CallerRef, _Ref, _Updates, _Opts) of
+    case async_write(_CallerRef, _Ref, _Updates, _Opts) of
     ok ->
         receive
             {_CallerRef, ok} -> ok;
             {_CallerRef, ok, _} -> ok;
             {_CallerRef, error, Info} -> {error, Info}
-        end
+        end;
+    ER -> ER
     end.
 
--spec submit_job(reference(), db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
-submit_job(_CallerRef, _Ref, _Updates, _Opts) ->
+-spec async_write(reference(), db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
+async_write(_CallerRef, _Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec async_iterator(reference(), db_ref(), read_options()) -> {ok, _CallerRef, itr_ref()}.
@@ -168,7 +170,8 @@ iterator(_Ref, _Opts) ->
     ok ->
         receive
             {_CallerRef, ok, IterRef} -> {ok, IterRef}
-        end
+        end;
+    ER -> ER
     end.
 
 -spec iterator(db_ref(), read_options(), keys_only) -> {ok, itr_ref()}.
@@ -178,7 +181,8 @@ iterator(_Ref, _Opts, keys_only) ->
     ok ->
         receive
             {_CallerRef, ok, IterRef} -> {ok, IterRef}
-        end
+        end;
+    ER -> ER
     end.
 
 -spec async_iterator_move(reference(), itr_ref(), iterator_action()) -> {ok, reference(), Key::binary(), Value::binary()} | 
@@ -203,7 +207,8 @@ iterator_move(_IRef, _Loc) ->
             { _CallerRef, error, invalid_iterator } -> {error, invalid_iterator};
             { _CallerRef, error, iterator_closed } -> {error, iterator_closed};
             { _CallerRef, error } -> {error, invalid_iterator} % JFW: is this the right thing to do..?
-        end
+        end;
+    ER -> ER
     end.
 
 

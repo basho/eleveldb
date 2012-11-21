@@ -81,7 +81,6 @@ static ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 static ErlNifFunc nif_funcs[] =
 {
     {"close", 1, eleveldb_close},
-    {"submit_job", 4, eleveldb_submit_job},
     {"iterator_close", 1, eleveldb_iterator_close},
     {"status", 2, eleveldb_status},
     {"destroy", 2, eleveldb_destroy},
@@ -89,6 +88,7 @@ static ErlNifFunc nif_funcs[] =
     {"is_empty", 1, eleveldb_is_empty},
 
     {"async_open", 3, eleveldb::async_open},
+    {"async_write", 4, eleveldb::async_write},
     {"async_get", 4, eleveldb::async_get},
 
     {"async_iterator", 3, eleveldb::async_iterator},
@@ -595,7 +595,7 @@ class eleveldb_thread_pool
  ErlNifCond*    work_queue_pending; // flags job present in the work queue
  ErlNifMutex*   work_queue_lock;    // protects access to work_queue
 
- bool shutdown;                     // should we stop threads and shut down?
+ volatile bool  shutdown;           // should we stop threads and shut down?
 
  public:
  eleveldb_thread_pool(const size_t thread_pool_size);
@@ -605,13 +605,22 @@ class eleveldb_thread_pool
  void lock()                    { enif_mutex_lock(work_queue_lock); }
  void unlock()                  { enif_mutex_unlock(work_queue_lock); }
 
- void submit(eleveldb::work_task_t* item) 
+ bool submit(eleveldb::work_task_t* item) 
  { 
+    if(shutdown_pending())
+     {
+        placement_dtor(item);
+
+        return false;
+     }
+
     lock();
      work_queue.push_back(item); 
     unlock(); 
 
     enif_cond_signal(work_queue_pending);
+
+    return true;
  }
 
  bool resize_thread_pool(const size_t n)
@@ -811,6 +820,7 @@ bool eleveldb_thread_pool::notify_caller(eleveldb::work_task_t& work_item)
  if(0 == enif_get_local_pid(work_item.local_env(), work_item.pid(), &pid))
   return false;
 
+ // Call the work function:
  eleveldb::work_result_t result = work_item();
 
  /* Assemble a notification of the following form:
@@ -1106,10 +1116,6 @@ ERL_NIF_TERM async_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
  eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
- // Stop taking requests if we've been asked to shut down:
- if(priv.thread_pool.shutdown_pending())
-  return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
-
  leveldb::Options *opts = placement_ctor<leveldb::Options>();
  fold(env, argv[2], parse_open_option, *opts);
                
@@ -1118,7 +1124,11 @@ ERL_NIF_TERM async_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
                                         db_name, opts
                                        );
 
- priv.thread_pool.submit(work_item); 
+ if(false == priv.thread_pool.submit(work_item))
+  {
+    placement_dtor(work_item);
+    return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+  }
 
  return ATOM_OK;
 }
@@ -1143,10 +1153,6 @@ ERL_NIF_TERM async_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
  eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
- // Stop taking requests if we've been asked to shut down:
- if(priv.thread_pool.shutdown_pending())
-  return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
-
  leveldb::ReadOptions *opts = placement_ctor<leveldb::ReadOptions>();
  fold(env, opts_ref, parse_read_option, *opts);
                  
@@ -1155,7 +1161,8 @@ ERL_NIF_TERM async_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
                                         db_handle, key_ref, opts
                                        );
                    
- priv.thread_pool.submit(work_item); 
+ if(false == priv.thread_pool.submit(work_item))
+  return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
 
  return ATOM_OK;
 }
@@ -1191,15 +1198,12 @@ ERL_NIF_TERM async_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
-    // Stop taking requests if we've been asked to shut down:
-    if(priv.thread_pool.shutdown_pending())
-     return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
-
     eleveldb::work_task_t *work_item = placement_ctor<eleveldb::iter_task_t>(
                                             env, caller_ref,
                                             db_handle, keys_only, opts);
 
-    priv.thread_pool.submit(work_item); 
+    if(false == priv.thread_pool.submit(work_item))
+     return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
 
     return ATOM_OK;
 }
@@ -1228,9 +1232,6 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
 
  eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
- // Stop taking requests if we've been asked to shut down:
- if(priv.thread_pool.shutdown_pending())
-  return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
                  
  eleveldb::work_task_t *work_item = placement_ctor<eleveldb::iter_move_task_t>(
                                         env, caller_ref,
@@ -1238,24 +1239,13 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
                                         action_atom
                                        );
                    
- priv.thread_pool.submit(work_item); 
+ if(false == priv.thread_pool.submit(work_item))
+  return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
 
  return ATOM_OK;
 }
 
-} // namespace eleveldb
-
-ERL_NIF_TERM eleveldb_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
-{
-    eleveldb_db_handle* db_handle;
-
-    if (!enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
-     return enif_make_badarg(env);
-
-    return free_db(env, db_handle) ? ATOM_OK : error_einval(env);
-}
-
-ERL_NIF_TERM eleveldb_submit_job(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM async_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     const ERL_NIF_TERM& caller_ref = argv[0];
     const ERL_NIF_TERM& handle_ref = argv[1];
@@ -1275,10 +1265,6 @@ ERL_NIF_TERM eleveldb_submit_job(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
      return error_einval(env);
 
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-    // Stop taking requests if we've been asked to shut down:
-    if(priv.thread_pool.shutdown_pending())
-     return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
 
     // Construct a write batch:
     leveldb::WriteBatch* batch = placement_ctor<leveldb::WriteBatch>();
@@ -1303,9 +1289,22 @@ ERL_NIF_TERM eleveldb_submit_job(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
                                         handle, batch, opts
                                        );
 
-    priv.thread_pool.submit(work_item);
+    if(false == priv.thread_pool.submit(work_item))
+     return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
 
     return ATOM_OK;
+}
+
+} // namespace eleveldb
+
+ERL_NIF_TERM eleveldb_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    eleveldb_db_handle* db_handle;
+
+    if (!enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
+     return enif_make_badarg(env);
+
+    return free_db(env, db_handle) ? ATOM_OK : error_einval(env);
 }
 
 ERL_NIF_TERM eleveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
