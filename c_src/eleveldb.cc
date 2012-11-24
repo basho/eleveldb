@@ -184,6 +184,27 @@ void placement_dtor(T *& x)
  enif_free(x);
 }
 
+// A relatively unsafe (no ownership semantics) mutex handle; allocates and releases with lifetime:
+class simple_scoped_mutex_handle
+{
+ friend class simple_scoped_lock;
+
+ ErlNifMutex* mutex;
+
+ public:
+ simple_scoped_mutex_handle(const std::string name = "simple_scoped_mutex_handle")
+  : mutex(enif_mutex_create(const_cast<char *>(name.c_str())))
+ {
+    if(0 == mutex)
+     throw std::exception();
+ }
+
+ ~simple_scoped_mutex_handle()
+ {
+    enif_mutex_destroy(mutex);
+ }
+};
+
 // Scoped lock that is not ownership-aware:
 class simple_scoped_lock
 {
@@ -197,6 +218,12 @@ class simple_scoped_lock
  public:
  simple_scoped_lock(ErlNifMutex* _lock)
   : lock(_lock)
+ {
+    enif_mutex_lock(lock);
+ }
+
+ simple_scoped_lock(simple_scoped_mutex_handle& _lock)
+  : lock(_lock.mutex)
  {
     enif_mutex_lock(lock);
  }
@@ -274,7 +301,6 @@ struct eleveldb_itr_handle
     eleveldb_db_handle* db_handle;
     bool keys_only;
 };
-typedef struct eleveldb_itr_handle eleveldb_itr_handle;
 
 void *eleveldb_write_thread_worker(void *args);
 
@@ -572,7 +598,7 @@ struct write_task_t : public work_task_t
 
         enif_release_resource(db_handle);   // decrement refcount of leveldb handle
 
-        return std::make_pair(status.ok(), ATOM_OK);
+        return std::make_pair(status.ok(), status.ok() ? ATOM_OK : ATOM_ERROR);
     }
  };
 
@@ -628,6 +654,9 @@ class eleveldb_thread_pool
 
  bool resize_thread_pool(const size_t n)
  {
+    simple_scoped_mutex_handle m("resize_thread_pool mutex");
+    simple_scoped_lock l(m);
+
     if(0 == n)
      return false;
 
@@ -812,6 +841,9 @@ bool eleveldb_thread_pool::drain_thread_pool()
  simple_scoped_lock l(threads_lock);
  while(!threads.empty())
   {
+    // Rebroadcast on each invocation (workers might not see the signal otherwise):
+    enif_cond_broadcast(work_queue_pending);
+
     rt(threads.top());
     threads.pop();    
   }
