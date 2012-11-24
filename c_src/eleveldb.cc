@@ -619,10 +619,12 @@ class eleveldb_thread_pool
  private:
  thread_pool_t  threads;
  ErlNifMutex*   threads_lock;       // protect resizing of the thread pool
+ simple_scoped_mutex_handle thread_resize_pool_mutex;
 
  work_queue_t   work_queue;
  ErlNifCond*    work_queue_pending; // flags job present in the work queue
  ErlNifMutex*   work_queue_lock;    // protects access to work_queue
+
 
  volatile bool  shutdown;           // should we stop threads and shut down?
 
@@ -654,8 +656,7 @@ class eleveldb_thread_pool
 
  bool resize_thread_pool(const size_t n)
  {
-    simple_scoped_mutex_handle m("resize_thread_pool mutex");
-    simple_scoped_lock l(m);
+    simple_scoped_lock l(thread_resize_pool_mutex);
 
     if(0 == n)
      return false;
@@ -785,12 +786,15 @@ bool eleveldb_thread_pool::complete_jobs_for(eleveldb_db_handle* dbh)
  if(0 == dbh)
   return true;  // nothing to do, but not a failure
 
+ /* Our strategy for completion here is that we move any jobs pending for the handle we
+ want to close to the front of the queue (in the same relative order), effectively giving
+ them priority. When the next handle in the queue does not match our db handle, or there are
+ no more jobs, we're done: */
+
  db_matches m(dbh);
 
  // We don't want more than one close operation to reshuffle:
- ErlNifMutex *complete_jobs_mutex = enif_mutex_create((char*)"complete_jobs_lock");
- if(0 == complete_jobs_mutex)
-  return false;
+ simple_scoped_mutex_handle complete_jobs_mutex("complete_jobs_mutex");
 
  {
  simple_scoped_lock complete_jobs_lock(complete_jobs_mutex);
@@ -806,8 +810,6 @@ bool eleveldb_thread_pool::complete_jobs_for(eleveldb_db_handle* dbh)
  while(not work_queue.empty() and m(work_queue.front()))
   ;
  }
-
- enif_mutex_destroy(complete_jobs_mutex);
 
  return true;
 }
