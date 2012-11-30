@@ -134,42 +134,42 @@ T *placement_ctor()
 
 template <class T, 
           class P0>
-T *placement_ctor(P0 p0)
+T *placement_ctor(P0& p0)
 {
  return new(placement_alloc<T>()) T(p0);
 }
 
 template <class T, 
           class P0, class P1>
-T *placement_ctor(P0 p0, P1 p1)
+T *placement_ctor(P0& p0, P1& p1)
 {
  return new(placement_alloc<T>()) T(p0, p1);
 }
 
 template <class T, 
           class P0, class P1, class P2>
-T *placement_ctor(P0 p0, P1 p1, P2 p2)
+T *placement_ctor(P0& p0, P1& p1, P2& p2)
 {
  return new(placement_alloc<T>()) T(p0, p1, p2);
 }
 
 template <class T, 
           class P0, class P1, class P2, class P3>
-T *placement_ctor(P0 p0, P1 p1, P2 p2, P3 p3)
+T *placement_ctor(P0& p0, P1& p1, P2& p2, P3& p3)
 {
  return new(placement_alloc<T>()) T(p0, p1, p2, p3);
 }
 
 template <class T, 
           class P0, class P1, class P2, class P3, class P4>
-T *placement_ctor(P0 p0, P1 p1, P2 p2, P3 p3, P4 p4)
+T *placement_ctor(P0& p0, P1& p1, P2& p2, P3& p3, P4& p4)
 {
  return new(placement_alloc<T>()) T(p0, p1, p2, p3, p4);
 }
 
 template <class T, 
           class P0, class P1, class P2, class P3, class P4, class P5>
-T *placement_ctor(P0 p0, P1 p1, P2 p2, P3 p3, P4 p4, P5 p5)
+T *placement_ctor(P0& p0, P1& p1, P2& p2, P3& p3, P4& p4, P5& p5)
 {
  return new(placement_alloc<T>()) T(p0, p1, p2, p3, p4, p5);
 }
@@ -231,6 +231,33 @@ class simple_scoped_lock
  ~simple_scoped_lock()
  {
     enif_mutex_unlock(lock);
+ }
+};
+
+/* Increment refcount on construction, decrement on destruction:
+ Note: I should generalize these "simple scoped X" classes at some point... I see a pattern. Of course, more robust smart
+       pointers would be even better. We'll see on the next pass. An example of what this would make easier is that, among
+       other things, we could have handles that were effectively ignorant of things like refcount preservation-- and a lot
+       safer.
+*/
+template <class TargetT>
+class simple_scoped_refcount
+{
+ TargetT *t;    // assumes this won't vanish!
+
+ public:
+ simple_scoped_refcount(TargetT *_t)
+  : t(_t)
+ {
+    if(0 == t)
+     throw std::exception();
+
+    enif_keep_resource(t);  
+ }
+
+ ~simple_scoped_refcount()
+ {
+    enif_release_resource(t);
  }
 };
 
@@ -307,9 +334,10 @@ void *eleveldb_write_thread_worker(void *args);
 /* This is all a shade hacky, we are in a time crunch: */
 namespace eleveldb {
 
-/* Should be cheap to copy this: */
+/* Type returned from a work task: */
 typedef std::pair<bool, ERL_NIF_TERM>   work_result_t;
 
+/* Virtual base class ("interface") for async NIF work items: */
 class work_task_t
 {
  protected:
@@ -317,6 +345,9 @@ class work_task_t
 
  ERL_NIF_TERM   caller_ref_term,
                 caller_pid_term;
+
+ private:
+ ErlNifPid local_pid;   // maintain for task lifetime (JFW)
 
  public:
  work_task_t(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref)
@@ -328,7 +359,6 @@ class work_task_t
 
     caller_ref_term = enif_make_copy(local_env_, caller_ref);
 
-    ErlNifPid local_pid;
     caller_pid_term = enif_make_pid(local_env_, enif_self(caller_env, &local_pid));
  }
 
@@ -351,7 +381,7 @@ struct open_task_t : public work_task_t
  leveldb::Options   *open_options;  // associated with db handle, we don't free it
 
  open_task_t(ErlNifEnv* caller_env, ERL_NIF_TERM& _caller_ref,
-             const std::string db_name_, leveldb::Options *open_options_)
+             const std::string& db_name_, leveldb::Options *open_options_)
   : work_task_t(caller_env, _caller_ref),
     db_name(db_name_), open_options(open_options_)
  {}
@@ -387,7 +417,7 @@ struct iter_task_t : public work_task_t
  const bool keys_only;
  leveldb::ReadOptions *options;
 
- iter_task_t(ErlNifEnv *_caller_env, ERL_NIF_TERM& _caller_ref, 
+ iter_task_t(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref, 
              eleveldb_db_handle *_db_handle, const bool _keys_only, leveldb::ReadOptions *_options)
   : work_task_t(_caller_env, _caller_ref),
     db_handle(_db_handle), keys_only(_keys_only), options(_options)
@@ -429,32 +459,27 @@ struct iter_move_task_t : public work_task_t
 {
  typedef enum { FIRST, LAST, NEXT, PREV, SEEK } action_t;
 
- mutable eleveldb_itr_handle*       itr_handle;
+ simple_scoped_refcount<eleveldb_itr_handle>    itr_handle_refcount;
+ mutable eleveldb_itr_handle*                   itr_handle;
 
- action_t                           action;
+ action_t                                       action;
 
- ERL_NIF_TERM                       seek_target;
+ ERL_NIF_TERM                                   seek_target;
 
- iter_move_task_t(ErlNifEnv *_caller_env, ERL_NIF_TERM& _caller_ref,
+ iter_move_task_t(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
                   eleveldb_itr_handle *_itr_handle,
                   action_t& _action,
-                  ERL_NIF_TERM& _seek_target) 
+                  ERL_NIF_TERM _seek_target) 
  : work_task_t(_caller_env, _caller_ref),
+   itr_handle_refcount(_itr_handle),
    itr_handle(_itr_handle),
    action(_action),
    seek_target(enif_make_copy(local_env_, _seek_target))
- {
-    enif_keep_resource(itr_handle);     // increment refcount 
- }
-
- ~iter_move_task_t()
- {
-    enif_release_resource(itr_handle);  // decrement refcount
- }
+ {}
 
  work_result_t operator()()
  {
-    simple_scoped_lock(itr_handle->itr_lock);
+    simple_scoped_lock l(itr_handle->itr_lock);
 
     ErlNifBinary key;
 
@@ -482,7 +507,6 @@ struct iter_move_task_t : public work_task_t
                      return make_pair(false, ATOM_ERROR);
 
                     itr->Next();
-
                     break;
 
         case PREV:
@@ -490,7 +514,6 @@ struct iter_move_task_t : public work_task_t
                      return make_pair(false, ATOM_ERROR);
 
                     itr->Prev();
-
                     break;
 
         case SEEK:
@@ -500,7 +523,6 @@ struct iter_move_task_t : public work_task_t
                     leveldb::Slice key_slice(reinterpret_cast<char *>(key.data), key.size);
     
                     itr->Seek(key_slice);
-
                     break;
      }
 
@@ -523,9 +545,9 @@ struct get_task_t : public work_task_t
  ERL_NIF_TERM                       key_term;
  leveldb::ReadOptions*              options;
 
- get_task_t(ErlNifEnv *_caller_env, ERL_NIF_TERM& _caller_ref,
+ get_task_t(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
             eleveldb_db_handle *_db_handle,
-            ERL_NIF_TERM& _key_term,
+            ERL_NIF_TERM _key_term,
             leveldb::ReadOptions *_options)
   : work_task_t(_caller_env, _caller_ref),
     db_handle(_db_handle),
@@ -574,7 +596,7 @@ struct write_task_t : public work_task_t
 
     leveldb::WriteOptions*          options;
 
-    write_task_t(ErlNifEnv* _owner_env, ERL_NIF_TERM& _caller_ref,
+    write_task_t(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
                 eleveldb_db_handle* _db_handle,
                 leveldb::WriteBatch* _batch,
                 leveldb::WriteOptions* _options)
@@ -1256,6 +1278,14 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
 
  eleveldb_itr_handle *itr_handle = 0;
 
+ if(!enif_get_resource(env, itr_handle_ref, eleveldb_itr_RESOURCE, (void **)&itr_handle))
+{
+  return enif_make_badarg(env);
+}
+
+ // Now that we have our resource, lock it while we submit the job and increment the refcount:
+ simple_scoped_lock l(itr_handle->itr_lock);
+
  if(!enif_get_resource(env, itr_handle_ref, eleveldb_itr_RESOURCE, (void **)&itr_handle) ||
     !enif_is_atom(env, action_atom))
   {
@@ -1267,12 +1297,11 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
 
  if(ATOM_FIRST == action_atom)  action = eleveldb::iter_move_task_t::FIRST;
  if(ATOM_LAST == action_atom)   action = eleveldb::iter_move_task_t::LAST;
- if(ATOM_NEXT == action_atom) action = eleveldb::iter_move_task_t::NEXT;
- if(ATOM_PREV == action_atom) action = eleveldb::iter_move_task_t::PREV;
+ if(ATOM_NEXT == action_atom)   action = eleveldb::iter_move_task_t::NEXT;
+ if(ATOM_PREV == action_atom)   action = eleveldb::iter_move_task_t::PREV;
 
  eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
-                 
  eleveldb::work_task_t *work_item = placement_ctor<eleveldb::iter_move_task_t>(
                                         env, caller_ref,
                                         itr_handle, action,
