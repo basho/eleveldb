@@ -1272,40 +1272,37 @@ ERL_NIF_TERM async_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
- const ERL_NIF_TERM& caller_ref     = argv[0];
- const ERL_NIF_TERM& itr_handle_ref = argv[1];
- const ERL_NIF_TERM& action_atom    = argv[2];
+ const ERL_NIF_TERM& caller_ref       = argv[0];
+ const ERL_NIF_TERM& itr_handle_ref   = argv[1];
+ const ERL_NIF_TERM& action_or_target = argv[2];
 
  eleveldb_itr_handle *itr_handle = 0;
 
  if(!enif_get_resource(env, itr_handle_ref, eleveldb_itr_RESOURCE, (void **)&itr_handle))
-{
   return enif_make_badarg(env);
-}
 
  // Now that we have our resource, lock it while we submit the job and increment the refcount:
  simple_scoped_lock l(itr_handle->itr_lock);
 
- if(!enif_get_resource(env, itr_handle_ref, eleveldb_itr_RESOURCE, (void **)&itr_handle) ||
-    !enif_is_atom(env, action_atom))
-  {
-    return enif_make_badarg(env);
-  }
-
- // If the "action atom" is not an action, it means it's a seek target:
+ /* We can be invoked with two different arities from Erlang. If our "action_atom" parameter is not
+ in fact an atom, then it is actually a seek target. */
  eleveldb::iter_move_task_t::action_t action = eleveldb::iter_move_task_t::SEEK;
 
- if(ATOM_FIRST == action_atom)  action = eleveldb::iter_move_task_t::FIRST;
- if(ATOM_LAST == action_atom)   action = eleveldb::iter_move_task_t::LAST;
- if(ATOM_NEXT == action_atom)   action = eleveldb::iter_move_task_t::NEXT;
- if(ATOM_PREV == action_atom)   action = eleveldb::iter_move_task_t::PREV;
+ if(enif_is_atom(env, action_or_target))
+  {
+    if(ATOM_FIRST == action_or_target)  action = eleveldb::iter_move_task_t::FIRST;
+    if(ATOM_LAST == action_or_target)   action = eleveldb::iter_move_task_t::LAST;
+    if(ATOM_NEXT == action_or_target)   action = eleveldb::iter_move_task_t::NEXT;
+    if(ATOM_PREV == action_or_target)   action = eleveldb::iter_move_task_t::PREV;
+  }
+
 
  eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
  eleveldb::work_task_t *work_item = placement_ctor<eleveldb::iter_move_task_t>(
                                         env, caller_ref,
                                         itr_handle, action,
-                                        action_atom
+                                        action_or_target
                                        );
                    
  if(false == priv.thread_pool.submit(work_item))
