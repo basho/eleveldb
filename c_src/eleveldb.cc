@@ -134,42 +134,42 @@ T *placement_ctor()
 
 template <class T, 
           class P0>
-T *placement_ctor(P0& p0)
+T *placement_ctor(P0 p0)
 {
  return new(placement_alloc<T>()) T(p0);
 }
 
 template <class T, 
           class P0, class P1>
-T *placement_ctor(P0& p0, P1& p1)
+T *placement_ctor(P0 p0, P1 p1)
 {
  return new(placement_alloc<T>()) T(p0, p1);
 }
 
 template <class T, 
           class P0, class P1, class P2>
-T *placement_ctor(P0& p0, P1& p1, P2& p2)
+T *placement_ctor(P0 p0, P1 p1, P2 p2)
 {
  return new(placement_alloc<T>()) T(p0, p1, p2);
 }
 
 template <class T, 
           class P0, class P1, class P2, class P3>
-T *placement_ctor(P0& p0, P1& p1, P2& p2, P3& p3)
+T *placement_ctor(P0 p0, P1 p1, P2 p2, P3 p3)
 {
  return new(placement_alloc<T>()) T(p0, p1, p2, p3);
 }
 
 template <class T, 
           class P0, class P1, class P2, class P3, class P4>
-T *placement_ctor(P0& p0, P1& p1, P2& p2, P3& p3, P4& p4)
+T *placement_ctor(P0 p0, P1 p1, P2 p2, P3 p3, P4 p4)
 {
  return new(placement_alloc<T>()) T(p0, p1, p2, p3, p4);
 }
 
 template <class T, 
           class P0, class P1, class P2, class P3, class P4, class P5>
-T *placement_ctor(P0& p0, P1& p1, P2& p2, P3& p3, P4& p4, P5& p5)
+T *placement_ctor(P0 p0, P1 p1, P2 p2, P3 p3, P4 p4, P5 p5)
 {
  return new(placement_alloc<T>()) T(p0, p1, p2, p3, p4, p5);
 }
