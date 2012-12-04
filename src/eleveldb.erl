@@ -206,7 +206,7 @@ iterator_move(_IRef, _Loc) ->
     case async_iterator_move(_CallerRef, _IRef, _Loc) of
     ok ->
         receive
-            { _CallerRef, ok, Key, Value } -> {ok, Key, Value };
+            { _CallerRef, ok, {Key, Value} } -> {ok, Key, Value };
             { _CallerRef, ok, Key } -> {ok, Key };
             { _CallerRef, error, invalid_iterator } -> {error, invalid_iterator};
             { _CallerRef, error, iterator_closed } -> {error, iterator_closed};
