@@ -54,6 +54,10 @@
 
 -spec init() -> ok | {error, any()}.
 init() ->
+    NumWriteThreads = case os:getenv("ELEVELDB_N_WRITE_THREADS") of
+                        false -> 32;                     % "sensible default"
+                        N -> erlang:list_to_integer(N)   % exception on bad value
+                      end,
     SoName = case code:priv_dir(?MODULE) of
                  {error, bad_name} ->
                      case code:which(?MODULE) of
@@ -65,7 +69,7 @@ init() ->
                  Dir ->
                      filename:join(Dir, "eleveldb")
              end,
-    erlang:load_nif(SoName, 0).
+    erlang:load_nif(SoName, [{write_threads,NumWriteThreads}]). 
 
 -type open_options() :: [{create_if_missing, boolean()} |
                          {error_if_exists, boolean()} |
@@ -77,7 +81,8 @@ init() ->
                          {cache_size, pos_integer()} |
                          {paranoid_checks, boolean()} |
                          {compression, boolean()} |
-                         {use_bloomfilter, boolean() | pos_integer()}].
+                         {use_bloomfilter, boolean() | pos_integer()} |
+                         {write_threads, pos_integer()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()}].
@@ -94,14 +99,22 @@ init() ->
 
 -opaque itr_ref() :: binary().
 
--spec open(string(), open_options()) -> {ok, db_ref()} | {error, any()}.
-open(Name, Opts) ->
-    eleveldb_bump:big(),
-    open_int(Name, Opts).
-
-open_int(_Name, _Opts) ->
+-spec async_open(reference(), string(), open_options()) -> {ok, db_ref()} | {error, any()}.
+async_open(_CallerRef, _Name, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
+-spec open(string(), open_options()) -> {ok, db_ref()} | {error, any()}.
+open(_Name, _Opts) ->
+    _CallerRef = make_ref(),
+    case async_open(_CallerRef, _Name, _Opts) of
+    ok ->
+        receive
+            { _CallerRef, ok, Dbh}        -> {ok, Dbh};
+            { _CallerRef, error, Info}    -> {error, Info}
+        end;
+    ER -> ER
+    end.
+   
 -spec close(db_ref()) -> ok | {error, any()}.
 close(Ref) ->
     eleveldb_bump:big(),
@@ -110,65 +123,101 @@ close(Ref) ->
 close_int(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
--spec get(db_ref(), binary(), read_options()) -> {ok, binary()} | not_found | {error, any()}.
-get(Ref, Key, Opts) ->
-    eleveldb_bump:big(),
-    get_int(Ref, Key, Opts).
-
-get_int(_Ref, _Key, _Opts) ->
+-spec async_get(reference(), db_ref(), binary(), read_options()) -> {ok, binary(), not_found} | {ok, binary(), any()} | {error, binary(), any()}.
+async_get(_CallerRef, _Dbh, _Key, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
--spec put(db_ref(), binary(), binary(), write_options()) -> ok | {error, any()}.
-put(Ref, Key, Value, Opts) ->
-    eleveldb_bump:big(),
-    put_int(Ref, Key, Value, Opts).
+-spec get(db_ref(), binary(), read_options()) -> {ok, binary()} | not_found | {error, any()}.
+get(_Dbh, _Key, _Opts) ->
+    _CallerRef = make_ref(),
+    case async_get(_CallerRef, _Dbh, _Key, _Opts) of
+    ok ->
+        receive
+            { _CallerRef, ok, not_found} -> not_found;
+            { _CallerRef, ok, Value}     -> {ok, Value};
+            { _CallerRef, error, Info}   -> {error, Info}
+        end;
+    ER -> ER
+    end.
 
-put_int(Ref, Key, Value, Opts) ->
-    write(Ref, [{put, Key, Value}], Opts).
+-spec put(db_ref(), binary(), binary(), write_options()) -> ok | {error, any()}.
+put(Ref, Key, Value, Opts) -> write(Ref, [{put, Key, Value}], Opts).
 
 -spec delete(db_ref(), binary(), write_options()) -> ok | {error, any()}.
-delete(Ref, Key, Opts) ->
-    eleveldb_bump:big(),
-    delete_int(Ref, Key, Opts).
-
-delete_int(Ref, Key, Opts) ->
-    write(Ref, [{delete, Key}], Opts).
+delete(Ref, Key, Opts) -> write(Ref, [{delete, Key}], Opts).
 
 -spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
-write(Ref, Updates, Opts) ->
-    eleveldb_bump:big(),
-    write_int(Ref, Updates, Opts).
+write(_Ref, _Updates, _Opts) -> 
+    _CallerRef = make_ref(),
+    case async_write(_CallerRef, _Ref, _Updates, _Opts) of
+    ok ->
+        receive
+            {_CallerRef, ok} -> ok;
+            {_CallerRef, ok, _} -> ok;
+            {_CallerRef, error, Info} -> {error, Info}
+        end;
+    ER -> ER
+    end.
 
-write_int(_Ref, _Updates, _Opts) ->
+-spec async_write(reference(), db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
+async_write(_CallerRef, _Ref, _Updates, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec async_iterator(reference(), db_ref(), read_options()) -> {ok, _CallerRef, itr_ref()}.
+async_iterator(_CallerRef, _Ref, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec async_iterator(reference(), db_ref(), read_options(), keys_only) -> {ok, _CallerRef, itr_ref()}.
+async_iterator(_CallerRef, _Ref, _Opts, keys_only) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec iterator(db_ref(), read_options()) -> {ok, itr_ref()}.
-iterator(Ref, Opts) ->
-    eleveldb_bump:small(),
-    iterator_int(Ref, Opts).
-
-iterator_int(_Ref, _Opts) ->
-    erlang:nif_error({error, not_loaded}).
+iterator(_Ref, _Opts) ->
+    _CallerRef = make_ref(),
+    case async_iterator(_CallerRef, _Ref, _Opts) of
+    ok ->
+        receive
+            {_CallerRef, ok, IterRef} -> {ok, IterRef}
+        end;
+    ER -> ER
+    end.
 
 -spec iterator(db_ref(), read_options(), keys_only) -> {ok, itr_ref()}.
-iterator(Ref, Opts, keys_only) ->
-    eleveldb_bump:small(),
-    iterator_int(Ref, Opts, keys_only).
+iterator(_Ref, _Opts, keys_only) ->
+    _CallerRef = make_ref(),
+    case async_iterator(_CallerRef, _Ref, _Opts, keys_only) of
+    ok ->
+        receive
+            {_CallerRef, ok, IterRef} -> {ok, IterRef}
+        end;
+    ER -> ER
+    end.
 
-iterator_int(_Ref, _Opts, keys_only) ->
+-spec async_iterator_move(reference(), itr_ref(), iterator_action()) -> {ok, reference(), Key::binary(), Value::binary()} | 
+                                                                        {ok, reference(), Key::binary()} |
+                                                                        {error, reference(), invalid_iterator} |
+                                                                        {error, reference(), iterator_closed} |
+                                                                        {error, reference()}.
+async_iterator_move(_CallerRef, _IterRef, _IterAction) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec iterator_move(itr_ref(), iterator_action()) -> {ok, Key::binary(), Value::binary()} |
                                                      {ok, Key::binary()} |
                                                      {error, invalid_iterator} |
                                                      {error, iterator_closed}.
-iterator_move(IRef, Loc) ->
-    eleveldb_bump:big(),
-    iterator_move_int(IRef, Loc).
-
-iterator_move_int(_IRef, _Loc) ->
-    erlang:nif_error({error, not_loaded}).
-
+iterator_move(_IRef, _Loc) ->
+    _CallerRef = make_ref(),
+    case async_iterator_move(_CallerRef, _IRef, _Loc) of
+    ok ->
+        receive
+            { _CallerRef, ok, {Key, Value} } -> {ok, Key, Value };
+            { _CallerRef, ok, Key } -> {ok, Key };
+            { _CallerRef, error, invalid_iterator } -> {error, invalid_iterator};
+            { _CallerRef, error, iterator_closed } -> {error, iterator_closed};
+            { _CallerRef, error } -> {error, invalid_iterator} % JFW: is this the right thing to do..?
+        end;
+    ER -> ER
+    end.
 
 -spec iterator_close(itr_ref()) -> ok.
 iterator_close(IRef) ->
@@ -239,7 +288,8 @@ option_types(open) ->
      {cache_size, integer},
      {paranoid_checks, bool},
      {compression, bool},
-     {use_bloomfilter, any}];
+     {use_bloomfilter, any},
+     {write_threads, integer}];
 option_types(read) ->
     [{verify_checksums, bool},
      {fill_cache, bool}];
@@ -295,14 +345,16 @@ validate_type(_, _)                                          -> false.
 %% ===================================================================
 -ifdef(TEST).
 
-open_test() ->
+open_test() -> [{open_test_Z(), l} || l <- lists:seq(1, 20)].
+open_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.open.test"),
     {ok, Ref} = open("/tmp/eleveldb.open.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"abc">>, <<"123">>, []),
     {ok, <<"123">>} = ?MODULE:get(Ref, <<"abc">>, []),
     not_found = ?MODULE:get(Ref, <<"def">>, []).
 
-fold_test() ->
+fold_test() -> [{fold_test_Z(), l} || l <- lists:seq(1, 20)].
+fold_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.test"),
     {ok, Ref} = open("/tmp/eleveldb.fold.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
@@ -313,7 +365,8 @@ fold_test() ->
      {<<"hij">>, <<"789">>}] = lists:reverse(fold(Ref, fun({K, V}, Acc) -> [{K, V} | Acc] end,
                                                   [], [])).
 
-fold_keys_test() ->
+fold_keys_test() -> [{fold_keys_test_Z(), l} || l <- lists:seq(1, 20)].
+fold_keys_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.keys.test"),
     {ok, Ref} = open("/tmp/eleveldb.fold.keys.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
@@ -323,7 +376,8 @@ fold_keys_test() ->
                                                                 fun(K, Acc) -> [K | Acc] end,
                                                                 [], [])).
 
-fold_from_key_test() ->
+fold_from_key_test() -> [{fold_from_key_test_Z(), l} || l <- lists:seq(1, 20)].
+fold_from_key_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.fold.fromkeys.test"),
     {ok, Ref} = open("/tmp/eleveldb.fromfold.keys.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
@@ -333,7 +387,8 @@ fold_from_key_test() ->
                                                      fun(K, Acc) -> [K | Acc] end,
                                                      [], [{first_key, <<"d">>}])).
 
-destroy_test() ->
+destroy_test() -> [{destroy_test_Z(), l} || l <- lists:seq(1, 20)].
+destroy_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.destroy.test"),
     {ok, Ref} = open("/tmp/eleveldb.destroy.test", [{create_if_missing, true}]),
     ok = ?MODULE:put(Ref, <<"def">>, <<"456">>, []),
@@ -342,8 +397,9 @@ destroy_test() ->
     ok = ?MODULE:destroy("/tmp/eleveldb.destroy.test", []),
     {error, {db_open, _}} = open("/tmp/eleveldb.destroy.test", [{error_if_exists, true}]).
 
-compression_test() ->
-    CompressibleData = list_to_binary([0 || _X <- lists:seq(1,50000)]),
+compression_test() -> [{compression_test_Z(), l} || l <- lists:seq(1, 20)].
+compression_test_Z() ->
+    CompressibleData = list_to_binary([0 || _X <- lists:seq(1,20)]),
     os:cmd("rm -rf /tmp/eleveldb.compress.0 /tmp/eleveldb.compress.1"),
     {ok, Ref0} = open("/tmp/eleveldb.compress.0", [{write_buffer_size, 5},
                                                    {create_if_missing, true},
@@ -370,13 +426,15 @@ compression_test() ->
 	?assert(Log0Option =:= match andalso Log1Option =:= match).
 
 
-close_test() ->
+close_test() -> [{close_test_Z(), l} || l <- lists:seq(1, 20)].
+close_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.close.test"),
     {ok, Ref} = open("/tmp/eleveldb.close.test", [{create_if_missing, true}]),
     ?assertEqual(ok, close(Ref)),
     ?assertEqual({error, einval}, close(Ref)).
 
-close_fold_test() ->
+close_fold_test() -> [{close_fold_test_Z(), l} || l <- lists:seq(1, 20)].
+close_fold_test_Z() ->
     os:cmd("rm -rf /tmp/eleveldb.close_fold.test"),
     {ok, Ref} = open("/tmp/eleveldb.close_fold.test", [{create_if_missing, true}]),
     ok = eleveldb:put(Ref, <<"k">>,<<"v">>,[]),
