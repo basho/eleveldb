@@ -727,7 +727,9 @@ protected:
              if (ret_flag)
              {
                  threads[index]->m_DirectWork=work;
+                 pthread_mutex_lock(&threads[index]->m_Mutex);
                  pthread_cond_signal(&threads[index]->m_Condition);
+                 pthread_mutex_unlock(&threads[index]->m_Mutex);
              }   // if
          }   // if
 
@@ -1023,6 +1025,7 @@ void *eleveldb_write_thread_worker(void *args)
         submission=(eleveldb::work_task_t *)tdata.m_DirectWork;
         if (NULL==submission)
         {
+// bad ... work_queue.empty is not atomic / thread safe
             h.lock();
             if (!h.work_queue.empty())
             {

@@ -55,7 +55,7 @@
 -spec init() -> ok | {error, any()}.
 init() ->
     NumWriteThreads = case os:getenv("ELEVELDB_N_WRITE_THREADS") of
-                        false -> 32;                     % "sensible default"
+                        false -> 31;                     % "sensible default"
                         N -> erlang:list_to_integer(N)   % exception on bad value
                       end,
     SoName = case code:priv_dir(?MODULE) of
@@ -69,7 +69,7 @@ init() ->
                  Dir ->
                      filename:join(Dir, "eleveldb")
              end,
-    erlang:load_nif(SoName, [{write_threads,NumWriteThreads}]). 
+    erlang:load_nif(SoName, [{write_threads,NumWriteThreads}]).
 
 -type open_options() :: [{create_if_missing, boolean()} |
                          {error_if_exists, boolean()} |
@@ -114,7 +114,7 @@ open(_Name, _Opts) ->
         end;
     ER -> ER
     end.
-   
+
 -spec close(db_ref()) -> ok | {error, any()}.
 close(Ref) ->
     eleveldb_bump:big(),
@@ -147,7 +147,7 @@ put(Ref, Key, Value, Opts) -> write(Ref, [{put, Key, Value}], Opts).
 delete(Ref, Key, Opts) -> write(Ref, [{delete, Key}], Opts).
 
 -spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
-write(_Ref, _Updates, _Opts) -> 
+write(_Ref, _Updates, _Opts) ->
     _CallerRef = make_ref(),
     case async_write(_CallerRef, _Ref, _Updates, _Opts) of
     ok ->
@@ -193,7 +193,7 @@ iterator(_Ref, _Opts, keys_only) ->
     ER -> ER
     end.
 
--spec async_iterator_move(reference(), itr_ref(), iterator_action()) -> {ok, reference(), Key::binary(), Value::binary()} | 
+-spec async_iterator_move(reference(), itr_ref(), iterator_action()) -> {ok, reference(), Key::binary(), Value::binary()} |
                                                                         {ok, reference(), Key::binary()} |
                                                                         {error, reference(), invalid_iterator} |
                                                                         {error, reference(), iterator_closed} |
