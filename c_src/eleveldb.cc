@@ -28,6 +28,7 @@
 #include <utility>
 #include <stdexcept>
 #include <algorithm>
+#include <vector>
 
 #include "eleveldb.h"
 
@@ -119,7 +120,7 @@ namespace {
 template <class T>
 void *placement_alloc()
 {
- void *placement = enif_alloc(sizeof(T));
+ void *placement = malloc(sizeof(T));
  if(0 == placement)
   throw std::bad_alloc();
 
@@ -181,7 +182,7 @@ void placement_dtor(T *& x)
   return;
 
  x->~T();
- enif_free(x);
+ free(x);
 }
 
 // A relatively unsafe (no ownership semantics) mutex handle; allocates and releases with lifetime:
@@ -640,6 +641,36 @@ struct write_task_t : public work_task_t
 
 } // namespace eleveldb
 
+
+/**
+ * Meta / managment data related to a worker thread.
+ */
+struct ThreadData
+{
+    ErlNifTid * m_ErlTid;                //!< erlang handle for this thread
+    volatile uint32_t m_Available;       //!< 1 if thread waiting, using standard type for atomic operation
+    class eleveldb_thread_pool & m_Pool; //!< parent pool object
+    volatile eleveldb::work_task_t * m_DirectWork; //!< work passed direct to thread
+
+    pthread_mutex_t m_Mutex;             //!< mutex for condition variable
+    pthread_cond_t m_Condition;          //!< condition for thread waiting
+
+
+    ThreadData(class eleveldb_thread_pool & Pool)
+    : m_ErlTid(NULL), m_Available(0), m_Pool(Pool), m_DirectWork(NULL)
+    {
+        pthread_mutex_init(&m_Mutex, NULL);
+        pthread_cond_init(&m_Condition, NULL);
+
+        return;
+    }   // ThreadData
+
+private:
+    ThreadData();
+
+};  // class ThreadData
+
+
 class eleveldb_thread_pool
 {
  friend void *eleveldb_write_thread_worker(void *args);
@@ -648,9 +679,11 @@ class eleveldb_thread_pool
  eleveldb_thread_pool(const eleveldb_thread_pool&);             // nocopy
  eleveldb_thread_pool& operator=(const eleveldb_thread_pool&);  // nocopyassign
 
- private:
+protected:
+
  typedef std::deque<eleveldb::work_task_t*> work_queue_t;
- typedef std::stack<ErlNifTid *>            thread_pool_t;
+    // typedef std::stack<ErlNifTid *>            thread_pool_t;
+ typedef std::vector<ThreadData *>   thread_pool_t;
 
  private:
  thread_pool_t  threads;
@@ -672,6 +705,41 @@ class eleveldb_thread_pool
  void lock()                    { enif_mutex_lock(work_queue_lock); }
  void unlock()                  { enif_mutex_unlock(work_queue_lock); }
 
+
+ bool FindWaitingThread(eleveldb::work_task_t * work)
+ {
+     bool ret_flag;
+     size_t start, index, pool_size;
+
+     ret_flag=false;
+
+     // pick "random" place in thread list.  hopefully
+     //  list size is prime number.
+     pool_size=threads.size();
+     start=(size_t)pthread_self() % pool_size;
+     index=start;
+
+     do
+     {
+         if (0!=threads[index]->m_Available)
+         {
+             ret_flag=__sync_bool_compare_and_swap(&threads[index]->m_Available, 1, 0);
+             if (ret_flag)
+             {
+                 threads[index]->m_DirectWork=work;
+                 pthread_cond_signal(&threads[index]->m_Condition);
+             }   // if
+         }   // if
+
+         index=(index+1)%pool_size;
+
+     } while(index!=start && !ret_flag);
+
+     return(ret_flag);
+
+ }   // FindWaitingThread
+
+
  bool submit(eleveldb::work_task_t* item)
  {
     if(shutdown_pending())
@@ -681,14 +749,22 @@ class eleveldb_thread_pool
         return false;
      }
 
-    lock();
-     work_queue.push_back(item);
-    unlock();
+    // try to give work to a waiting thread first
+    if (!FindWaitingThread(item))
+    {
+        // no waiting threads, put on backlog queue
+        lock();
+        work_queue.push_back(item);
+        unlock();
 
-    enif_cond_signal(work_queue_pending);
+        // race condition, thread might be waiting now
+        FindWaitingThread(NULL);
+    }   // if
 
     return true;
+
  }
+
 
  bool resize_thread_pool(const size_t n)
  {
@@ -758,6 +834,7 @@ eleveldb_thread_pool::~eleveldb_thread_pool()
 bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
 {
  simple_scoped_lock l(threads_lock);
+ ThreadData * new_thread;
 
  if(0 >= nthreads)
   return true;  // nothing to do, but also not failure
@@ -767,6 +844,8 @@ bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
 
  // At least one thread means that we don't shut threads down:
  shutdown = false;
+
+ threads.reserve(nthreads);
 
  for(size_t i = nthreads; i; --i)
   {
@@ -778,15 +857,20 @@ bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
     if(0 == thread_id)
      return false;
 
+    new_thread=new ThreadData(*this);
+
     const int result = enif_thread_create(const_cast<char *>(thread_name.str().c_str()), thread_id,
                                           eleveldb_write_thread_worker,
-                                          static_cast<void *>(this),
+                                          static_cast<void *>(new_thread),
                                           0);
+
+    new_thread->m_ErlTid=thread_id;
 
     if(0 != result)
      return false;
 
-    threads.push(thread_id);
+
+    threads.push_back(new_thread);
   }
 
  return true;
@@ -877,6 +961,7 @@ bool eleveldb_thread_pool::drain_thread_pool()
  enif_cond_broadcast(work_queue_pending);
 
  simple_scoped_lock l(threads_lock);
+#if 0
  while(!threads.empty())
   {
     // Rebroadcast on each invocation (workers might not see the signal otherwise):
@@ -885,6 +970,7 @@ bool eleveldb_thread_pool::drain_thread_pool()
     rt(threads.top());
     threads.pop();
   }
+#endif
 
  return rt();
 }
@@ -927,37 +1013,45 @@ class eleveldb_priv_data
 /* Poll the work queue, submit jobs to leveldb: */
 void *eleveldb_write_thread_worker(void *args)
 {
- eleveldb_thread_pool& h = *reinterpret_cast<eleveldb_thread_pool*>(args);
+    ThreadData &tdata = *(ThreadData *)args;
+    eleveldb_thread_pool& h = tdata.m_Pool;
+    eleveldb::work_task_t * submission;
 
- for(;;)
-  {
-    h.lock();
+    while(!h.shutdown)
+    {
+        // cast away volatile
+        submission=(eleveldb::work_task_t *)tdata.m_DirectWork;
+        if (NULL==submission)
+        {
+            h.lock();
+            if (!h.work_queue.empty())
+            {
+                submission=h.work_queue.front();
+                h.work_queue.pop_front();
+            }   // if
+            h.unlock();
+        }   // if
 
-    while(h.work_queue.empty() && not h.shutdown)
-     enif_cond_wait(h.work_queue_pending, h.work_queue_lock);
+        if (NULL!=submission)
+        {
+            eleveldb_thread_pool::notify_caller(*submission);
+            placement_dtor(submission);
+            submission=NULL;
+            tdata.m_DirectWork=NULL;
+        }   // if
+        else
+        {
+            pthread_mutex_lock(&tdata.m_Mutex);
+            tdata.m_Available=1;
+            pthread_cond_wait(&tdata.m_Condition, &tdata.m_Mutex);
+            pthread_mutex_unlock(&tdata.m_Mutex);
+        }   // else
+    }   // while
 
-    if(h.shutdown)
-     {
-        h.unlock();
-        break;
-     }
+    return 0;
 
-    // Take a job from and release the queue head:
-    eleveldb::work_task_t* submission = h.work_queue.front();
+}   // eleveldb_write_thread_worker
 
-    h.work_queue.pop_front();
-    h.unlock();
-
-    // Do the work:
-    if(false == eleveldb_thread_pool::notify_caller(*submission))
-     ; // There isn't much to be done if this has failed. We have no supervisor process.
-
-    // Free the job entry:
-    placement_dtor(submission);
-  }
-
- return 0;
-}
 
 ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Options& opts)
 {
@@ -1263,7 +1357,7 @@ ERL_NIF_TERM async_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         return enif_make_badarg(env);
      }
 
-    simple_scoped_lock(db_handle->db_lock);
+    // simple_scoped_lock(db_handle->db_lock);
 
     if(0 == db_handle->db)
      return error_einval(env);
@@ -1300,7 +1394,7 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
   return enif_make_badarg(env);
 
  // Now that we have our resource, lock it while we submit the job and increment the refcount:
- simple_scoped_lock l(itr_handle->itr_lock);
+ // simple_scoped_lock l(itr_handle->itr_lock);
 
  eleveldb::work_task_t *work_item = 0;
 
