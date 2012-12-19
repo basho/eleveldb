@@ -773,7 +773,7 @@ private:
         work_queue.push_back(item);
         unlock();
 
-        // race condition, thread might be waiting now
+        // to address race condition, thread might be waiting now
         FindWaitingThread(NULL);
 
         perf()->Inc(leveldb::ePerfElevelQueued);
@@ -1393,7 +1393,7 @@ ERL_NIF_TERM async_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         return enif_make_badarg(env);
      }
 
-    // simple_scoped_lock(db_handle->db_lock);
+    simple_scoped_lock(db_handle->db_lock);
 
     if(0 == db_handle->db)
      return error_einval(env);
