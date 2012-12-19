@@ -728,7 +728,11 @@ private:
      {
          if (0!=threads[index]->m_Available)
          {
+#ifdef OS_SOLARIS
+             ret_flag=(1==atomic_cas_32(&threads[index]->m_Available, 1, 0);
+#else
              ret_flag=__sync_bool_compare_and_swap(&threads[index]->m_Available, 1, 0);
+#endif
              if (ret_flag)
              {
                  threads[index]->m_DirectWork=work;
