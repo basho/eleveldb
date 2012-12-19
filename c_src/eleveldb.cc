@@ -38,6 +38,10 @@
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
 
+#ifdef OS_SOLARIS
+#  include <atomic.h>
+#endif
+
 // Atoms (initialized in on_load)
 static ERL_NIF_TERM ATOM_TRUE;
 static ERL_NIF_TERM ATOM_FALSE;
@@ -685,7 +689,7 @@ protected:
     // typedef std::stack<ErlNifTid *>            thread_pool_t;
  typedef std::vector<ThreadData *>   thread_pool_t;
 
- private:
+private:
  thread_pool_t  threads;
  ErlNifMutex*   threads_lock;       // protect resizing of the thread pool
  simple_scoped_mutex_handle thread_resize_pool_mutex;
@@ -693,6 +697,7 @@ protected:
  work_queue_t   work_queue;
  ErlNifCond*    work_queue_pending; // flags job present in the work queue
  ErlNifMutex*   work_queue_lock;    // protects access to work_queue
+ volatile size_t work_queue_atomic;   //!< atomic size to parallel work_queue.size().
 
 
  volatile bool  shutdown;           // should we stop threads and shut down?
@@ -756,6 +761,11 @@ protected:
     {
         // no waiting threads, put on backlog queue
         lock();
+#ifdef OS_SOLARIS
+        atomic_add_int(&work_queue_atomic, 1);
+#else
+        __sync_add_and_fetch(&work_queue_atomic, 1);
+#endif
         work_queue.push_back(item);
         unlock();
 
@@ -1025,14 +1035,24 @@ void *eleveldb_write_thread_worker(void *args)
         submission=(eleveldb::work_task_t *)tdata.m_DirectWork;
         if (NULL==submission)
         {
-// bad ... work_queue.empty is not atomic / thread safe
-            h.lock();
-            if (!h.work_queue.empty())
+            // test non-blocking size for hint (much faster)
+            if (0!=h.work_queue_atomic)
             {
-                submission=h.work_queue.front();
-                h.work_queue.pop_front();
+                // retest with locking
+                h.lock();
+                if (!h.work_queue.empty())
+                {
+                    submission=h.work_queue.front();
+                    h.work_queue.pop_front();
+#ifdef OS_SOLARIS
+                    atomic_sub_int(&h.work_queue_atomic, 1);
+#else
+                    __sync_sub_and_fetch(&h.work_queue_atomic, 1);
+#endif
+                }   // if
+
+                h.unlock();
             }   // if
-            h.unlock();
         }   // if
 
         if (NULL!=submission)

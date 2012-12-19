@@ -2,7 +2,7 @@
 %%
 %%  eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 %%
-%% Copyright (c) 2010 Basho Technologies, Inc. All Rights Reserved.
+%% Copyright (c) 2010-2012 Basho Technologies, Inc. All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -55,7 +55,7 @@
 -spec init() -> ok | {error, any()}.
 init() ->
     NumWriteThreads = case os:getenv("ELEVELDB_N_WRITE_THREADS") of
-                        false -> 31;                     % "sensible default"
+                        false -> 71;                     % "sensible default" (and a prime)
                         N -> erlang:list_to_integer(N)   % exception on bad value
                       end,
     SoName = case code:priv_dir(?MODULE) of
