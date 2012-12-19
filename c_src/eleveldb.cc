@@ -37,6 +37,7 @@
 #include "leveldb/write_batch.h"
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
+#include "leveldb/perf_count.h"
 
 #ifdef OS_SOLARIS
 #  include <atomic.h>
@@ -699,7 +700,6 @@ private:
  ErlNifMutex*   work_queue_lock;    // protects access to work_queue
  volatile size_t work_queue_atomic;   //!< atomic size to parallel work_queue.size().
 
-
  volatile bool  shutdown;           // should we stop threads and shut down?
 
  public:
@@ -762,7 +762,7 @@ private:
         // no waiting threads, put on backlog queue
         lock();
 #ifdef OS_SOLARIS
-        atomic_add_int(&work_queue_atomic, 1);
+        atomic_add_64(&work_queue_atomic, 1);
 #else
         __sync_add_and_fetch(&work_queue_atomic, 1);
 #endif
@@ -771,7 +771,13 @@ private:
 
         // race condition, thread might be waiting now
         FindWaitingThread(NULL);
+
+        perf()->Inc(leveldb::ePerfElevelQueued);
     }   // if
+    else
+    {
+        perf()->Inc(leveldb::ePerfElevelDirect);
+    }   // else
 
     return true;
 
@@ -802,6 +808,8 @@ private:
 
  size_t work_queue_size() const { return work_queue.size(); }
  bool shutdown_pending() const  { return shutdown; }
+ leveldb::PerformanceCounters * perf() const {return(leveldb::gPerfCounters);};
+
 
  private:
 
@@ -1045,10 +1053,11 @@ void *eleveldb_write_thread_worker(void *args)
                     submission=h.work_queue.front();
                     h.work_queue.pop_front();
 #ifdef OS_SOLARIS
-                    atomic_sub_int(&h.work_queue_atomic, 1);
+                    atomic_sub_64(&h.work_queue_atomic, 1);
 #else
                     __sync_sub_and_fetch(&h.work_queue_atomic, 1);
 #endif
+                    h.perf()->Inc(leveldb::ePerfElevelDequeued);
                 }   // if
 
                 h.unlock();
