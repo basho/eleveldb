@@ -109,8 +109,7 @@ open(_Name, _Opts) ->
     case async_open(_CallerRef, _Name, _Opts) of
     ok ->
         receive
-            { _CallerRef, ok, Dbh}        -> {ok, Dbh};
-            { _CallerRef, error, Info}    -> {error, Info}
+            { _CallerRef, X} -> X
         end;
     ER -> ER
     end.
@@ -133,9 +132,7 @@ get(_Dbh, _Key, _Opts) ->
     case async_get(_CallerRef, _Dbh, _Key, _Opts) of
     ok ->
         receive
-            { _CallerRef, ok, not_found} -> not_found;
-            { _CallerRef, ok, Value}     -> {ok, Value};
-            { _CallerRef, error, Info}   -> {error, Info}
+            { _CallerRef, X}             -> X
         end;
     ER -> ER
     end.
@@ -152,9 +149,7 @@ write(_Ref, _Updates, _Opts) ->
     case async_write(_CallerRef, _Ref, _Updates, _Opts) of
     ok ->
         receive
-            {_CallerRef, ok} -> ok;
-            {_CallerRef, ok, _} -> ok;
-            {_CallerRef, error, Info} -> {error, Info}
+            { _CallerRef, X}              -> X
         end;
     ER -> ER
     end.
@@ -177,7 +172,7 @@ iterator(_Ref, _Opts) ->
     case async_iterator(_CallerRef, _Ref, _Opts) of
     ok ->
         receive
-            {_CallerRef, ok, IterRef} -> {ok, IterRef}
+            {_CallerRef, X} -> X
         end;
     ER -> ER
     end.
@@ -188,16 +183,16 @@ iterator(_Ref, _Opts, keys_only) ->
     case async_iterator(_CallerRef, _Ref, _Opts, keys_only) of
     ok ->
         receive
-            {_CallerRef, ok, IterRef} -> {ok, IterRef}
+            {_CallerRef, X} -> X
         end;
     ER -> ER
     end.
 
--spec async_iterator_move(reference(), itr_ref(), iterator_action()) -> {ok, reference(), Key::binary(), Value::binary()} |
-                                                                        {ok, reference(), Key::binary()} |
-                                                                        {error, reference(), invalid_iterator} |
-                                                                        {error, reference(), iterator_closed} |
-                                                                        {error, reference()}.
+-spec async_iterator_move(reference(), itr_ref(), iterator_action()) -> {reference(), {ok, Key::binary(), Value::binary()}} |
+                                                                        {reference(), {ok, Key::binary()}} |
+                                                                        {reference(), {error, invalid_iterator}} |
+                                                                        {reference(), {error, iterator_closed}} |
+                                                                        {reference()}.
 async_iterator_move(_CallerRef, _IterRef, _IterAction) ->
     erlang:nif_error({error, not_loaded}).
 
@@ -210,11 +205,8 @@ iterator_move(_IRef, _Loc) ->
     case async_iterator_move(_CallerRef, _IRef, _Loc) of
     ok ->
         receive
-            { _CallerRef, ok, {Key, Value} } -> {ok, Key, Value };
-            { _CallerRef, ok, Key } -> {ok, Key };
-            { _CallerRef, error, invalid_iterator } -> {error, invalid_iterator};
-            { _CallerRef, error, iterator_closed } -> {error, iterator_closed};
-            { _CallerRef, error } -> {error, invalid_iterator} % JFW: is this the right thing to do..?
+            { _CallerRef, {ok, {Key, Value}} }  -> {ok, Key, Value };   % JFW: we can flatten this in the NIF to safe a little time
+            { _CallerRef, X}                    -> X
         end;
     ER -> ER
     end.
