@@ -205,7 +205,6 @@ iterator_move(_IRef, _Loc) ->
     case async_iterator_move(_CallerRef, _IRef, _Loc) of
     ok ->
         receive
-            { _CallerRef, {ok, {Key, Value}} }  -> {ok, Key, Value };   % JFW: we can flatten this in the NIF to safe a little time
             { _CallerRef, X}                    -> X
         end;
     ER -> ER

@@ -553,9 +553,9 @@ struct iter_move_task_t : public work_task_t
     if(itr_handle->keys_only)
      return work_result(local_env(), ATOM_OK, slice_to_binary(local_env(), itr->key()));
 
-    return work_result(local_env(), ATOM_OK, enif_make_tuple2(local_env(),
-                                                    slice_to_binary(local_env(), itr->key()),
-                                                    slice_to_binary(local_env(), itr->value())));
+    return work_result(local_env(), ATOM_OK, 
+                                    slice_to_binary(local_env(), itr->key()),
+                                    slice_to_binary(local_env(), itr->value()));
  }
 };
 
