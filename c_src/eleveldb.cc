@@ -41,7 +41,7 @@
 
 #include "work_result.hpp"
 
-#if defined(OS_SOLARIS) || defined(SOLARIS)
+#if defined(OS_SOLARIS) || defined(SOLARIS) || defined(sun)
 #  include <atomic.h>
 #endif
 
@@ -732,9 +732,9 @@ private:
      {
          if (0!=threads[index]->m_Available)
          {
-#if defined(OS_SOLARIS) || defined(SOLARIS)
-             ret_flag=(1==atomic_cas_32(&threads[index]->m_Available, 1, 0);
-#elif defined(__GNUC__)
+#if defined(OS_SOLARIS) || defined(SOLARIS) || defined(sun)
+             ret_flag=(1==atomic_cas_32(&threads[index]->m_Available, 1, 0));
+#else
              ret_flag=__sync_bool_compare_and_swap(&threads[index]->m_Available, 1, 0);
 #endif
              if (ret_flag)
@@ -769,7 +769,7 @@ private:
     {
         // no waiting threads, put on backlog queue
         lock();
-#if defined(OS_SOLARIS) || defined(SOLARIS)
+#if defined(OS_SOLARIS) || defined(SOLARIS) || defined(sun)
         atomic_add_64(&work_queue_atomic, 1);
 #elif defined(__GNUC__)
         __sync_add_and_fetch(&work_queue_atomic, 1);
@@ -1057,8 +1057,9 @@ void *eleveldb_write_thread_worker(void *args)
                 {
                     submission=h.work_queue.front();
                     h.work_queue.pop_front();
-#if defined(OS_SOLARIS) || defined(SOLARIS)
-                    atomic_sub_64(&h.work_queue_atomic, 1);
+#if defined(OS_SOLARIS) || defined(SOLARIS) || defined(sun)
+                    // JFW: not found on this Solaris? atomic_sub_64(&h.work_queue_atomic, 1);
+                    atomic_dec_64(&h.work_queue_atomic);
 #elif defined(__GNUC__)
                     __sync_sub_and_fetch(&h.work_queue_atomic, 1);
 #endif
