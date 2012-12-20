@@ -26,19 +26,19 @@ inline bool compare_and_swap(PtrT *ptr, const ValueT& comp_val, const ValueT& ex
 
 // JFW: note: we don't support variadic version of this right now:
 template <class PtrT, class ValueT>
-inline ValueT sync_add_and_fetch(PtrT *ptr, const ValueT& val)
+inline void sync_add_and_fetch(PtrT *ptr, const ValueT& val)
 {
 #if ELEVELDB_IS_SOLARIS
-    return atomic_add_64(ptr, val);
+    atomic_add_64(ptr, val);
 #else
-    return __sync_add_and_fetch(ptr, val);
+    __sync_add_and_fetch(ptr, val);
 #endif
 }
 
 template <class PtrT>
 inline void atomic_dec(PtrT ptr)
 {
-#if ELEVELDB_SOLARIS
+#if ELEVELDB_IS_SOLARIS
     // JFW: not found on this Solaris? atomic_sub_64(&h.work_queue_atomic, 1);
     atomic_dec_64(ptr);
 #else
