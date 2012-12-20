@@ -43,6 +43,33 @@
 
 #include "detail.hpp"
 
+class BinaryValue : public leveldb::Value
+{
+public:
+  BinaryValue(ErlNifEnv* env, ERL_NIF_TERM& value_bin) :
+    m_env(env), m_value_bin(value_bin) {}
+  ~BinaryValue();
+
+  BinaryValue& assign(const char* data, size_t size);
+
+private:
+  ErlNifEnv* m_env;
+  ERL_NIF_TERM& m_value_bin;
+
+  BinaryValue(const BinaryValue&);
+  void operator=(const BinaryValue&);
+};
+
+BinaryValue::~BinaryValue() {}
+
+BinaryValue&
+BinaryValue::assign(const char* data, size_t size)
+{
+  unsigned char* v = enif_make_new_binary(m_env, size, &m_value_bin);
+  memcpy(v, data, size);
+  return *this;
+}
+
 // Atoms (initialized in on_load)
 static ERL_NIF_TERM ATOM_TRUE;
 static ERL_NIF_TERM ATOM_FALSE;
@@ -589,7 +616,8 @@ struct get_task_t : public work_task_t
 
     leveldb::Slice key_slice((const char*)key.data, key.size);
 
-    std::string value; 
+    ERL_NIF_TERM value_bin;
+    BinaryValue value(local_env(), value_bin);
 
     // We don't want to hold the DB lock through the copy:
     {
@@ -600,13 +628,6 @@ struct get_task_t : public work_task_t
     if(!status.ok())
      return work_result(ATOM_NOT_FOUND); 
     }
-
-    ERL_NIF_TERM value_bin;
-
-    // The documentation does not say if this can fail:
-    unsigned char *result = enif_make_new_binary(local_env(), value.size(), &value_bin);
-
-    copy(value.data(), value.data() + value.size(), result);
 
     return work_result(local_env(), ATOM_OK, value_bin);
  }

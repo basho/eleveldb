@@ -8,7 +8,7 @@ if [ `uname -s` = 'SunOS' -a "${POSIX_SHELL}" != "true" ]; then
 fi
 unset POSIX_SHELL # clear it so if we invoke other scripts, they run as ksh as well
 
-LEVELDB_VSN="2b18c2ac517689eb6bb30b5764c165da6624eae4" # December 19, 2012 current development "master"
+LEVELDB_VSN="0296c90a4d0d8aaae8ed045eed5efa19b0bc367e" # basho/leveldb sbv-db-value-holder branch
 
 SNAPPY_VSN="1.0.4"
 
