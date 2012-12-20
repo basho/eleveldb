@@ -39,9 +39,9 @@
 #include "leveldb/filter_policy.h"
 #include "leveldb/perf_count.h"
 
-#ifdef OS_SOLARIS
-#  include <atomic.h>
-#endif
+#include "work_result.hpp"
+
+#include "detail.hpp"
 
 // Atoms (initialized in on_load)
 static ERL_NIF_TERM ATOM_TRUE;
@@ -104,7 +104,6 @@ static ErlNifFunc nif_funcs[] =
 
 using std::copy;
 using std::nothrow;
-using std::make_pair;
 
 static ErlNifResourceType* eleveldb_db_RESOURCE;
 static ErlNifResourceType* eleveldb_itr_RESOURCE;
@@ -341,7 +340,7 @@ void *eleveldb_write_thread_worker(void *args);
 namespace eleveldb {
 
 /* Type returned from a work task: */
-typedef std::pair<bool, ERL_NIF_TERM>   work_result_t;
+typedef basho::async_nif::work_result   work_result;
 
 /* Virtual base class ("interface") for async NIF work items: */
 class work_task_t
@@ -378,7 +377,7 @@ class work_task_t
  const ERL_NIF_TERM& caller_ref() const { return caller_ref_term; }
  const ERL_NIF_TERM& pid() const        { return caller_pid_term; }
 
- virtual work_result_t operator()()     = 0;
+ virtual work_result operator()()     = 0;
 };
 
 struct open_task_t : public work_task_t
@@ -392,14 +391,14 @@ struct open_task_t : public work_task_t
     db_name(db_name_), open_options(open_options_)
  {}
 
- work_result_t operator()()
+ work_result operator()()
  {
     leveldb::DB *db(0);
 
     leveldb::Status status = leveldb::DB::Open(*open_options, db_name, &db);
 
     if(!status.ok())
-     return make_pair(false, error_tuple(local_env(), ATOM_ERROR_DB_OPEN, status));
+     return error_tuple(local_env(), ATOM_ERROR_DB_OPEN, status);
 
     eleveldb_db_handle* handle = (eleveldb_db_handle*)
      enif_alloc_resource(eleveldb_db_RESOURCE, sizeof(eleveldb_db_handle));
@@ -413,7 +412,7 @@ struct open_task_t : public work_task_t
 
     enif_release_resource(handle);
 
-    return make_pair(true, result);
+    return work_result(local_env(), ATOM_OK, result);
  }
 };
 
@@ -434,7 +433,7 @@ struct iter_task_t : public work_task_t
     placement_dtor(options);
  }
 
- work_result_t operator()()
+ work_result operator()()
  {
     eleveldb_itr_handle* itr_handle =
             (eleveldb_itr_handle*) enif_alloc_resource(eleveldb_itr_RESOURCE,
@@ -459,7 +458,7 @@ struct iter_task_t : public work_task_t
 
     enif_release_resource(itr_handle);
 
-    return make_pair(true, result);
+    return work_result(local_env(), ATOM_OK, result);
  }
 };
 
@@ -497,7 +496,7 @@ struct iter_move_task_t : public work_task_t
    seek_target(enif_make_copy(local_env_, _seek_target))
  {}
 
- work_result_t operator()()
+ work_result operator()()
  {
     simple_scoped_lock l(itr_handle->itr_lock);
 
@@ -506,12 +505,13 @@ struct iter_move_task_t : public work_task_t
     leveldb::Iterator* itr = itr_handle->itr;
 
     if(0 == itr)
-     return make_pair(false, ATOM_ITERATOR_CLOSED);
+     return work_result(local_env(), ATOM_ERROR, ATOM_ITERATOR_CLOSED);
 
     switch(action)
      {
         default:
-                    return make_pair(false, ATOM_ERROR);
+                    // JFW: note: *not* { ERROR, badarg() } here-- we want the exception:
+                    return work_result(enif_make_badarg(local_env()));
                     break;
 
         case FIRST:
@@ -524,21 +524,21 @@ struct iter_move_task_t : public work_task_t
 
         case NEXT:
                     if(!itr->Valid())
-                     return make_pair(false, ATOM_ERROR);
+                     return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
                     itr->Next();
                     break;
 
         case PREV:
                     if(!itr->Valid())
-                     return make_pair(false, ATOM_ERROR);
+                     return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
                     itr->Prev();
                     break;
 
         case SEEK:
                     if(!enif_inspect_binary(local_env(), seek_target, &key))
-                     return make_pair(false, ATOM_ERROR);
+                     return work_result(local_env(), ATOM_ERROR, enif_make_badarg(local_env()));
 
                     leveldb::Slice key_slice(reinterpret_cast<char *>(key.data), key.size);
 
@@ -547,14 +547,14 @@ struct iter_move_task_t : public work_task_t
      }
 
     if(!itr->Valid())
-     return make_pair(false, ATOM_INVALID_ITERATOR);
+     return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
     if(itr_handle->keys_only)
-     return make_pair(true, slice_to_binary(local_env(), itr->key()));
+     return work_result(local_env(), ATOM_OK, slice_to_binary(local_env(), itr->key()));
 
-    return make_pair(true, enif_make_tuple2(local_env(),
-                                            slice_to_binary(local_env(), itr->key()),
-                                            slice_to_binary(local_env(), itr->value())));
+    return work_result(local_env(), ATOM_OK, 
+                                    slice_to_binary(local_env(), itr->key()),
+                                    slice_to_binary(local_env(), itr->value()));
  }
 };
 
@@ -580,23 +580,26 @@ struct get_task_t : public work_task_t
     placement_dtor(options);
  }
 
- work_result_t operator()()
+ work_result operator()()
  {
     ErlNifBinary key;
 
     if(!enif_inspect_binary(local_env(), key_term, &key))
-     return make_pair(false, error_einval(local_env()));
+     return work_result(error_einval(local_env()));
 
     leveldb::Slice key_slice((const char*)key.data, key.size);
 
-    simple_scoped_lock(db_handle->db_lock);
+    std::string value; 
 
-    std::string value;
+    // We don't want to hold the DB lock through the copy:
+    {
+    simple_scoped_lock(db_handle->db_lock);
 
     leveldb::Status status = db_handle->db->Get(*options, key_slice, &value);
 
     if(!status.ok())
-     return make_pair(true, ATOM_NOT_FOUND);
+     return work_result(ATOM_NOT_FOUND); 
+    }
 
     ERL_NIF_TERM value_bin;
 
@@ -605,7 +608,7 @@ struct get_task_t : public work_task_t
 
     copy(value.data(), value.data() + value.size(), result);
 
-    return make_pair(true, value_bin);
+    return work_result(local_env(), ATOM_OK, value_bin);
  }
 };
 
@@ -632,7 +635,7 @@ struct write_task_t : public work_task_t
         placement_dtor(options);
     }
 
-    work_result_t operator()()
+    work_result operator()()
     {
         simple_scoped_lock(db_handle->db_lock);
 
@@ -640,7 +643,7 @@ struct write_task_t : public work_task_t
 
         enif_release_resource(db_handle);   // decrement refcount of leveldb handle
 
-        return std::make_pair(status.ok(), status.ok() ? ATOM_OK : ATOM_ERROR);
+        return work_result(status.ok() ? ATOM_OK : ATOM_ERROR);
     }
  };
 
@@ -728,11 +731,8 @@ private:
      {
          if (0!=threads[index]->m_Available)
          {
-#ifdef OS_SOLARIS
-             ret_flag=(1==atomic_cas_32(&threads[index]->m_Available, 1, 0);
-#else
-             ret_flag=__sync_bool_compare_and_swap(&threads[index]->m_Available, 1, 0);
-#endif
+             ret_flag = eleveldb::detail::compare_and_swap(&threads[index]->m_Available, 1, 0);
+
              if (ret_flag)
              {
                  threads[index]->m_DirectWork=work;
@@ -765,12 +765,8 @@ private:
     {
         // no waiting threads, put on backlog queue
         lock();
-#ifdef OS_SOLARIS
-        atomic_add_64(&work_queue_atomic, 1);
-#else
-        __sync_add_and_fetch(&work_queue_atomic, 1);
-#endif
-        work_queue.push_back(item);
+         eleveldb::detail::sync_add_and_fetch(&work_queue_atomic, 1);
+         work_queue.push_back(item);
         unlock();
 
         // to address race condition, thread might be waiting now
@@ -1007,18 +1003,15 @@ bool eleveldb_thread_pool::notify_caller(eleveldb::work_task_t& work_item)
   return false;
 
  // Call the work function:
- eleveldb::work_result_t result = work_item();
-
+ basho::async_nif::work_result result = work_item();
+ 
  /* Assemble a notification of the following form:
-        { ATOM Status, PID CallerHandle, ERL_NIF_TERM result } */
- ERL_NIF_TERM result_tuple =
-                enif_make_tuple3(work_item.local_env(),
-                                 work_item.caller_ref(),
-                                 (result.first ? ATOM_OK : ATOM_ERROR),
-                                 result.second);
-
+        { PID CallerHandle, ERL_NIF_TERM result } */
+ ERL_NIF_TERM result_tuple = enif_make_tuple2(work_item.local_env(), 
+                              work_item.caller_ref(), result.result());
+ 
  return (0 != enif_send(0, &pid, work_item.local_env(), result_tuple));
-}
+} 
 
 /* Module-level private data: */
 class eleveldb_priv_data
@@ -1056,11 +1049,7 @@ void *eleveldb_write_thread_worker(void *args)
                 {
                     submission=h.work_queue.front();
                     h.work_queue.pop_front();
-#ifdef OS_SOLARIS
-                    atomic_sub_64(&h.work_queue_atomic, 1);
-#else
-                    __sync_sub_and_fetch(&h.work_queue_atomic, 1);
-#endif
+                    eleveldb::detail::atomic_dec(&h.work_queue_atomic);
                     h.perf()->Inc(leveldb::ePerfElevelDequeued);
                 }   // if
 
