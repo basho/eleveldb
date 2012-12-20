@@ -122,7 +122,10 @@ close(Ref) ->
 close_int(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
--spec async_get(reference(), db_ref(), binary(), read_options()) -> {ok, binary(), not_found} | {ok, binary(), any()} | {error, binary(), any()}.
+-spec async_get(reference(), db_ref(), binary(), read_options()) -> 
+                                {reference(), { error, einval}} |
+                                {reference(), not_found} |
+                                {reference(), ok, binary()}.
 async_get(_CallerRef, _Dbh, _Key, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 

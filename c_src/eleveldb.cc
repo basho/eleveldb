@@ -585,7 +585,7 @@ struct get_task_t : public work_task_t
     ErlNifBinary key;
 
     if(!enif_inspect_binary(local_env(), key_term, &key))
-     return work_result(local_env(), ATOM_ERROR, error_einval(local_env()));
+     return work_result(error_einval(local_env()));
 
     leveldb::Slice key_slice((const char*)key.data, key.size);
 
