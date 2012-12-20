@@ -41,9 +41,7 @@
 
 #include "work_result.hpp"
 
-#if defined(OS_SOLARIS) || defined(SOLARIS) || defined(sun)
-#  include <atomic.h>
-#endif
+#include "detail.hpp"
 
 // Atoms (initialized in on_load)
 static ERL_NIF_TERM ATOM_TRUE;
@@ -512,7 +510,8 @@ struct iter_move_task_t : public work_task_t
     switch(action)
      {
         default:
-                    return work_result(ATOM_ERROR);
+                    // JFW: note: *not* { ERROR, badarg() } here-- we want the exception:
+                    return work_result(enif_make_badarg(local_env()));
                     break;
 
         case FIRST:
@@ -525,21 +524,21 @@ struct iter_move_task_t : public work_task_t
 
         case NEXT:
                     if(!itr->Valid())
-                     return work_result(ATOM_ERROR);
+                     return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
                     itr->Next();
                     break;
 
         case PREV:
                     if(!itr->Valid())
-                     return work_result(ATOM_ERROR);
+                     return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
                     itr->Prev();
                     break;
 
         case SEEK:
                     if(!enif_inspect_binary(local_env(), seek_target, &key))
-                     return work_result(ATOM_ERROR);
+                     return work_result(local_env(), ATOM_ERROR, enif_make_badarg(local_env()));
 
                     leveldb::Slice key_slice(reinterpret_cast<char *>(key.data), key.size);
 
@@ -732,11 +731,8 @@ private:
      {
          if (0!=threads[index]->m_Available)
          {
-#if defined(OS_SOLARIS) || defined(SOLARIS) || defined(sun)
-             ret_flag=(1==atomic_cas_32(&threads[index]->m_Available, 1, 0));
-#else
-             ret_flag=__sync_bool_compare_and_swap(&threads[index]->m_Available, 1, 0);
-#endif
+             ret_flag = eleveldb::detail::compare_and_swap(&threads[index]->m_Available, 1, 0);
+
              if (ret_flag)
              {
                  threads[index]->m_DirectWork=work;
@@ -769,12 +765,8 @@ private:
     {
         // no waiting threads, put on backlog queue
         lock();
-#if defined(OS_SOLARIS) || defined(SOLARIS) || defined(sun)
-        atomic_add_64(&work_queue_atomic, 1);
-#elif defined(__GNUC__)
-        __sync_add_and_fetch(&work_queue_atomic, 1);
-#endif
-        work_queue.push_back(item);
+         eleveldb::detail::sync_add_and_fetch(&work_queue_atomic, 1);
+         work_queue.push_back(item);
         unlock();
 
         // to address race condition, thread might be waiting now
@@ -1057,12 +1049,7 @@ void *eleveldb_write_thread_worker(void *args)
                 {
                     submission=h.work_queue.front();
                     h.work_queue.pop_front();
-#if defined(OS_SOLARIS) || defined(SOLARIS) || defined(sun)
-                    // JFW: not found on this Solaris? atomic_sub_64(&h.work_queue_atomic, 1);
-                    atomic_dec_64(&h.work_queue_atomic);
-#elif defined(__GNUC__)
-                    __sync_sub_and_fetch(&h.work_queue_atomic, 1);
-#endif
+                    eleveldb::detail::atomic_dec(&h.work_queue_atomic);
                     h.perf()->Inc(leveldb::ePerfElevelDequeued);
                 }   // if
 
