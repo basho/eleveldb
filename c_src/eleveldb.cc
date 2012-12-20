@@ -41,7 +41,7 @@
 
 #include "work_result.hpp"
 
-#ifdef OS_SOLARIS
+#if defined(OS_SOLARIS) || defined(SOLARIS)
 #  include <atomic.h>
 #endif
 
@@ -732,9 +732,9 @@ private:
      {
          if (0!=threads[index]->m_Available)
          {
-#ifdef OS_SOLARIS
+#if defined(OS_SOLARIS) || defined(SOLARIS)
              ret_flag=(1==atomic_cas_32(&threads[index]->m_Available, 1, 0);
-#else
+#elif defined(__GNUC__)
              ret_flag=__sync_bool_compare_and_swap(&threads[index]->m_Available, 1, 0);
 #endif
              if (ret_flag)
@@ -769,9 +769,9 @@ private:
     {
         // no waiting threads, put on backlog queue
         lock();
-#ifdef OS_SOLARIS
+#if defined(OS_SOLARIS) || defined(SOLARIS)
         atomic_add_64(&work_queue_atomic, 1);
-#else
+#elif defined(__GNUC__)
         __sync_add_and_fetch(&work_queue_atomic, 1);
 #endif
         work_queue.push_back(item);
@@ -1057,9 +1057,9 @@ void *eleveldb_write_thread_worker(void *args)
                 {
                     submission=h.work_queue.front();
                     h.work_queue.pop_front();
-#ifdef OS_SOLARIS
+#if defined(OS_SOLARIS) || defined(SOLARIS)
                     atomic_sub_64(&h.work_queue_atomic, 1);
-#else
+#elif defined(__GNUC__)
                     __sync_sub_and_fetch(&h.work_queue_atomic, 1);
 #endif
                     h.perf()->Inc(leveldb::ePerfElevelDequeued);
