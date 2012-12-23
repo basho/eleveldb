@@ -332,6 +332,7 @@ struct eleveldb_itr_handle
     const leveldb::Snapshot*   snapshot;
     eleveldb_db_handle* db_handle;
     bool keys_only;
+    volatile uint32_t m_handoff_atomic;  //!< matthew's atomic foreground/background prefetch flag.
 };
 
 void *eleveldb_write_thread_worker(void *args);
@@ -549,12 +550,25 @@ struct iter_move_task_t : public work_task_t
     if(!itr->Valid())
      return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
-    if(itr_handle->keys_only)
-     return work_result(local_env(), ATOM_OK, slice_to_binary(local_env(), itr->key()));
+    // who got back first, us or the erlang loop
+    if (eleveldb::detail::compare_and_swap(&itr_handle->m_handoff_atomic, 0, 1))
+    {
+        // this is prefetch of next iteration.  It returned faster than actual
+        //  request to retrieve it.  Stop and wait for erlang to catch up.
+    }   // if
+    else
+    {
+        // setup next race for the response
+        itr_handle->m_handoff_atomic=0;
 
-    return work_result(local_env(), ATOM_OK, 
-                                    slice_to_binary(local_env(), itr->key()),
-                                    slice_to_binary(local_env(), itr->value()));
+        // erlang is waiting, send message
+        if(itr_handle->keys_only)
+            return work_result(local_env(), ATOM_OK, slice_to_binary(local_env(), itr->key()));
+
+        return work_result(local_env(), ATOM_OK,
+                           slice_to_binary(local_env(), itr->key()),
+                           slice_to_binary(local_env(), itr->value()));
+    }   // else
  }
 };
 
@@ -589,7 +603,7 @@ struct get_task_t : public work_task_t
 
     leveldb::Slice key_slice((const char*)key.data, key.size);
 
-    std::string value; 
+    std::string value;
 
     // We don't want to hold the DB lock through the copy:
     {
@@ -598,7 +612,7 @@ struct get_task_t : public work_task_t
     leveldb::Status status = db_handle->db->Get(*options, key_slice, &value);
 
     if(!status.ok())
-     return work_result(ATOM_NOT_FOUND); 
+     return work_result(ATOM_NOT_FOUND);
     }
 
     ERL_NIF_TERM value_bin;
@@ -1004,14 +1018,14 @@ bool eleveldb_thread_pool::notify_caller(eleveldb::work_task_t& work_item)
 
  // Call the work function:
  basho::async_nif::work_result result = work_item();
- 
+
  /* Assemble a notification of the following form:
         { PID CallerHandle, ERL_NIF_TERM result } */
- ERL_NIF_TERM result_tuple = enif_make_tuple2(work_item.local_env(), 
+ ERL_NIF_TERM result_tuple = enif_make_tuple2(work_item.local_env(),
                               work_item.caller_ref(), result.result());
- 
+
  return (0 != enif_send(0, &pid, work_item.local_env(), result_tuple));
-} 
+}
 
 /* Module-level private data: */
 class eleveldb_priv_data
@@ -1412,7 +1426,9 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
  const ERL_NIF_TERM& caller_ref       = argv[0];
  const ERL_NIF_TERM& itr_handle_ref   = argv[1];
  const ERL_NIF_TERM& action_or_target = argv[2];
+ ERL_NIF_TERM ret_term;
 
+ ret_term=ATOM_OK;
  eleveldb_itr_handle *itr_handle = 0;
 
  if(!enif_get_resource(env, itr_handle_ref, eleveldb_itr_RESOURCE, (void **)&itr_handle))
@@ -1451,10 +1467,32 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
 
  eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
+ // before we launch a background job for "next iteration", see if there is a
+ //  prefetch waiting for us
+ if (eleveldb::detail::compare_and_swap(&itr_handle->m_handoff_atomic, 0, 1))
+ {
+     // nope
+ }
+ else
+ {
+     // why yes there is.  copy the key/value info into a return tuple before
+     //  we launch the iterator for "next" again
+     if (itr_handle->keys_only)
+         ret_term=enif_make_tuple2(env, ATOM_OK, slice_to_binary(env, itr_handle->itr->key()));
+     else
+         ret_term=enif_make_tuple3(env, ATOM_OK,
+                           slice_to_binary(env, itr_handle->itr->key()),
+                           slice_to_binary(env, itr_handle->itr->value()));
+
+     // reset for next race
+     itr_handle->m_handoff_atomic=0;
+ }   // else
+
+ // this request could be a lookahead or request/wait
  if(false == priv.thread_pool.submit(work_item))
   return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
 
- return ATOM_OK;
+ return ret_term;
 }
 
 ERL_NIF_TERM async_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])

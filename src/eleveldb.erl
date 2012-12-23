@@ -122,7 +122,7 @@ close(Ref) ->
 close_int(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
--spec async_get(reference(), db_ref(), binary(), read_options()) -> 
+-spec async_get(reference(), db_ref(), binary(), read_options()) ->
                                 {reference(), { error, einval}} |
                                 {reference(), not_found} |
                                 {reference(), ok, binary()}.
@@ -209,6 +209,8 @@ iterator_move(_IRef, _Loc) ->
         receive
             { _CallerRef, X}                    -> X
         end;
+    {ok, _}=Key -> Key;
+    {ok, _, _}=KeyVal -> KeyVal;
     ER -> ER
     end.
 
