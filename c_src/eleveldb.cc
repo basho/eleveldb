@@ -463,7 +463,7 @@ struct iter_task_t : public work_task_t
     db_handle(_db_handle), keys_only(_keys_only), options(_options)
  {}
 
- ~iter_task_t()
+ virtual ~iter_task_t()
  {
     placement_dtor(options);
  }
@@ -593,7 +593,7 @@ struct iter_move_task_t : public work_task_t
     {
         // setup next race for the response
         itr_handle->m_handoff_atomic=0;
-        if (NEXT==action)
+        if (NEXT==action || SEEK==action)
         {
             prepare_recycle();
             action=NEXT;
@@ -629,7 +629,7 @@ struct get_task_t : public work_task_t
     options(_options)
  {}
 
- ~get_task_t()
+ virtual ~get_task_t()
  {
     placement_dtor(options);
  }
@@ -1483,6 +1483,8 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
 
  eleveldb_itr_handle *itr_handle = 0;
 
+ bool submit_new_request(true);
+
  if(!enif_get_resource(env, itr_handle_ref, eleveldb_itr_RESOURCE, (void **)&itr_handle))
   return enif_make_badarg(env);
 
@@ -1537,7 +1539,7 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
      ret_term = enif_make_copy(env, itr_handle->itr_ref);
 
      leveldb::gPerfCounters->Inc(leveldb::ePerfDebug1);
-
+     submit_new_request=(eleveldb::iter_move_task_t::NEXT != action);
  }
  else
  {
@@ -1555,12 +1557,14 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
 
      // reset for next race
      itr_handle->m_handoff_atomic=0;
+     submit_new_request=true;
  }   // else
 
-
- // this request could be a lookahead or request/wait
- if(false == priv.thread_pool.submit(work_item))
-  return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+ if (submit_new_request)
+ {
+     if(false == priv.thread_pool.submit(work_item))
+         return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+ }   // if
 
  return ret_term;
 }
