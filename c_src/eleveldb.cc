@@ -349,16 +349,19 @@ typedef basho::async_nif::work_result   work_result;
 class work_task_t
 {
  protected:
- ErlNifEnv      *local_env_;
+    ErlNifEnv      *local_env_, *second_env_;
 
- ERL_NIF_TERM   caller_ref_term,
-                caller_pid_term;
+    ERL_NIF_TERM   caller_ref_term, caller_ref_term2,
+        caller_pid_term, caller_pid_term2;
+
+    bool resubmit_work;           //!< true if this work item is loaded for prefetch
 
  private:
  ErlNifPid local_pid;   // maintain for task lifetime (JFW)
 
  public:
  work_task_t(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref)
+     : second_env_(NULL), resubmit_work(false)
  {
     local_env_ = enif_alloc_env();
 
@@ -373,12 +376,41 @@ class work_task_t
  virtual ~work_task_t()
  {
     enif_free_env(local_env_);
+    if (NULL!=second_env_)
+        enif_free_env(second_env_);
  }
+
+void prepare_recycle()
+ {
+     second_env_ = enif_alloc_env();
+
+    if(NULL == second_env_)
+     throw std::invalid_argument("work_task_t::second_env_");
+
+    caller_ref_term2 = enif_make_copy(second_env_, caller_ref_term);
+
+    caller_pid_term2 = enif_make_pid(second_env_, &local_pid);
+
+    resubmit_work=true;
+ }  // prepare_recycle
+
+
+ void recycle()
+ {
+     enif_free_env(local_env_);
+     local_env_=second_env_;
+     second_env_=NULL;
+     caller_ref_term=caller_ref_term2;
+     caller_pid_term=caller_pid_term2;
+     resubmit_work=false;
+ }   // recycle
+
 
  ErlNifEnv *local_env() const           { return local_env_; }
 
  const ERL_NIF_TERM& caller_ref() const { return caller_ref_term; }
  const ERL_NIF_TERM& pid() const        { return caller_pid_term; }
+ bool resubmit() const {return(resubmit_work);}
 
  virtual work_result operator()()     = 0;
 };
@@ -476,8 +508,8 @@ struct iter_move_task_t : public work_task_t
  mutable eleveldb_itr_handle*                   itr_handle;
 
  action_t                                       action;
+ std::string                                 seek_target;
 
- ERL_NIF_TERM                                   seek_target;
 
  // No seek target:
  iter_move_task_t(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
@@ -486,27 +518,24 @@ struct iter_move_task_t : public work_task_t
  : work_task_t(_caller_env, _caller_ref),
    itr_handle_refcount(_itr_handle),
    itr_handle(_itr_handle),
-   action(_action),
-   seek_target(ATOM_ERROR)
+   action(_action)
  {}
 
  // With seek target:
  iter_move_task_t(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
                   eleveldb_itr_handle *_itr_handle,
                   action_t& _action,
-                  ERL_NIF_TERM _seek_target)
+                  std::string& _seek_target)
  : work_task_t(_caller_env, _caller_ref),
    itr_handle_refcount(_itr_handle),
    itr_handle(_itr_handle),
    action(_action),
-   seek_target(enif_make_copy(local_env_, _seek_target))
+   seek_target(_seek_target)
  {}
 
  work_result operator()()
  {
     simple_scoped_lock l(itr_handle->itr_lock);
-
-    ErlNifBinary key;
 
     leveldb::Iterator* itr = itr_handle->itr;
 
@@ -543,10 +572,8 @@ struct iter_move_task_t : public work_task_t
                     break;
 
         case SEEK:
-                    if(!enif_inspect_binary(local_env(), seek_target, &key))
-                     return work_result(local_env(), ATOM_ERROR, enif_make_badarg(local_env()));
 
-                    leveldb::Slice key_slice(reinterpret_cast<char *>(key.data), key.size);
+                    leveldb::Slice key_slice(seek_target);
 
                     itr->Seek(key_slice);
                     break;
@@ -560,11 +587,17 @@ struct iter_move_task_t : public work_task_t
     {
         // this is prefetch of next iteration.  It returned faster than actual
         //  request to retrieve it.  Stop and wait for erlang to catch up.
+        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug0);
     }   // if
     else
     {
         // setup next race for the response
         itr_handle->m_handoff_atomic=0;
+        if (NEXT==action)
+        {
+            prepare_recycle();
+            action=NEXT;
+        }   // if
 
         // erlang is waiting, send message
         if(itr_handle->keys_only)
@@ -574,6 +607,8 @@ struct iter_move_task_t : public work_task_t
                            slice_to_binary(local_env(), itr->key()),
                            slice_to_binary(local_env(), itr->value()));
     }   // else
+
+    return(work_result());
  }
 };
 
@@ -841,6 +876,7 @@ private:
 eleveldb_thread_pool::eleveldb_thread_pool(const size_t thread_pool_size)
   : threads_lock(0),
     work_queue_pending(0), work_queue_lock(0),
+    work_queue_atomic(0),
     shutdown(false)
 {
  threads_lock = enif_mutex_create(const_cast<char *>("threads_lock"));
@@ -1017,6 +1053,7 @@ bool eleveldb_thread_pool::drain_thread_pool()
 bool eleveldb_thread_pool::notify_caller(eleveldb::work_task_t& work_item)
 {
  ErlNifPid pid;
+ bool ret_flag(true);
 
  if(0 == enif_get_local_pid(work_item.local_env(), work_item.pid(), &pid))
   return false;
@@ -1024,12 +1061,17 @@ bool eleveldb_thread_pool::notify_caller(eleveldb::work_task_t& work_item)
  // Call the work function:
  basho::async_nif::work_result result = work_item();
 
- /* Assemble a notification of the following form:
+ if (result.is_set())
+ {
+     /* Assemble a notification of the following form:
         { PID CallerHandle, ERL_NIF_TERM result } */
- ERL_NIF_TERM result_tuple = enif_make_tuple2(work_item.local_env(),
-                              work_item.caller_ref(), result.result());
+     ERL_NIF_TERM result_tuple = enif_make_tuple2(work_item.local_env(),
+                                                  work_item.caller_ref(), result.result());
 
- return (0 != enif_send(0, &pid, work_item.local_env(), result_tuple));
+     ret_flag=(0 != enif_send(0, &pid, work_item.local_env(), result_tuple));
+ }   // if
+
+ return(ret_flag);
 }
 
 /* Module-level private data: */
@@ -1075,19 +1117,29 @@ void *eleveldb_write_thread_worker(void *args)
                 h.unlock();
             }   // if
         }   // if
+        else
+        {
+            tdata.m_DirectWork=NULL;
+        }   // else
 
         if (NULL!=submission)
         {
             eleveldb_thread_pool::notify_caller(*submission);
-            placement_dtor(submission);
+            if (submission->resubmit())
+            {
+                submission->recycle();
+                h.submit(submission);
+            }   // if
+            else
+                placement_dtor(submission);
             submission=NULL;
-            tdata.m_DirectWork=NULL;
         }   // if
         else
         {
             pthread_mutex_lock(&tdata.m_Mutex);
             tdata.m_Available=1;
             pthread_cond_wait(&tdata.m_Condition, &tdata.m_Mutex);
+            tdata.m_Available=0;    // safety
             pthread_mutex_unlock(&tdata.m_Mutex);
         }   // else
     }   // while
@@ -1387,11 +1439,7 @@ ERL_NIF_TERM async_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     const ERL_NIF_TERM& dbh_ref     = argv[1];
     const ERL_NIF_TERM& options_ref = argv[2];
 
-#if 0
-    const bool keys_only = (3 == argc && ATOM_KEYS_ONLY == options_ref) ? true : false;
-#else
     const bool keys_only = ((argc == 4) && (argv[3] == ATOM_KEYS_ONLY));
-#endif
 
     eleveldb_db_handle* db_handle;
 
@@ -1465,26 +1513,40 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
   }
  else
   {
-    work_item = placement_ctor<eleveldb::iter_move_task_t>(
-                 env, caller_ref,
-                 itr_handle, action, action_or_target
-                );
+      std::string seek_target;
+      ErlNifBinary key;
+
+      if(!enif_inspect_binary(env, action_or_target, &key))
+          return enif_make_tuple2(env, ATOM_EINVAL, caller_ref);
+
+      seek_target.assign((const char *)key.data, key.size);
+
+      work_item = placement_ctor<eleveldb::iter_move_task_t>(
+          env, caller_ref,
+          itr_handle, action, seek_target
+          );
   }
 
  eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
  // before we launch a background job for "next iteration", see if there is a
- //  prefetch waiting for us
+ //  prefetch waiting for us (SEEK always "wins" and that condition is used)
  if (eleveldb::detail::compare_and_swap(&itr_handle->m_handoff_atomic, 0, 1))
  {
      // nope
      ret_term = enif_make_copy(env, itr_handle->itr_ref);
+
+     leveldb::gPerfCounters->Inc(leveldb::ePerfDebug1);
+
  }
  else
  {
      // why yes there is.  copy the key/value info into a return tuple before
      //  we launch the iterator for "next" again
-     if (itr_handle->keys_only)
+     if(!itr_handle->itr->Valid())
+         return enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
+
+     else if (itr_handle->keys_only)
          ret_term=enif_make_tuple2(env, ATOM_OK, slice_to_binary(env, itr_handle->itr->key()));
      else
          ret_term=enif_make_tuple3(env, ATOM_OK,
@@ -1494,6 +1556,7 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
      // reset for next race
      itr_handle->m_handoff_atomic=0;
  }   // else
+
 
  // this request could be a lookahead or request/wait
  if(false == priv.thread_pool.submit(work_item))
