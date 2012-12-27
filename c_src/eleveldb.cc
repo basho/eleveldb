@@ -1546,7 +1546,7 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
      // why yes there is.  copy the key/value info into a return tuple before
      //  we launch the iterator for "next" again
      if(!itr_handle->itr->Valid())
-         return enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
+         ret_term=enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
      else if (itr_handle->keys_only)
          ret_term=enif_make_tuple2(env, ATOM_OK, slice_to_binary(env, itr_handle->itr->key()));
@@ -1563,9 +1563,15 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
  if (submit_new_request)
  {
      if(false == priv.thread_pool.submit(work_item))
+     {
+         placement_dtor(work_item);
          return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+     }
  }   // if
-
+ else if(work_item)
+ {
+     placement_dtor(work_item);
+ }
  return ret_term;
 }
 
