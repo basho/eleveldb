@@ -333,6 +333,8 @@ struct eleveldb_itr_handle
     eleveldb_db_handle* db_handle;
     bool keys_only;
     volatile uint32_t m_handoff_atomic;  //!< matthew's atomic foreground/background prefetch flag.
+    ERL_NIF_TERM itr_ref;
+    ErlNifEnv *itr_ref_env;
 };
 
 void *eleveldb_write_thread_worker(void *args);
@@ -450,6 +452,9 @@ struct iter_task_t : public work_task_t
 
     itr_handle->itr = db_handle->db->NewIterator(*options);
     itr_handle->keys_only = keys_only;
+    // Copy caller_ref to reuse in future iterator_move calls
+    itr_handle->itr_ref_env = enif_alloc_env();
+    itr_handle->itr_ref = enif_make_copy(itr_handle->itr_ref_env, caller_ref());
 
     ERL_NIF_TERM result = enif_make_resource(local_env(), itr_handle);
 
@@ -1423,12 +1428,11 @@ ERL_NIF_TERM async_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
- const ERL_NIF_TERM& caller_ref       = argv[0];
+ // const ERL_NIF_TERM& caller_ref       = argv[0];
  const ERL_NIF_TERM& itr_handle_ref   = argv[1];
  const ERL_NIF_TERM& action_or_target = argv[2];
  ERL_NIF_TERM ret_term;
 
- ret_term=ATOM_OK;
  eleveldb_itr_handle *itr_handle = 0;
 
  if(!enif_get_resource(env, itr_handle_ref, eleveldb_itr_RESOURCE, (void **)&itr_handle))
@@ -1437,6 +1441,8 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
  // Now that we have our resource, lock it while we submit the job and increment the refcount:
  // simple_scoped_lock l(itr_handle->itr_lock);
 
+ // Reuse ref from iterator creation
+ const ERL_NIF_TERM& caller_ref = itr_handle->itr_ref;
  eleveldb::work_task_t *work_item = 0;
 
  /* We can be invoked with two different arities from Erlang. If our "action_atom" parameter is not
@@ -1472,6 +1478,7 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
  if (eleveldb::detail::compare_and_swap(&itr_handle->m_handoff_atomic, 0, 1))
  {
      // nope
+     ret_term = enif_make_copy(env, itr_handle->itr_ref);
  }
  else
  {
@@ -1579,6 +1586,7 @@ ERL_NIF_TERM eleveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TER
         enif_mutex_unlock(itr_handle->db_handle->db_lock);
 
         enif_release_resource(itr_handle->db_handle); // matches keep in eleveldb_iterator()
+        enif_free_env(itr_handle->itr_ref_env);
 
         return ATOM_OK;
     }

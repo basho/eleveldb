@@ -203,11 +203,10 @@ async_iterator_move(_CallerRef, _IterRef, _IterAction) ->
                                                      {error, invalid_iterator} |
                                                      {error, iterator_closed}.
 iterator_move(_IRef, _Loc) ->
-    _CallerRef = make_ref(),
-    case async_iterator_move(_CallerRef, _IRef, _Loc) of
-    ok ->
+    case async_iterator_move(undefined, _IRef, _Loc) of
+    Ref when is_reference(Ref) ->
         receive
-            { _CallerRef, X}                    -> X
+            {Ref, X}                    -> X
         end;
     {ok, _}=Key -> Key;
     {ok, _, _}=KeyVal -> KeyVal;
