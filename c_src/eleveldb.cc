@@ -121,74 +121,6 @@ const size_t N_THREADS_MAX = 32767;
 /* Some primitive-yet-useful NIF helpers: */
 namespace {
 
-template <class T>
-void *placement_alloc()
-{
- void *placement = malloc(sizeof(T));
- if(0 == placement)
-  throw std::bad_alloc();
-
- return placement;
-}
-
-template <class T>
-T *placement_ctor()
-{
- return new(placement_alloc<T>()) T;
-}
-
-template <class T,
-          class P0>
-T *placement_ctor(P0 p0)
-{
- return new(placement_alloc<T>()) T(p0);
-}
-
-template <class T,
-          class P0, class P1>
-T *placement_ctor(P0 p0, P1 p1)
-{
- return new(placement_alloc<T>()) T(p0, p1);
-}
-
-template <class T,
-          class P0, class P1, class P2>
-T *placement_ctor(P0 p0, P1 p1, P2 p2)
-{
- return new(placement_alloc<T>()) T(p0, p1, p2);
-}
-
-template <class T,
-          class P0, class P1, class P2, class P3>
-T *placement_ctor(P0 p0, P1 p1, P2 p2, P3 p3)
-{
- return new(placement_alloc<T>()) T(p0, p1, p2, p3);
-}
-
-template <class T,
-          class P0, class P1, class P2, class P3, class P4>
-T *placement_ctor(P0 p0, P1 p1, P2 p2, P3 p3, P4 p4)
-{
- return new(placement_alloc<T>()) T(p0, p1, p2, p3, p4);
-}
-
-template <class T,
-          class P0, class P1, class P2, class P3, class P4, class P5>
-T *placement_ctor(P0 p0, P1 p1, P2 p2, P3 p3, P4 p4, P5 p5)
-{
- return new(placement_alloc<T>()) T(p0, p1, p2, p3, p4, p5);
-}
-
-template <class T>
-void placement_dtor(T *& x)
-{
- if(0 == x)
-  return;
-
- x->~T();
- free(x);
-}
-
 // A relatively unsafe (no ownership semantics) mutex handle; allocates and releases with lifetime:
 class simple_scoped_mutex_handle
 {
@@ -325,6 +257,10 @@ struct eleveldb_db_handle
     eleveldb_db_handle& operator=(const eleveldb_db_handle&);   // nocopyassign
 };
 
+namespace eleveldb {
+    struct iter_move_task_t;
+};
+
 struct eleveldb_itr_handle
 {
     leveldb::Iterator*   itr;
@@ -332,9 +268,10 @@ struct eleveldb_itr_handle
     const leveldb::Snapshot*   snapshot;
     eleveldb_db_handle* db_handle;
     bool keys_only;
-    volatile uint32_t m_handoff_atomic;  //!< matthew's atomic foreground/background prefetch flag.
+    volatile uint32_t m_handoff_atomic;    //!< matthew's atomic foreground/background prefetch flag.
     ERL_NIF_TERM itr_ref;
     ErlNifEnv *itr_ref_env;
+    struct eleveldb::iter_move_task_t * reuse_move;  //!< iterator work object that is reused instead of lots malloc/free
 };
 
 void *eleveldb_write_thread_worker(void *args);
@@ -348,7 +285,11 @@ typedef basho::async_nif::work_result   work_result;
 /* Virtual base class ("interface") for async NIF work items: */
 class work_task_t
 {
- protected:
+public:
+
+protected:
+    volatile uint32_t ref_count;                //!< atomic count of users for auto delete
+
     ErlNifEnv      *local_env_, *second_env_;
 
     ERL_NIF_TERM   caller_ref_term, caller_ref_term2,
@@ -356,12 +297,12 @@ class work_task_t
 
     bool resubmit_work;           //!< true if this work item is loaded for prefetch
 
- private:
- ErlNifPid local_pid;   // maintain for task lifetime (JFW)
+private:
+    ErlNifPid local_pid;   // maintain for task lifetime (JFW)
 
  public:
  work_task_t(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref)
-     : second_env_(NULL), resubmit_work(false)
+     : ref_count(0), second_env_(NULL), resubmit_work(false)
  {
     local_env_ = enif_alloc_env();
 
@@ -380,31 +321,50 @@ class work_task_t
         enif_free_env(second_env_);
  }
 
+
 void prepare_recycle()
  {
-     second_env_ = enif_alloc_env();
+     // prepare_recycle could happen at a couple of places
+     if (NULL==second_env_)
+     {
+         second_env_ = enif_alloc_env();
 
-    if(NULL == second_env_)
-     throw std::invalid_argument("work_task_t::second_env_");
+         if(NULL == second_env_)
+             throw std::invalid_argument("work_task_t::second_env_");
 
-    caller_ref_term2 = enif_make_copy(second_env_, caller_ref_term);
+         caller_ref_term2 = enif_make_copy(second_env_, caller_ref_term);
 
-    caller_pid_term2 = enif_make_pid(second_env_, &local_pid);
+         caller_pid_term2 = enif_make_pid(second_env_, &local_pid);
+     }   // if
 
-    resubmit_work=true;
+     resubmit_work=true;
  }  // prepare_recycle
 
 
  void recycle()
  {
-     enif_free_env(local_env_);
-     local_env_=second_env_;
-     second_env_=NULL;
-     caller_ref_term=caller_ref_term2;
-     caller_pid_term=caller_pid_term2;
+     if (NULL!=second_env_)
+     {
+         enif_free_env(local_env_);
+         local_env_=second_env_;
+         second_env_=NULL;
+         caller_ref_term=caller_ref_term2;
+         caller_pid_term=caller_pid_term2;
+     }   // if
+
      resubmit_work=false;
  }   // recycle
 
+  void RefInc() {eleveldb::detail::sync_add_and_fetch(&ref_count);};
+
+  void RefDec()
+  {
+      uint32_t current_refs;
+
+      current_refs=eleveldb::detail::atomic_dec_ret(ref_count);
+      if (0==current_refs)
+          delete this;
+  }   // RefDec
 
  ErlNifEnv *local_env() const           { return local_env_; }
 
@@ -465,7 +425,7 @@ struct iter_task_t : public work_task_t
 
  virtual ~iter_task_t()
  {
-    placement_dtor(options);
+    delete options;
  }
 
  work_result operator()()
@@ -487,6 +447,7 @@ struct iter_task_t : public work_task_t
     // Copy caller_ref to reuse in future iterator_move calls
     itr_handle->itr_ref_env = enif_alloc_env();
     itr_handle->itr_ref = enif_make_copy(itr_handle->itr_ref_env, caller_ref());
+    itr_handle->reuse_move = NULL;
 
     ERL_NIF_TERM result = enif_make_resource(local_env(), itr_handle);
 
@@ -631,7 +592,7 @@ struct get_task_t : public work_task_t
 
  virtual ~get_task_t()
  {
-    placement_dtor(options);
+    delete options;
  }
 
  work_result operator()()
@@ -685,8 +646,8 @@ struct write_task_t : public work_task_t
 
     ~write_task_t()
     {
-        placement_dtor(batch);
-        placement_dtor(options);
+        delete batch;
+        delete options;
     }
 
     work_result operator()()
@@ -807,35 +768,43 @@ private:
 
  bool submit(eleveldb::work_task_t* item)
  {
-    if(shutdown_pending())
+     bool ret_flag(false);
+
+     if (NULL!=item)
      {
-        placement_dtor(item);
+         item->RefInc();
 
-        return false;
-     }
+         if(shutdown_pending())
+         {
+             item->RefDec();
+             ret_flag=false;
+         }   // if
 
-    // try to give work to a waiting thread first
-    if (!FindWaitingThread(item))
-    {
-        // no waiting threads, put on backlog queue
-        lock();
-         eleveldb::detail::sync_add_and_fetch(&work_queue_atomic, 1);
-         work_queue.push_back(item);
-        unlock();
+         // try to give work to a waiting thread first
+         else if (!FindWaitingThread(item))
+         {
+             // no waiting threads, put on backlog queue
+             lock();
+             eleveldb::detail::sync_add_and_fetch(&work_queue_atomic, 1);
+             work_queue.push_back(item);
+             unlock();
 
-        // to address race condition, thread might be waiting now
-        FindWaitingThread(NULL);
+             // to address race condition, thread might be waiting now
+             FindWaitingThread(NULL);
 
-        perf()->Inc(leveldb::ePerfElevelQueued);
-    }   // if
-    else
-    {
-        perf()->Inc(leveldb::ePerfElevelDirect);
-    }   // else
+             perf()->Inc(leveldb::ePerfElevelQueued);
+             ret_flag=true;
+         }   // if
+         else
+         {
+             perf()->Inc(leveldb::ePerfElevelDirect);
+             ret_flag=true;
+         }   // else
+     }   // if
 
-    return true;
+     return(ret_flag);
 
- }
+ }   // submit
 
 
  bool resize_thread_pool(const size_t n)
@@ -1130,8 +1099,11 @@ void *eleveldb_write_thread_worker(void *args)
                 submission->recycle();
                 h.submit(submission);
             }   // if
-            else
-                placement_dtor(submission);
+
+            // resubmit will increment reference again, so
+            //  always dec even in reuse case
+            submission->RefDec();
+
             submission=NULL;
         }   // if
         else
@@ -1301,7 +1273,15 @@ static void free_itr(eleveldb_itr_handle* itr_handle)
         delete itr_handle->itr;
         itr_handle->itr = 0;
         itr_handle->db_handle->db->ReleaseSnapshot(itr_handle->snapshot);
-    }
+    }   // if
+
+    enif_free_env(itr_handle->itr_ref_env);
+
+    if (NULL!=itr_handle->reuse_move)
+    {
+        itr_handle->reuse_move->RefDec();
+        itr_handle->reuse_move=NULL;
+    }   // if
 }
 
 // Free dynamic elements of database - acquire lock before calling
@@ -1354,7 +1334,8 @@ static bool free_db(ErlNifEnv* env, eleveldb_db_handle* db_handle)
         if (db_handle->options->filter_policy)
          delete db_handle->options->filter_policy, db_handle->options->filter_policy = 0;
 
-        placement_dtor(db_handle->options), db_handle->options = 0;
+        delete db_handle->options;
+        db_handle->options = NULL;
      }
 
     if (db_handle->db_lock)
@@ -1382,17 +1363,17 @@ ERL_NIF_TERM async_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
  eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
- leveldb::Options *opts = placement_ctor<leveldb::Options>();
+ leveldb::Options *opts = new leveldb::Options;
  fold(env, argv[2], parse_open_option, *opts);
 
- eleveldb::work_task_t *work_item = placement_ctor<eleveldb::open_task_t>(
+ eleveldb::work_task_t *work_item = new eleveldb::open_task_t(
                                         env, caller_ref,
                                         db_name, opts
                                        );
 
  if(false == priv.thread_pool.submit(work_item))
   {
-    placement_dtor(work_item);
+    delete work_item;
     return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
   }
 
@@ -1419,10 +1400,10 @@ ERL_NIF_TERM async_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
  eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
- leveldb::ReadOptions *opts = placement_ctor<leveldb::ReadOptions>();
+ leveldb::ReadOptions *opts = new leveldb::ReadOptions();
  fold(env, opts_ref, parse_read_option, *opts);
 
- eleveldb::work_task_t *work_item = placement_ctor<eleveldb::get_task_t>(
+ eleveldb::work_task_t *work_item = new eleveldb::get_task_t(
                                         env, caller_ref,
                                         db_handle, key_ref, opts
                                        );
@@ -1458,13 +1439,13 @@ ERL_NIF_TERM async_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     enif_keep_resource(db_handle);
 
     // Parse out the read options
-    leveldb::ReadOptions *opts = placement_ctor<leveldb::ReadOptions>();
+    leveldb::ReadOptions *opts = new leveldb::ReadOptions;
     fold(env, options_ref, parse_read_option, *opts);
 
     // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
-    eleveldb::work_task_t *work_item = placement_ctor<eleveldb::iter_task_t>(
+    eleveldb::work_task_t *work_item = new eleveldb::iter_task_t(
                                             env, caller_ref,
                                             db_handle, keys_only, opts);
 
@@ -1493,43 +1474,19 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
 
  // Reuse ref from iterator creation
  const ERL_NIF_TERM& caller_ref = itr_handle->itr_ref;
- eleveldb::work_task_t *work_item = 0;
 
  /* We can be invoked with two different arities from Erlang. If our "action_atom" parameter is not
  in fact an atom, then it is actually a seek target. Let's find out which we are: */
-
  eleveldb::iter_move_task_t::action_t action = eleveldb::iter_move_task_t::SEEK;
 
  // If we have an atom, it's one of these (action_or_target's value is ignored):
  if(enif_is_atom(env, action_or_target))
-  {
+ {
     if(ATOM_FIRST == action_or_target)  action = eleveldb::iter_move_task_t::FIRST;
     if(ATOM_LAST == action_or_target)   action = eleveldb::iter_move_task_t::LAST;
     if(ATOM_NEXT == action_or_target)   action = eleveldb::iter_move_task_t::NEXT;
     if(ATOM_PREV == action_or_target)   action = eleveldb::iter_move_task_t::PREV;
-
-    work_item = placement_ctor<eleveldb::iter_move_task_t>(
-                 env, caller_ref,
-                 itr_handle, action
-                );
-  }
- else
-  {
-      std::string seek_target;
-      ErlNifBinary key;
-
-      if(!enif_inspect_binary(env, action_or_target, &key))
-          return enif_make_tuple2(env, ATOM_EINVAL, caller_ref);
-
-      seek_target.assign((const char *)key.data, key.size);
-
-      work_item = placement_ctor<eleveldb::iter_move_task_t>(
-          env, caller_ref,
-          itr_handle, action, seek_target
-          );
-  }
-
- eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+ }
 
  // before we launch a background job for "next iteration", see if there is a
  //  prefetch waiting for us (SEEK always "wins" and that condition is used)
@@ -1560,20 +1517,55 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
      submit_new_request=true;
  }   // else
 
+
+ // only build request if actually need to submit it
  if (submit_new_request)
  {
-     if(false == priv.thread_pool.submit(work_item))
-     {
-         placement_dtor(work_item);
-         return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
-     }
+    eleveldb::iter_move_task_t * move_item;
+
+    move_item=itr_handle->reuse_move;
+
+    if (NULL==move_item)
+    {
+        move_item = new eleveldb::iter_move_task_t(
+            env, caller_ref,
+            itr_handle, action
+            );
+
+        // prevent deletes during worker loop
+        move_item->RefInc();
+        itr_handle->reuse_move=move_item;
+    }
+
+    move_item->action=action;
+
+    if (eleveldb::iter_move_task_t::SEEK == action)
+    {
+        ErlNifBinary key;
+
+        if(!enif_inspect_binary(env, action_or_target, &key))
+        {
+            move_item->RefDec();
+            itr_handle->reuse_move=NULL;
+            return enif_make_tuple2(env, ATOM_EINVAL, caller_ref);
+        }   // if
+
+        move_item->seek_target.assign((const char *)key.data, key.size);
+    }   // else
+
+    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+    if(false == priv.thread_pool.submit(move_item))
+    {
+        move_item->RefDec();
+        itr_handle->reuse_move=NULL;
+        return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+    }   // if
  }   // if
- else if(work_item)
- {
-     placement_dtor(work_item);
- }
+
  return ret_term;
 }
+
 
 ERL_NIF_TERM async_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
@@ -1597,7 +1589,7 @@ ERL_NIF_TERM async_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
     // Construct a write batch:
-    leveldb::WriteBatch* batch = placement_ctor<leveldb::WriteBatch>();
+    leveldb::WriteBatch* batch = new leveldb::WriteBatch;
 
     // Seed the batch's data:
     ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, *batch);
@@ -1608,13 +1600,13 @@ ERL_NIF_TERM async_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
                                                       result));
      }
 
-    leveldb::WriteOptions* opts = placement_ctor<leveldb::WriteOptions>();
+    leveldb::WriteOptions* opts = new leveldb::WriteOptions;
     fold(env, argv[3], parse_write_option, *opts);
 
     // Increment the refcount on the database handle so it doesn't vanish:
     enif_keep_resource(handle);
 
-    eleveldb::work_task_t* work_item = placement_ctor<eleveldb::write_task_t>(
+    eleveldb::work_task_t* work_item = new eleveldb::write_task_t(
                                         env, caller_ref,
                                         handle, batch, opts
                                        );
@@ -1659,7 +1651,6 @@ ERL_NIF_TERM eleveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TER
         enif_mutex_unlock(itr_handle->db_handle->db_lock);
 
         enif_release_resource(itr_handle->db_handle); // matches keep in eleveldb_iterator()
-        enif_free_env(itr_handle->itr_ref_env);
 
         return ATOM_OK;
     }
@@ -1819,7 +1810,7 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
 static void on_unload(ErlNifEnv *env, void *priv_data)
 {
  eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(priv_data);
- placement_dtor(p);
+ delete p;
 }
 
 static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
@@ -1885,7 +1876,7 @@ try
      }
 
     /* Spin up the thread pool, set up all private data: */
-    eleveldb_priv_data *priv = placement_ctor<eleveldb_priv_data>(local.n_threads);
+    eleveldb_priv_data *priv = new eleveldb_priv_data(local.n_threads);
 
     *priv_data = priv;
 

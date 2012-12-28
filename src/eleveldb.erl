@@ -55,7 +55,7 @@
 -spec init() -> ok | {error, any()}.
 init() ->
     NumWriteThreads = case os:getenv("ELEVELDB_N_WRITE_THREADS") of
-                        false -> 71;                     % "sensible default" (and a prime)
+                        false -> 71;                     % must be a prime number
                         N -> erlang:list_to_integer(N)   % exception on bad value
                       end,
     SoName = case code:priv_dir(?MODULE) of
