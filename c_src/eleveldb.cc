@@ -644,7 +644,7 @@ struct write_task_t : public work_task_t
        options(_options)
     {}
 
-    ~write_task_t()
+    virtual ~write_task_t()
     {
         delete batch;
         delete options;
@@ -751,8 +751,13 @@ private:
              if (ret_flag)
              {
                  threads[index]->m_DirectWork=work;
+
+                 // man page says mutex lock optional, experience in
+                 //  this code says it is not.  using broadcast instead
+                 //  of signal to cover one other race condition
+                 //  that should never happen with single thread waiting.
                  pthread_mutex_lock(&threads[index]->m_Mutex);
-                 pthread_cond_signal(&threads[index]->m_Condition);
+                 pthread_cond_broadcast(&threads[index]->m_Condition);
                  pthread_mutex_unlock(&threads[index]->m_Mutex);
              }   // if
          }   // if
