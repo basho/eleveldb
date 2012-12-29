@@ -355,13 +355,15 @@ void prepare_recycle()
      resubmit_work=false;
  }   // recycle
 
-  void RefInc() {eleveldb::detail::sync_add_and_fetch(&ref_count);};
+  void RefInc() {__sync_add_and_fetch(&ref_count, 1);};
+  //{eleveldb::detail::sync_add_and_fetch(&ref_count);};
 
   void RefDec()
   {
       uint32_t current_refs;
 
-      current_refs=eleveldb::detail::atomic_dec_ret(ref_count);
+//      current_refs=eleveldb::detail::atomic_dec_ret(ref_count);
+      current_refs=__sync_sub_and_fetch(&ref_count, 1);
       if (0==current_refs)
           delete this;
   }   // RefDec
@@ -410,6 +412,7 @@ struct open_task_t : public work_task_t
     return work_result(local_env(), ATOM_OK, result);
  }
 };
+
 
 struct iter_task_t : public work_task_t
 {
@@ -494,6 +497,8 @@ struct iter_move_task_t : public work_task_t
    seek_target(_seek_target)
  {}
 
+ virtual ~iter_move_task_t() {};
+
  work_result operator()()
  {
     simple_scoped_lock l(itr_handle->itr_lock);
@@ -544,7 +549,8 @@ struct iter_move_task_t : public work_task_t
      return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
     // who got back first, us or the erlang loop
-    if (eleveldb::detail::compare_and_swap(&itr_handle->m_handoff_atomic, 0, 1))
+//    if (eleveldb::detail::compare_and_swap(&itr_handle->m_handoff_atomic, 0, 1))
+    if (__sync_bool_compare_and_swap(&itr_handle->m_handoff_atomic, 0, 1))
     {
         // this is prefetch of next iteration.  It returned faster than actual
         //  request to retrieve it.  Stop and wait for erlang to catch up.
@@ -790,7 +796,7 @@ private:
          {
              // no waiting threads, put on backlog queue
              lock();
-             eleveldb::detail::sync_add_and_fetch(&work_queue_atomic, 1);
+             __sync_add_and_fetch(&work_queue_atomic, 1);
              work_queue.push_back(item);
              unlock();
 
@@ -1084,7 +1090,7 @@ void *eleveldb_write_thread_worker(void *args)
                 {
                     submission=h.work_queue.front();
                     h.work_queue.pop_front();
-                    eleveldb::detail::atomic_dec(&h.work_queue_atomic);
+                    __sync_sub_and_fetch(&h.work_queue_atomic, 1);
                     h.perf()->Inc(leveldb::ePerfElevelDequeued);
                 }   // if
 
@@ -1495,7 +1501,8 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
 
  // before we launch a background job for "next iteration", see if there is a
  //  prefetch waiting for us (SEEK always "wins" and that condition is used)
- if (eleveldb::detail::compare_and_swap(&itr_handle->m_handoff_atomic, 0, 1))
+// if (eleveldb::detail::compare_and_swap(&itr_handle->m_handoff_atomic, 0, 1))
+ if (__sync_bool_compare_and_swap(&itr_handle->m_handoff_atomic, 0, 1))
  {
      // nope
      ret_term = enif_make_copy(env, itr_handle->itr_ref);
