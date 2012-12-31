@@ -433,7 +433,7 @@ close_fold_test_Z() ->
     {ok, Ref} = open("/tmp/eleveldb.close_fold.test", [{create_if_missing, true}]),
     ok = eleveldb:put(Ref, <<"k">>,<<"v">>,[]),
     ?assertException(throw, {iterator_closed, ok}, % ok is returned by close as the acc
-                     eleveldb:fold(Ref, fun(_,A) -> eleveldb:close(Ref) end, undefined, [])).
+                     eleveldb:fold(Ref, fun(_,_A) -> eleveldb:close(Ref) end, undefined, [])).
 
 -ifdef(EQC).
 
