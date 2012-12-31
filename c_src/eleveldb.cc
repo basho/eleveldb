@@ -614,7 +614,7 @@ struct get_task_t : public work_task_t
 
     // We don't want to hold the DB lock through the copy:
     {
-    simple_scoped_lock(db_handle->db_lock);
+    simple_scoped_lock l(db_handle->db_lock);
 
     leveldb::Status status = db_handle->db->Get(*options, key_slice, &value);
 
@@ -658,7 +658,7 @@ struct write_task_t : public work_task_t
 
     work_result operator()()
     {
-        simple_scoped_lock(db_handle->db_lock);
+        simple_scoped_lock l(db_handle->db_lock);
 
         leveldb::Status status = db_handle->db->Write(*options, batch);
 
@@ -1441,7 +1441,7 @@ ERL_NIF_TERM async_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         return enif_make_badarg(env);
      }
 
-    simple_scoped_lock(db_handle->db_lock);
+    simple_scoped_lock l(db_handle->db_lock);
 
     if(0 == db_handle->db)
      return error_einval(env);
@@ -1680,7 +1680,7 @@ ERL_NIF_TERM eleveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
         enif_inspect_binary(env, argv[1], &name_bin))
     {
-        simple_scoped_lock(db_handle->db_lock);
+        simple_scoped_lock l(db_handle->db_lock);
 
         if (db_handle->db == NULL)
         {
@@ -1763,7 +1763,7 @@ ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
     eleveldb_db_handle* db_handle;
     if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
     {
-        simple_scoped_lock(db_handle->db_lock);
+        simple_scoped_lock l(db_handle->db_lock);
 
         if (db_handle->db == NULL)
         {
