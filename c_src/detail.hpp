@@ -90,6 +90,13 @@ inline uint32_t add_and_fetch(volatile uint32_t *ptr, const int& val)
 #endif
 }
 
+#ifdef __APPLE__
+template <>
+inline size_t add_and_fetch(volatile size_t *ptr, const int& val)
+{
+    return __sync_add_and_fetch(ptr, val);
+}
+#endif
 
 template <typename ValueT>
 inline ValueT sub_and_fetch(volatile ValueT *ptr, const int& comp_val);
@@ -113,6 +120,15 @@ inline uint32_t sub_and_fetch(volatile uint32_t *ptr, const int& val)
     return __sync_sub_and_fetch(ptr, val);
 #endif
 }
+
+#ifdef __APPLE__
+template <>
+inline size_t sub_and_fetch(volatile size_t *ptr, const int& val)
+{
+    return __sync_sub_and_fetch(ptr, val);
+}
+#endif
+
 } // namespace eleveldb::detail
 
 #endif
