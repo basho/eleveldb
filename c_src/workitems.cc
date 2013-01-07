@@ -560,7 +560,9 @@ MoveTask::operator()()
 
         default:
             // JFW: note: *not* { ERROR, badarg() } here-- we want the exception:
-            return work_result(enif_make_badarg(local_env()));
+            // JDB: note: We can't send an exception as a message. It crashes Erlang.
+            //            Changing to be {error, badarg}.
+            return work_result(local_env(), ATOM_ERROR, ATOM_BADARG);
             break;
 
     }   // switch

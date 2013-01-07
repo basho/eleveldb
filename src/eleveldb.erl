@@ -52,6 +52,13 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+%% This cannot be a separate function. Code must be inline to trigger
+%% Erlang compiler's use of optimized selective receive.
+-define(WAIT_FOR_REPLY(Ref),
+        receive {Ref, Reply} ->
+                Reply
+        end).
+
 -spec init() -> ok | {error, any()}.
 init() ->
     NumWriteThreads = case os:getenv("ELEVELDB_N_WRITE_THREADS") of
@@ -104,15 +111,10 @@ async_open(_CallerRef, _Name, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec open(string(), open_options()) -> {ok, db_ref()} | {error, any()}.
-open(_Name, _Opts) ->
-    _CallerRef = make_ref(),
-    case async_open(_CallerRef, _Name, _Opts) of
-    ok ->
-        receive
-            { _CallerRef, X} -> X
-        end;
-    ER -> ER
-    end.
+open(Name, Opts) ->
+    CallerRef = make_ref(),
+    async_open(CallerRef, Name, Opts),
+    ?WAIT_FOR_REPLY(CallerRef).
 
 -spec close(db_ref()) -> ok | {error, any()}.
 close(Ref) ->
@@ -130,15 +132,10 @@ async_get(_CallerRef, _Dbh, _Key, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec get(db_ref(), binary(), read_options()) -> {ok, binary()} | not_found | {error, any()}.
-get(_Dbh, _Key, _Opts) ->
-    _CallerRef = make_ref(),
-    case async_get(_CallerRef, _Dbh, _Key, _Opts) of
-    ok ->
-        receive
-            { _CallerRef, X}             -> X
-        end;
-    ER -> ER
-    end.
+get(Dbh, Key, Opts) ->
+    CallerRef = make_ref(),
+    async_get(CallerRef, Dbh, Key, Opts),
+    ?WAIT_FOR_REPLY(CallerRef).
 
 -spec put(db_ref(), binary(), binary(), write_options()) -> ok | {error, any()}.
 put(Ref, Key, Value, Opts) -> write(Ref, [{put, Key, Value}], Opts).
@@ -147,15 +144,10 @@ put(Ref, Key, Value, Opts) -> write(Ref, [{put, Key, Value}], Opts).
 delete(Ref, Key, Opts) -> write(Ref, [{delete, Key}], Opts).
 
 -spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
-write(_Ref, _Updates, _Opts) ->
-    _CallerRef = make_ref(),
-    case async_write(_CallerRef, _Ref, _Updates, _Opts) of
-    ok ->
-        receive
-            { _CallerRef, X}              -> X
-        end;
-    ER -> ER
-    end.
+write(Ref, Updates, Opts) ->
+    CallerRef = make_ref(),
+    async_write(CallerRef, Ref, Updates, Opts),
+    ?WAIT_FOR_REPLY(CallerRef).
 
 -spec async_write(reference(), db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
 async_write(_CallerRef, _Ref, _Updates, _Opts) ->
@@ -170,26 +162,16 @@ async_iterator(_CallerRef, _Ref, _Opts, keys_only) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec iterator(db_ref(), read_options()) -> {ok, itr_ref()}.
-iterator(_Ref, _Opts) ->
-    _CallerRef = make_ref(),
-    case async_iterator(_CallerRef, _Ref, _Opts) of
-    ok ->
-        receive
-            {_CallerRef, X} -> X
-        end;
-    ER -> ER
-    end.
+iterator(Ref, Opts) ->
+    CallerRef = make_ref(),
+    async_iterator(CallerRef, Ref, Opts),
+    ?WAIT_FOR_REPLY(CallerRef).
 
 -spec iterator(db_ref(), read_options(), keys_only) -> {ok, itr_ref()}.
-iterator(_Ref, _Opts, keys_only) ->
-    _CallerRef = make_ref(),
-    case async_iterator(_CallerRef, _Ref, _Opts, keys_only) of
-    ok ->
-        receive
-            {_CallerRef, X} -> X
-        end;
-    ER -> ER
-    end.
+iterator(Ref, Opts, keys_only) ->
+    CallerRef = make_ref(),
+    async_iterator(CallerRef, Ref, Opts, keys_only),
+    ?WAIT_FOR_REPLY(CallerRef).
 
 -spec async_iterator_move(reference(), itr_ref(), iterator_action()) -> {reference(), {ok, Key::binary(), Value::binary()}} |
                                                                         {reference(), {ok, Key::binary()}} |
