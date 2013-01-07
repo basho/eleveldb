@@ -1167,6 +1167,8 @@ eleveldb_close(
     eleveldb::DbObject * db_ptr;
     ERL_NIF_TERM ret_term;
 
+    leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
+
     ret_term=eleveldb::ATOM_OK;
 
     db_ptr=eleveldb::DbObject::RetrieveDbObject(env, argv[0]);

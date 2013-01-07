@@ -128,6 +128,14 @@ DbObject::DbObjectResourceCleanup(
     ErlNifEnv * Env,
     void * Arg)
 {
+//    DbObject * db_ptr;
+
+//    db_ptr=(DbObject *)Arg;
+
+//    if (2!=db_ptr->m_CloseRequested)
+        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug2);
+
+
 
     // need code for if process kills db (db references) while other threads still running
     //  extra reference for erlang, extra user count for db ... have code here stop on condition
@@ -288,6 +296,11 @@ ItrObject::ItrObjectResourceCleanup(
     ErlNifEnv * Env,
     void * Arg)
 {
+//    ItrObject * itr_ptr;
+
+//    itr_ptr=(ItrObject *)Arg;
+
+    leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);
 
 
     return;
@@ -603,7 +616,7 @@ MoveTask::operator()()
         // setup next race for the response
         m_ItrPtr->m_handoff_atomic=0;
 
-        if (NEXT==action || SEEK==action)
+        if (NEXT==action || SEEK==action || FIRST==action)
         {
             prepare_recycle();
             action=NEXT;
