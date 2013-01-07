@@ -860,6 +860,19 @@ static bool free_db(ErlNifEnv* env, eleveldb_db_handle* db_handle)
 
 namespace eleveldb {
 
+ERL_NIF_TERM send_reply(ErlNifEnv *env, ERL_NIF_TERM ref, ERL_NIF_TERM reply)
+{
+    ErlNifPid pid;
+    ErlNifEnv *msg_env = enif_alloc_env();
+    ERL_NIF_TERM msg = enif_make_tuple2(msg_env,
+                                        enif_make_copy(msg_env, ref),
+                                        enif_make_copy(msg_env, reply));
+    enif_self(env, &pid);
+    enif_send(env, &pid, msg_env, msg);
+    enif_free_env(msg_env);
+    return ATOM_OK;
+}
+
 ERL_NIF_TERM
 async_open(
     ErlNifEnv* env,
@@ -887,7 +900,8 @@ async_open(
     if(false == priv.thread_pool.submit(work_item))
     {
         delete work_item;
-        return enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref);
+        return send_reply(env, caller_ref,
+                          enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
     }
 
     return eleveldb::ATOM_OK;
@@ -919,7 +933,7 @@ async_write(
 
     // is this even possible?
     if(NULL == db_ptr->m_Db)
-     return error_einval(env);
+        return send_reply(env, caller_ref, error_einval(env));
 
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
@@ -930,9 +944,10 @@ async_write(
     ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, *batch);
     if(eleveldb::ATOM_OK != result)
     {
-        return enif_make_tuple3(env, eleveldb::ATOM_ERROR, caller_ref,
-                                enif_make_tuple2(env, eleveldb::ATOM_BAD_WRITE_ACTION,
-                                                 result));
+        return send_reply(env, caller_ref,
+                          enif_make_tuple3(env, eleveldb::ATOM_ERROR, caller_ref,
+                                           enif_make_tuple2(env, eleveldb::ATOM_BAD_WRITE_ACTION,
+                                                            result)));
     }   // if
 
     leveldb::WriteOptions* opts = new leveldb::WriteOptions;
@@ -942,7 +957,8 @@ async_write(
                                                             db_ptr.get(), batch, opts);
 
     if(false == priv.thread_pool.submit(work_item))
-        return enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref);
+        return send_reply(env, caller_ref,
+                          enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
 
     return eleveldb::ATOM_OK;
 }
@@ -971,7 +987,7 @@ async_get(
     }
 
     if(NULL == db_ptr->m_Db)
-        return error_einval(env);
+        return send_reply(env, caller_ref, error_einval(env));
 
     leveldb::ReadOptions *opts = new leveldb::ReadOptions();
     fold(env, opts_ref, parse_read_option, *opts);
@@ -982,7 +998,8 @@ async_get(
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
     if(false == priv.thread_pool.submit(work_item))
-        return enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref);
+        return send_reply(env, caller_ref,
+                          enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
 
     return eleveldb::ATOM_OK;
 
@@ -1013,7 +1030,7 @@ async_iterator(
 
     // likely useless
     if(NULL == db_ptr->m_Db)
-        return error_einval(env);
+        return send_reply(env, caller_ref, error_einval(env));
 
     // Parse out the read options
     leveldb::ReadOptions *opts = new leveldb::ReadOptions;
@@ -1026,7 +1043,7 @@ async_iterator(
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
     if(false == priv.thread_pool.submit(work_item))
-        return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+        return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
 
     return ATOM_OK;
 
