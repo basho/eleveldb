@@ -136,6 +136,11 @@ public:
     volatile uint32_t m_CloseRequested;                      // 1 once api close called, 2 once thread starts destructor
     volatile uint32_t m_ActiveCount;                     // number of active api calls this moment
 
+    // DO NOT USE CONTAINER OBJECTS
+    //  ... these must be live after destructor called
+    pthread_mutex_t m_CloseMutex;        //!< for erlang forced close
+    pthread_cond_t  m_CloseCond;         //!< for erlang forced close
+
 protected:
     static ErlNifResourceType* m_Db_RESOURCE;
 
@@ -184,6 +189,11 @@ public:
     volatile uint32_t m_CloseRequested;                      // 1 once api close called, 2 once thread starts destructor
     volatile uint32_t m_ActiveCount;                     // number of active api calls this moment
 
+    // DO NOT USE CONTAINER OBJECTS
+    //  ... these must be live after destructor called
+    pthread_mutex_t m_CloseMutex;        //!< for erlang forced close
+    pthread_cond_t  m_CloseCond;         //!< for erlang forced close
+
 protected:
     static ErlNifResourceType* m_Itr_RESOURCE;
 
@@ -196,7 +206,8 @@ public:
 
     static ItrObject * CreateItrObject(DbObject * Db, bool KeysOnly);
 
-    static ItrObject * RetrieveItrObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm);
+    static ItrObject * RetrieveItrObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm,
+                                         bool ItrClosing=false);
 
     static void ItrObjectResourceCleanup(ErlNifEnv *Env, void * Arg);
 

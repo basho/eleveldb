@@ -1228,7 +1228,7 @@ eleveldb_iterator_close(
 
     ret_term=eleveldb::ATOM_OK;
 
-    itr_ptr=eleveldb::ItrObject::RetrieveItrObject(env, argv[0]);
+    itr_ptr=eleveldb::ItrObject::RetrieveItrObject(env, argv[0], true);
 
     if (NULL!=itr_ptr)
     {

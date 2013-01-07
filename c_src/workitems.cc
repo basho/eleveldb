@@ -132,18 +132,32 @@ DbObject::DbObjectResourceCleanup(
     ErlNifEnv * Env,
     void * Arg)
 {
-//    DbObject * db_ptr;
+    DbObject * db_ptr;
 
-//    db_ptr=(DbObject *)Arg;
+    db_ptr=(DbObject *)Arg;
 
-//    if (2!=db_ptr->m_CloseRequested)
+    if (compare_and_swap(&db_ptr->m_CloseRequested, 0, 1))
+    {
         leveldb::gPerfCounters->Inc(leveldb::ePerfDebug2);
 
+        pthread_mutex_lock(&db_ptr->m_CloseMutex);
+        // clear C++ only reference
+        db_ptr->RefDec(false);
 
+        if (0!=db_ptr->m_ActiveCount)
+        {
+            // retest before wait
+            if (0!=db_ptr->m_ActiveCount)
+                pthread_cond_wait(&db_ptr->m_CloseCond, &db_ptr->m_CloseMutex);
+        }   // if
+        pthread_mutex_unlock(&db_ptr->m_CloseMutex);
+    }   // if
 
     // need code for if process kills db (db references) while other threads still running
     //  extra reference for erlang, extra user count for db ... have code here stop on condition
-    //  delete condition here.
+    //  delete condition here
+    pthread_mutex_destroy(&db_ptr->m_CloseMutex);
+    pthread_cond_destroy(&db_ptr->m_CloseCond);
 
     return;
 
@@ -156,6 +170,14 @@ DbObject::DbObject(
     : m_Db(DbPtr), m_DbOptions(Options),
       m_CloseRequested(0), m_ActiveCount(0)
 {
+    pthread_mutexattr_t attr;
+
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&m_CloseMutex, &attr);
+    pthread_cond_init(&m_CloseCond, NULL);
+    pthread_mutexattr_destroy(&attr);
+
 }   // DbObject::DbObject
 
 
@@ -179,6 +201,12 @@ DbObject::~DbObject()
         delete m_DbOptions;
         m_DbOptions = NULL;
     }   // if
+
+    pthread_mutex_lock(&m_CloseMutex);
+    pthread_cond_broadcast(&m_CloseCond);
+    pthread_mutex_unlock(&m_CloseMutex);
+
+    // do not clean up m_CloseMutex and m_CloseCond
 
     return;
 
@@ -270,7 +298,7 @@ ItrObject::CreateItrObject(
 ItrObject *
 ItrObject::RetrieveItrObject(
     ErlNifEnv * Env,
-    const ERL_NIF_TERM & ItrTerm)
+    const ERL_NIF_TERM & ItrTerm, bool ItrClosing)
 {
     ItrObject * ret_ptr;
 
@@ -282,7 +310,8 @@ ItrObject::RetrieveItrObject(
         ret_ptr->RefInc();
 
         // has close been requested?
-        if (ret_ptr->m_CloseRequested) // || ret_ptr->m_DbPtr->m_CloseRequested)
+        if (ret_ptr->m_CloseRequested
+            || (!ItrClosing && ret_ptr->m_DbPtr->m_CloseRequested))
         {
             // object already closing
             ret_ptr->RefDec();
@@ -300,11 +329,30 @@ ItrObject::ItrObjectResourceCleanup(
     ErlNifEnv * Env,
     void * Arg)
 {
-//    ItrObject * itr_ptr;
+    ItrObject * itr_ptr;
 
-//    itr_ptr=(ItrObject *)Arg;
+    itr_ptr=(ItrObject *)Arg;
 
-    leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);
+    if (compare_and_swap(&itr_ptr->m_CloseRequested, 0, 1))
+    {
+        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);
+
+        pthread_mutex_lock(&itr_ptr->m_CloseMutex);
+        // clear C++ only reference
+        itr_ptr->RefDec(false);
+
+        if (0!=itr_ptr->m_ActiveCount)
+        {
+            // retest before wait
+            if (0!=itr_ptr->m_ActiveCount)
+                pthread_cond_wait(&itr_ptr->m_CloseCond, &itr_ptr->m_CloseMutex);
+        }   // if
+        pthread_mutex_unlock(&itr_ptr->m_CloseMutex);
+    }   // if
+
+
+    pthread_mutex_destroy(&itr_ptr->m_CloseMutex);
+    pthread_cond_destroy(&itr_ptr->m_CloseCond);
 
 
     return;
@@ -319,6 +367,13 @@ ItrObject::ItrObject(
       m_handoff_atomic(0), itr_ref_env(NULL), reuse_move(NULL),
       m_DbPtr(DbPtr), m_CloseRequested(0), m_ActiveCount(0)
 {
+    pthread_mutexattr_t attr;
+
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&m_CloseMutex, &attr);
+    pthread_cond_init(&m_CloseCond, NULL);
+    pthread_mutexattr_destroy(&attr);
 
 }   // ItrObject::ItrObject
 
@@ -339,6 +394,16 @@ ItrObject::~ItrObject()
         reuse_move->RefDec();
         reuse_move=NULL;
     }   // if
+
+
+    pthread_mutex_lock(&m_CloseMutex);
+    pthread_cond_broadcast(&m_CloseCond);
+    pthread_mutex_unlock(&m_CloseMutex);
+
+    // do not clean up m_CloseMutex and m_CloseCond
+
+    return;
+
 }   // ItrObject::~ItrObject
 
 
