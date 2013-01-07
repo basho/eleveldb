@@ -146,9 +146,7 @@ DbObject::DbObjectResourceCleanup(
 
         if (0!=db_ptr->m_ActiveCount)
         {
-            // retest before wait
-            if (0!=db_ptr->m_ActiveCount)
-                pthread_cond_wait(&db_ptr->m_CloseCond, &db_ptr->m_CloseMutex);
+            pthread_cond_wait(&db_ptr->m_CloseCond, &db_ptr->m_CloseMutex);
         }   // if
         pthread_mutex_unlock(&db_ptr->m_CloseMutex);
     }   // if
@@ -343,9 +341,7 @@ ItrObject::ItrObjectResourceCleanup(
 
         if (0!=itr_ptr->m_ActiveCount)
         {
-            // retest before wait
-            if (0!=itr_ptr->m_ActiveCount)
-                pthread_cond_wait(&itr_ptr->m_CloseCond, &itr_ptr->m_CloseMutex);
+            pthread_cond_wait(&itr_ptr->m_CloseCond, &itr_ptr->m_CloseMutex);
         }   // if
         pthread_mutex_unlock(&itr_ptr->m_CloseMutex);
     }   // if
