@@ -19,6 +19,10 @@
 // under the License.
 //
 // -------------------------------------------------------------------
+#ifndef __ELEVELDB_DETAIL_HPP
+    #include "detail.hpp"
+#endif
+
 #ifndef INCL_WORKITEMS_H
     #include "workitems.h"
 #endif
@@ -186,7 +190,7 @@ DbObject::RefInc(bool ErlRefToo)
 {
     if (ErlRefToo)
         enif_keep_resource(this);
-    __sync_add_and_fetch(&m_ActiveCount, 1);
+    eleveldb::add_and_fetch(&m_ActiveCount, 1);
 
 }   // DbObject::RefInc
 
@@ -196,11 +200,11 @@ DbObject::RefDec(bool ErlRefToo)
 {
     uint32_t cur_count;
 
-    cur_count=__sync_sub_and_fetch(&m_ActiveCount, 1);
+    cur_count=eleveldb::sub_and_fetch(&m_ActiveCount, 1);
 
     // this the last active after close requested?
     //  (atomic swap should be unnecessary ... but going for safety)
-    if (0==cur_count && __sync_bool_compare_and_swap(&m_CloseRequested, 1, 2))
+    if (0==cur_count && compare_and_swap(&m_CloseRequested, 1, 2))
     {
         // deconstruct, but let erlang deallocate memory later
         this->~DbObject();
@@ -343,7 +347,7 @@ ItrObject::RefInc(bool ErlRefToo)
 {
     if (ErlRefToo)
         enif_keep_resource(this);
-    __sync_add_and_fetch(&m_ActiveCount, 1);
+    eleveldb::add_and_fetch(&m_ActiveCount, 1);
 
 }   // ItrObject::RefInc
 
@@ -353,11 +357,11 @@ ItrObject::RefDec(bool ErlRefToo)
 {
     uint32_t cur_count;
 
-    cur_count=__sync_sub_and_fetch(&m_ActiveCount, 1);
+    cur_count=eleveldb::sub_and_fetch(&m_ActiveCount, 1);
 
     // this the last active after close requested?
     //  (atomic swap should be unnecessary ... but going for safety)
-    if (0==cur_count && __sync_bool_compare_and_swap(&m_CloseRequested, 1, 2))
+    if (0==cur_count && compare_and_swap(&m_CloseRequested, 1, 2))
     {
         // deconstruct, but let erlang deallocate memory later
         this->~ItrObject();
@@ -379,7 +383,7 @@ ItrObject::RefDec(bool ErlRefToo)
 
 
 WorkTask::WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref)
-    : ref_count(0), terms_set(false), local_env2(NULL), resubmit_work(false)
+    : ref_count(0), terms_set(false), resubmit_work(false)
 {
     if (NULL!=caller_env)
     {
@@ -400,7 +404,7 @@ WorkTask::WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref)
 
 
 WorkTask::WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref, DbObject * DbPtr)
-    : m_DbPtr(DbPtr), ref_count(0), terms_set(false), local_env2(NULL), resubmit_work(false)
+    : m_DbPtr(DbPtr), ref_count(0), terms_set(false), resubmit_work(false)
 {
     if (NULL!=caller_env)
     {
@@ -424,18 +428,8 @@ WorkTask::~WorkTask()
 {
     ErlNifEnv * env_ptr;
 
-    if (NULL!=local_env2)
-    {
-        env_ptr=local_env2;
-        if (__sync_bool_compare_and_swap(&local_env2, env_ptr, NULL)
-            && NULL!=env_ptr)
-        {
-            enif_free_env(env_ptr);
-        }   // if
-    }   // if
-
     env_ptr=local_env_;
-    if (__sync_bool_compare_and_swap(&local_env_, env_ptr, NULL)
+    if (compare_and_swap(&local_env_, env_ptr, (ErlNifEnv *)NULL)
         && NULL!=env_ptr)
     {
         enif_free_env(env_ptr);
@@ -449,49 +443,20 @@ WorkTask::~WorkTask()
 void
 WorkTask::prepare_recycle()
 {
-    if (NULL==local_env2)
-    {
-        local_env2 = enif_alloc_env();
-
-        caller_ref_term2 = enif_make_copy(local_env2, caller_ref_term);
-
-        caller_pid_term2 = enif_make_pid(local_env2, &local_pid);
-    }   // if
-
-    resubmit_work=true;
- }  // WorkTask::prepare_recycle
+    // does not work by default
+    resubmit_work=false;
+}  // WorkTask::prepare_recycle
 
 
 void
 WorkTask::recycle()
 {
-    // test for race condition of simultaneous delete & recycle
-    if (1<RefInc())
-    {
-        if (NULL!=local_env2)
-        {
-            enif_free_env(local_env_);
-            local_env_=local_env2;
-            local_env2=NULL;
-            caller_ref_term=caller_ref_term2;
-            caller_pid_term=caller_pid_term2;
-        }   // if
-
-        resubmit_work=false;
-
-        // only do this in non-race condition
-        RefDec();
-    }   // if
-    else
-    {
-        // touch NOTHING
-    }   // else
-
+    // does not work by default
 }   // WorkTask::recycle
 
 
 uint32_t
-WorkTask::RefInc() {return(__sync_add_and_fetch(&ref_count, 1));};
+WorkTask::RefInc() {return(eleveldb::add_and_fetch(&ref_count, 1));};
 
 
 void
@@ -499,7 +464,7 @@ WorkTask::RefDec()
 {
     volatile uint32_t current_refs;
 
-    current_refs=__sync_sub_and_fetch(&ref_count, 1);
+    current_refs=eleveldb::sub_and_fetch(&ref_count, 1);
     if (0==current_refs)
         delete this;
 
@@ -605,7 +570,7 @@ MoveTask::operator()()
 
     // who got back first, us or the erlang loop
 //    if (eleveldb::detail::compare_and_swap(&m_ItrPtr->m_handoff_atomic, 0, 1))
-    if (__sync_bool_compare_and_swap(&m_ItrPtr->m_handoff_atomic, 0, 1))
+    if (compare_and_swap(&m_ItrPtr->m_handoff_atomic, 0, 1))
     {
         // this is prefetch of next iteration.  It returned faster than actual
         //  request to retrieve it.  Stop and wait for erlang to catch up.

@@ -243,7 +243,7 @@ private:
      {
          if (0!=threads[index]->m_Available)
          {
-             ret_flag = eleveldb::detail::compare_and_swap(&threads[index]->m_Available, 1, 0);
+             ret_flag = eleveldb::compare_and_swap(&threads[index]->m_Available, 1, 0);
 
              if (ret_flag)
              {
@@ -287,7 +287,7 @@ private:
          {
              // no waiting threads, put on backlog queue
              lock();
-             __sync_add_and_fetch(&work_queue_atomic, 1);
+             eleveldb::add_and_fetch(&work_queue_atomic, 1);
              work_queue.push_back(item);
              unlock();
 
@@ -584,7 +584,7 @@ void *eleveldb_write_thread_worker(void *args)
                 {
                     submission=h.work_queue.front();
                     h.work_queue.pop_front();
-                    __sync_sub_and_fetch(&h.work_queue_atomic, 1);
+                    eleveldb::sub_and_fetch(&h.work_queue_atomic, 1);
                     h.perf()->Inc(leveldb::ePerfElevelDequeued);
                 }   // if
 

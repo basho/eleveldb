@@ -227,11 +227,6 @@ protected:
     ERL_NIF_TERM   caller_pid_term;
     bool           terms_set;
 
-    ErlNifEnv      *local_env2;
-    ERL_NIF_TERM   caller_ref_term2;
-    ERL_NIF_TERM   caller_pid_term2;
-
-
     bool resubmit_work;           //!< true if this work item is loaded for prefetch
 
     volatile uint32_t m_CloseRequested;                      // 1 once api close called, 2 once thread starts destructor
