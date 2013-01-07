@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2012 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2013 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -39,49 +39,21 @@
 #include "leveldb/filter_policy.h"
 #include "leveldb/perf_count.h"
 
+#ifndef INCL_THREADING_H
+    #include "threading.h"
+#endif
+
+#ifndef INCL_WORKITEMS_H
+    #include "workitems.h"
+#endif
+
+#ifndef ATOMS_H
+    #include "atoms.h"
+#endif
+
 #include "work_result.hpp"
 
 #include "detail.hpp"
-
-// Atoms (initialized in on_load)
-static ERL_NIF_TERM ATOM_TRUE;
-static ERL_NIF_TERM ATOM_FALSE;
-static ERL_NIF_TERM ATOM_OK;
-static ERL_NIF_TERM ATOM_ERROR;
-static ERL_NIF_TERM ATOM_EINVAL;
-static ERL_NIF_TERM ATOM_CREATE_IF_MISSING;
-static ERL_NIF_TERM ATOM_ERROR_IF_EXISTS;
-static ERL_NIF_TERM ATOM_WRITE_BUFFER_SIZE;
-static ERL_NIF_TERM ATOM_MAX_OPEN_FILES;
-static ERL_NIF_TERM ATOM_BLOCK_SIZE;                    /* DEPRECATED */
-static ERL_NIF_TERM ATOM_SST_BLOCK_SIZE;
-static ERL_NIF_TERM ATOM_BLOCK_RESTART_INTERVAL;
-static ERL_NIF_TERM ATOM_ERROR_DB_OPEN;
-static ERL_NIF_TERM ATOM_ERROR_DB_PUT;
-static ERL_NIF_TERM ATOM_NOT_FOUND;
-static ERL_NIF_TERM ATOM_VERIFY_CHECKSUMS;
-static ERL_NIF_TERM ATOM_FILL_CACHE;
-static ERL_NIF_TERM ATOM_SYNC;
-static ERL_NIF_TERM ATOM_ERROR_DB_DELETE;
-static ERL_NIF_TERM ATOM_CLEAR;
-static ERL_NIF_TERM ATOM_PUT;
-static ERL_NIF_TERM ATOM_DELETE;
-static ERL_NIF_TERM ATOM_ERROR_DB_WRITE;
-static ERL_NIF_TERM ATOM_BAD_WRITE_ACTION;
-static ERL_NIF_TERM ATOM_KEEP_RESOURCE_FAILED;
-static ERL_NIF_TERM ATOM_ITERATOR_CLOSED;
-static ERL_NIF_TERM ATOM_FIRST;
-static ERL_NIF_TERM ATOM_LAST;
-static ERL_NIF_TERM ATOM_NEXT;
-static ERL_NIF_TERM ATOM_PREV;
-static ERL_NIF_TERM ATOM_INVALID_ITERATOR;
-static ERL_NIF_TERM ATOM_CACHE_SIZE;
-static ERL_NIF_TERM ATOM_PARANOID_CHECKS;
-static ERL_NIF_TERM ATOM_ERROR_DB_DESTROY;
-static ERL_NIF_TERM ATOM_KEYS_ONLY;
-static ERL_NIF_TERM ATOM_COMPRESSION;
-static ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
-static ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 
 static ErlNifFunc nif_funcs[] =
 {
@@ -102,13 +74,57 @@ static ErlNifFunc nif_funcs[] =
     {"async_iterator_move", 3, eleveldb::async_iterator_move}
 };
 
-using std::copy;
+
+namespace eleveldb {
+
+// Atoms (initialized in on_load)
+ERL_NIF_TERM ATOM_TRUE;
+ERL_NIF_TERM ATOM_FALSE;
+ERL_NIF_TERM ATOM_OK;
+ERL_NIF_TERM ATOM_ERROR;
+ERL_NIF_TERM ATOM_EINVAL;
+ERL_NIF_TERM ATOM_CREATE_IF_MISSING;
+ERL_NIF_TERM ATOM_ERROR_IF_EXISTS;
+ERL_NIF_TERM ATOM_WRITE_BUFFER_SIZE;
+ERL_NIF_TERM ATOM_MAX_OPEN_FILES;
+ERL_NIF_TERM ATOM_BLOCK_SIZE;                    /* DEPRECATED */
+ERL_NIF_TERM ATOM_SST_BLOCK_SIZE;
+ERL_NIF_TERM ATOM_BLOCK_RESTART_INTERVAL;
+ERL_NIF_TERM ATOM_ERROR_DB_OPEN;
+ERL_NIF_TERM ATOM_ERROR_DB_PUT;
+ERL_NIF_TERM ATOM_NOT_FOUND;
+ERL_NIF_TERM ATOM_VERIFY_CHECKSUMS;
+ERL_NIF_TERM ATOM_FILL_CACHE;
+ERL_NIF_TERM ATOM_SYNC;
+ERL_NIF_TERM ATOM_ERROR_DB_DELETE;
+ERL_NIF_TERM ATOM_CLEAR;
+ERL_NIF_TERM ATOM_PUT;
+ERL_NIF_TERM ATOM_DELETE;
+ERL_NIF_TERM ATOM_ERROR_DB_WRITE;
+ERL_NIF_TERM ATOM_BAD_WRITE_ACTION;
+ERL_NIF_TERM ATOM_KEEP_RESOURCE_FAILED;
+ERL_NIF_TERM ATOM_ITERATOR_CLOSED;
+ERL_NIF_TERM ATOM_FIRST;
+ERL_NIF_TERM ATOM_LAST;
+ERL_NIF_TERM ATOM_NEXT;
+ERL_NIF_TERM ATOM_PREV;
+ERL_NIF_TERM ATOM_INVALID_ITERATOR;
+ERL_NIF_TERM ATOM_CACHE_SIZE;
+ERL_NIF_TERM ATOM_PARANOID_CHECKS;
+ERL_NIF_TERM ATOM_ERROR_DB_DESTROY;
+ERL_NIF_TERM ATOM_KEYS_ONLY;
+ERL_NIF_TERM ATOM_COMPRESSION;
+ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
+ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
+
+}   // namespace eleveldb
+
+
+
+
+
 using std::nothrow;
 
-static ErlNifResourceType* eleveldb_db_RESOURCE;
-static ErlNifResourceType* eleveldb_itr_RESOURCE;
-
-struct eleveldb_db_handle;
 struct eleveldb_itr_handle;
 
 class eleveldb_thread_pool;
@@ -118,100 +134,18 @@ namespace {
 const size_t N_THREADS_MAX = 32767;
 }
 
-/* Some primitive-yet-useful NIF helpers: */
-namespace {
-
-// A relatively unsafe (no ownership semantics) mutex handle; allocates and releases with lifetime:
-class simple_scoped_mutex_handle
-{
- friend class simple_scoped_lock;
-
- ErlNifMutex* mutex;
-
- public:
- simple_scoped_mutex_handle(const std::string name = "simple_scoped_mutex_handle")
-  : mutex(enif_mutex_create(const_cast<char *>(name.c_str())))
- {
-    if(0 == mutex)
-     throw std::exception();
- }
-
- ~simple_scoped_mutex_handle()
- {
-    enif_mutex_destroy(mutex);
- }
-};
-
-// Scoped lock that is not ownership-aware:
-class simple_scoped_lock
-{
- ErlNifMutex* lock;
-
- private:
- simple_scoped_lock();                                        // nodefault
- simple_scoped_lock(const simple_scoped_lock&);               // nocopy
- simple_scoped_lock& operator=(const simple_scoped_lock&);    // nocopyassign
-
- public:
- simple_scoped_lock(ErlNifMutex* _lock)
-  : lock(_lock)
- {
-    enif_mutex_lock(lock);
- }
-
- simple_scoped_lock(simple_scoped_mutex_handle& _lock)
-  : lock(_lock.mutex)
- {
-    enif_mutex_lock(lock);
- }
-
- ~simple_scoped_lock()
- {
-    enif_mutex_unlock(lock);
- }
-};
-
-/* Increment refcount on construction, decrement on destruction:
- Note: I should generalize these "simple scoped X" classes at some point... I see a pattern. Of course, more robust smart
-       pointers would be even better. We'll see on the next pass. An example of what this would make easier is that, among
-       other things, we could have handles that were effectively ignorant of things like refcount preservation-- and a lot
-       safer.
-*/
-template <class TargetT>
-class simple_scoped_refcount
-{
- TargetT *t;    // assumes this won't vanish!
-
- public:
- simple_scoped_refcount(TargetT *_t)
-  : t(_t)
- {
-    if(0 == t)
-     throw std::exception();
-
-    enif_keep_resource(t);
- }
-
- ~simple_scoped_refcount()
- {
-    enif_release_resource(t);
- }
-};
-
-} // namespace
 
 // Erlang helpers:
-namespace {
 ERL_NIF_TERM error_einval(ErlNifEnv* env)
 {
-    return enif_make_tuple2(env, ATOM_ERROR, ATOM_EINVAL);
+    return enif_make_tuple2(env, eleveldb::ATOM_ERROR, eleveldb::ATOM_EINVAL);
 }
 
-ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Status& status)
+static ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Status& status)
 {
     ERL_NIF_TERM reason = enif_make_string(env, status.ToString().c_str(),
                                            ERL_NIF_LATIN1);
-    return enif_make_tuple2(env, ATOM_ERROR,
+    return enif_make_tuple2(env, eleveldb::ATOM_ERROR,
                             enif_make_tuple2(env, error, reason));
 }
 
@@ -223,452 +157,9 @@ static ERL_NIF_TERM slice_to_binary(ErlNifEnv* env, leveldb::Slice s)
     return result;
 }
 
-template <typename Acc> ERL_NIF_TERM fold(ErlNifEnv* env, ERL_NIF_TERM list,
-                                          ERL_NIF_TERM(*fun)(ErlNifEnv*, ERL_NIF_TERM, Acc&),
-                                          Acc& acc)
-{
-    ERL_NIF_TERM head, tail = list;
-    while (enif_get_list_cell(env, tail, &head, &tail))
-    {
-        ERL_NIF_TERM result = fun(env, head, acc);
-        if (result != ATOM_OK)
-        {
-            return result;
-        }
-    }
 
-    return ATOM_OK;
-}
-
-} // namespace
-
-struct eleveldb_db_handle
-{
-    leveldb::DB* db;
-    ErlNifMutex* db_lock;                                       // protects access to db
-
-    leveldb::Options *options;
-
-    std::set<struct eleveldb_itr_handle*>* iters;
-
-    private:
-    eleveldb_db_handle();                                       // nodefault
-    eleveldb_db_handle(const eleveldb_db_handle&);              // nocopy
-    eleveldb_db_handle& operator=(const eleveldb_db_handle&);   // nocopyassign
-};
-
-namespace eleveldb {
-    struct iter_move_task_t;
-};
-
-struct eleveldb_itr_handle
-{
-    leveldb::Iterator*   itr;
-    ErlNifMutex*         itr_lock; // acquire *after* db_lock if both needed
-    const leveldb::Snapshot*   snapshot;
-    eleveldb_db_handle* db_handle;
-    bool keys_only;
-    volatile uint32_t m_handoff_atomic;    //!< matthew's atomic foreground/background prefetch flag.
-    ERL_NIF_TERM itr_ref;
-    ErlNifEnv *itr_ref_env;
-    struct eleveldb::iter_move_task_t * reuse_move;  //!< iterator work object that is reused instead of lots malloc/free
-};
 
 void *eleveldb_write_thread_worker(void *args);
-
-/* This is all a shade hacky, we are in a time crunch: */
-namespace eleveldb {
-
-/* Type returned from a work task: */
-typedef basho::async_nif::work_result   work_result;
-
-/* Virtual base class ("interface") for async NIF work items: */
-class work_task_t
-{
-public:
-
-protected:
-    volatile uint32_t ref_count;                //!< atomic count of users for auto delete
-
-    ErlNifEnv      *local_env_, *second_env_;
-
-    ERL_NIF_TERM   caller_ref_term, caller_ref_term2,
-        caller_pid_term, caller_pid_term2;
-
-    bool resubmit_work;           //!< true if this work item is loaded for prefetch
-
-private:
-    ErlNifPid local_pid;   // maintain for task lifetime (JFW)
-
- public:
- work_task_t(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref)
-     : ref_count(0), second_env_(NULL), resubmit_work(false)
- {
-    local_env_ = enif_alloc_env();
-
-    if(0 == local_env_)
-     throw std::invalid_argument("work_task_t::local_env_");
-
-    caller_ref_term = enif_make_copy(local_env_, caller_ref);
-
-    caller_pid_term = enif_make_pid(local_env_, enif_self(caller_env, &local_pid));
- }
-
- virtual ~work_task_t()
- {
-    enif_free_env(local_env_);
-    if (NULL!=second_env_)
-        enif_free_env(second_env_);
- }
-
-
-void prepare_recycle()
- {
-     // prepare_recycle could happen at a couple of places
-     if (NULL==second_env_)
-     {
-         second_env_ = enif_alloc_env();
-
-         if(NULL == second_env_)
-             throw std::invalid_argument("work_task_t::second_env_");
-
-         caller_ref_term2 = enif_make_copy(second_env_, caller_ref_term);
-
-         caller_pid_term2 = enif_make_pid(second_env_, &local_pid);
-     }   // if
-
-     resubmit_work=true;
- }  // prepare_recycle
-
-
- void recycle()
- {
-     if (NULL!=second_env_)
-     {
-         enif_free_env(local_env_);
-         local_env_=second_env_;
-         second_env_=NULL;
-         caller_ref_term=caller_ref_term2;
-         caller_pid_term=caller_pid_term2;
-     }   // if
-
-     resubmit_work=false;
- }   // recycle
-
-  void RefInc() {__sync_add_and_fetch(&ref_count, 1);};
-  //{eleveldb::detail::sync_add_and_fetch(&ref_count);};
-
-  void RefDec()
-  {
-      uint32_t current_refs;
-
-//      current_refs=eleveldb::detail::atomic_dec_ret(ref_count);
-      current_refs=__sync_sub_and_fetch(&ref_count, 1);
-      if (0==current_refs)
-          delete this;
-  }   // RefDec
-
- ErlNifEnv *local_env() const           { return local_env_; }
-
- const ERL_NIF_TERM& caller_ref() const { return caller_ref_term; }
- const ERL_NIF_TERM& pid() const        { return caller_pid_term; }
- bool resubmit() const {return(resubmit_work);}
-
- virtual work_result operator()()     = 0;
-};
-
-struct open_task_t : public work_task_t
-{
- std::string         db_name;
- leveldb::Options   *open_options;  // associated with db handle, we don't free it
-
- open_task_t(ErlNifEnv* caller_env, ERL_NIF_TERM& _caller_ref,
-             const std::string& db_name_, leveldb::Options *open_options_)
-  : work_task_t(caller_env, _caller_ref),
-    db_name(db_name_), open_options(open_options_)
- {}
-
- work_result operator()()
- {
-    leveldb::DB *db(0);
-
-    leveldb::Status status = leveldb::DB::Open(*open_options, db_name, &db);
-
-    if(!status.ok())
-     return error_tuple(local_env(), ATOM_ERROR_DB_OPEN, status);
-
-    eleveldb_db_handle* handle = (eleveldb_db_handle*)
-     enif_alloc_resource(eleveldb_db_RESOURCE, sizeof(eleveldb_db_handle));
-    memset(handle, '\0', sizeof(eleveldb_db_handle));
-    handle->db = db;
-    handle->db_lock = enif_mutex_create((char*)"eleveldb_db_lock");
-    handle->options = open_options;
-    handle->iters = new std::set<struct eleveldb_itr_handle*>();
-
-    ERL_NIF_TERM result = enif_make_resource(local_env(), handle);
-
-    enif_release_resource(handle);
-
-    return work_result(local_env(), ATOM_OK, result);
- }
-};
-
-
-struct iter_task_t : public work_task_t
-{
- eleveldb_db_handle *db_handle;
- const bool keys_only;
- leveldb::ReadOptions *options;
-
- iter_task_t(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
-             eleveldb_db_handle *_db_handle, const bool _keys_only, leveldb::ReadOptions *_options)
-  : work_task_t(_caller_env, _caller_ref),
-    db_handle(_db_handle), keys_only(_keys_only), options(_options)
- {}
-
- virtual ~iter_task_t()
- {
-    delete options;
- }
-
- work_result operator()()
- {
-    eleveldb_itr_handle* itr_handle =
-            (eleveldb_itr_handle*) enif_alloc_resource(eleveldb_itr_RESOURCE,
-                                                       sizeof(eleveldb_itr_handle));
-    memset(itr_handle, '\0', sizeof(eleveldb_itr_handle));
-
-    // Initialize itr handle
-    itr_handle->itr_lock = enif_mutex_create((char*)"eleveldb_itr_lock");
-    itr_handle->db_handle = db_handle;
-
-    itr_handle->snapshot = db_handle->db->GetSnapshot();
-    options->snapshot = itr_handle->snapshot;
-
-    itr_handle->itr = db_handle->db->NewIterator(*options);
-    itr_handle->keys_only = keys_only;
-    // Copy caller_ref to reuse in future iterator_move calls
-    itr_handle->itr_ref_env = enif_alloc_env();
-    itr_handle->itr_ref = enif_make_copy(itr_handle->itr_ref_env, caller_ref());
-    itr_handle->reuse_move = NULL;
-
-    ERL_NIF_TERM result = enif_make_resource(local_env(), itr_handle);
-
-    enif_mutex_lock(db_handle->db_lock);
-    db_handle->iters->insert(itr_handle);
-    enif_mutex_unlock(db_handle->db_lock);
-
-    enif_release_resource(itr_handle);
-
-    return work_result(local_env(), ATOM_OK, result);
- }
-};
-
-struct iter_move_task_t : public work_task_t
-{
- typedef enum { FIRST, LAST, NEXT, PREV, SEEK } action_t;
-
- simple_scoped_refcount<eleveldb_itr_handle>    itr_handle_refcount;
- mutable eleveldb_itr_handle*                   itr_handle;
-
- action_t                                       action;
- std::string                                 seek_target;
-
-
- // No seek target:
- iter_move_task_t(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
-                  eleveldb_itr_handle *_itr_handle,
-                  action_t& _action)
- : work_task_t(_caller_env, _caller_ref),
-   itr_handle_refcount(_itr_handle),
-   itr_handle(_itr_handle),
-   action(_action)
- {}
-
- // With seek target:
- iter_move_task_t(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
-                  eleveldb_itr_handle *_itr_handle,
-                  action_t& _action,
-                  std::string& _seek_target)
- : work_task_t(_caller_env, _caller_ref),
-   itr_handle_refcount(_itr_handle),
-   itr_handle(_itr_handle),
-   action(_action),
-   seek_target(_seek_target)
- {}
-
- virtual ~iter_move_task_t() {};
-
- work_result operator()()
- {
-    simple_scoped_lock l(itr_handle->itr_lock);
-
-    leveldb::Iterator* itr = itr_handle->itr;
-
-    if(0 == itr)
-     return work_result(local_env(), ATOM_ERROR, ATOM_ITERATOR_CLOSED);
-
-    switch(action)
-     {
-        default:
-                    // JFW: note: *not* { ERROR, badarg() } here-- we want the exception:
-                    return work_result(enif_make_badarg(local_env()));
-                    break;
-
-        case FIRST:
-                    itr->SeekToFirst();
-                    break;
-
-        case LAST:
-                    itr->SeekToLast();
-                    break;
-
-        case NEXT:
-                    if(!itr->Valid())
-                     return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
-
-                    itr->Next();
-                    break;
-
-        case PREV:
-                    if(!itr->Valid())
-                     return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
-
-                    itr->Prev();
-                    break;
-
-        case SEEK:
-
-                    leveldb::Slice key_slice(seek_target);
-
-                    itr->Seek(key_slice);
-                    break;
-     }
-
-    if(!itr->Valid())
-     return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
-
-    // who got back first, us or the erlang loop
-//    if (eleveldb::detail::compare_and_swap(&itr_handle->m_handoff_atomic, 0, 1))
-    if (__sync_bool_compare_and_swap(&itr_handle->m_handoff_atomic, 0, 1))
-    {
-        // this is prefetch of next iteration.  It returned faster than actual
-        //  request to retrieve it.  Stop and wait for erlang to catch up.
-        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug0);
-    }   // if
-    else
-    {
-        // setup next race for the response
-        itr_handle->m_handoff_atomic=0;
-        if (NEXT==action || SEEK==action)
-        {
-            prepare_recycle();
-            action=NEXT;
-        }   // if
-
-        // erlang is waiting, send message
-        if(itr_handle->keys_only)
-            return work_result(local_env(), ATOM_OK, slice_to_binary(local_env(), itr->key()));
-
-        return work_result(local_env(), ATOM_OK,
-                           slice_to_binary(local_env(), itr->key()),
-                           slice_to_binary(local_env(), itr->value()));
-    }   // else
-
-    return(work_result());
- }
-};
-
-struct get_task_t : public work_task_t
-{
- mutable eleveldb_db_handle*        db_handle;
-
- ERL_NIF_TERM                       key_term;
- leveldb::ReadOptions*              options;
-
- get_task_t(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
-            eleveldb_db_handle *_db_handle,
-            ERL_NIF_TERM _key_term,
-            leveldb::ReadOptions *_options)
-  : work_task_t(_caller_env, _caller_ref),
-    db_handle(_db_handle),
-    key_term(enif_make_copy(local_env_, _key_term)),
-    options(_options)
- {}
-
- virtual ~get_task_t()
- {
-    delete options;
- }
-
- work_result operator()()
- {
-    ErlNifBinary key;
-
-    if(!enif_inspect_binary(local_env(), key_term, &key))
-     return work_result(error_einval(local_env()));
-
-    leveldb::Slice key_slice((const char*)key.data, key.size);
-
-    std::string value;
-
-    // We don't want to hold the DB lock through the copy:
-    {
-    simple_scoped_lock l(db_handle->db_lock);
-
-    leveldb::Status status = db_handle->db->Get(*options, key_slice, &value);
-
-    if(!status.ok())
-     return work_result(ATOM_NOT_FOUND);
-    }
-
-    ERL_NIF_TERM value_bin;
-
-    // The documentation does not say if this can fail:
-    unsigned char *result = enif_make_new_binary(local_env(), value.size(), &value_bin);
-
-    copy(value.data(), value.data() + value.size(), result);
-
-    return work_result(local_env(), ATOM_OK, value_bin);
- }
-};
-
-struct write_task_t : public work_task_t
-{
-    mutable eleveldb_db_handle*     db_handle;
-    mutable leveldb::WriteBatch*    batch;
-
-    leveldb::WriteOptions*          options;
-
-    write_task_t(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
-                eleveldb_db_handle* _db_handle,
-                leveldb::WriteBatch* _batch,
-                leveldb::WriteOptions* _options)
-     : work_task_t(_owner_env, _caller_ref),
-       db_handle(_db_handle),
-       batch(_batch),
-       options(_options)
-    {}
-
-    virtual ~write_task_t()
-    {
-        delete batch;
-        delete options;
-    }
-
-    work_result operator()()
-    {
-        simple_scoped_lock l(db_handle->db_lock);
-
-        leveldb::Status status = db_handle->db->Write(*options, batch);
-
-        enif_release_resource(db_handle);   // decrement refcount of leveldb handle
-
-        return work_result(status.ok() ? ATOM_OK : ATOM_ERROR);
-    }
- };
-
-} // namespace eleveldb
 
 
 /**
@@ -679,7 +170,7 @@ struct ThreadData
     ErlNifTid * m_ErlTid;                //!< erlang handle for this thread
     volatile uint32_t m_Available;       //!< 1 if thread waiting, using standard type for atomic operation
     class eleveldb_thread_pool & m_Pool; //!< parent pool object
-    volatile eleveldb::work_task_t * m_DirectWork; //!< work passed direct to thread
+    volatile eleveldb::WorkTask * m_DirectWork; //!< work passed direct to thread
 
     pthread_mutex_t m_Mutex;             //!< mutex for condition variable
     pthread_cond_t m_Condition;          //!< condition for thread waiting
@@ -710,14 +201,14 @@ class eleveldb_thread_pool
 
 protected:
 
- typedef std::deque<eleveldb::work_task_t*> work_queue_t;
+ typedef std::deque<eleveldb::WorkTask*> work_queue_t;
     // typedef std::stack<ErlNifTid *>            thread_pool_t;
  typedef std::vector<ThreadData *>   thread_pool_t;
 
 private:
  thread_pool_t  threads;
- ErlNifMutex*   threads_lock;       // protect resizing of the thread pool
- simple_scoped_mutex_handle thread_resize_pool_mutex;
+ eleveldb::Mutex threads_lock;       // protect resizing of the thread pool
+ eleveldb::Mutex thread_resize_pool_mutex;
 
  work_queue_t   work_queue;
  ErlNifCond*    work_queue_pending; // flags job present in the work queue
@@ -735,7 +226,7 @@ private:
  void unlock()                  { enif_mutex_unlock(work_queue_lock); }
 
 
- bool FindWaitingThread(eleveldb::work_task_t * work)
+ bool FindWaitingThread(eleveldb::WorkTask * work)
  {
      bool ret_flag;
      size_t start, index, pool_size;
@@ -756,13 +247,13 @@ private:
 
              if (ret_flag)
              {
-                 threads[index]->m_DirectWork=work;
 
                  // man page says mutex lock optional, experience in
                  //  this code says it is not.  using broadcast instead
                  //  of signal to cover one other race condition
                  //  that should never happen with single thread waiting.
                  pthread_mutex_lock(&threads[index]->m_Mutex);
+                 threads[index]->m_DirectWork=work;
                  pthread_cond_broadcast(&threads[index]->m_Condition);
                  pthread_mutex_unlock(&threads[index]->m_Mutex);
              }   // if
@@ -777,7 +268,7 @@ private:
  }   // FindWaitingThread
 
 
- bool submit(eleveldb::work_task_t* item)
+ bool submit(eleveldb::WorkTask* item)
  {
      bool ret_flag(false);
 
@@ -820,7 +311,7 @@ private:
 
  bool resize_thread_pool(const size_t n)
  {
-    simple_scoped_lock l(thread_resize_pool_mutex);
+     eleveldb::MutexLock l(thread_resize_pool_mutex);
 
     if(0 == n)
      return false;
@@ -838,8 +329,6 @@ private:
     return grow_thread_pool(n);
  }
 
- bool complete_jobs_for(eleveldb_db_handle* dbh);
-
  size_t work_queue_size() const { return work_queue.size(); }
  bool shutdown_pending() const  { return shutdown; }
  leveldb::PerformanceCounters * perf() const {return(leveldb::gPerfCounters);};
@@ -850,18 +339,14 @@ private:
  bool grow_thread_pool(const size_t nthreads);
  bool drain_thread_pool();
 
- static bool notify_caller(eleveldb::work_task_t& work_item);
+ static bool notify_caller(eleveldb::WorkTask& work_item);
 };
 
 eleveldb_thread_pool::eleveldb_thread_pool(const size_t thread_pool_size)
-  : threads_lock(0),
-    work_queue_pending(0), work_queue_lock(0),
+  : work_queue_pending(0), work_queue_lock(0),
     work_queue_atomic(0),
     shutdown(false)
 {
- threads_lock = enif_mutex_create(const_cast<char *>("threads_lock"));
- if(0 == threads_lock)
-  throw std::runtime_error("cannot create threads_lock");
 
  work_queue_pending = enif_cond_create(const_cast<char *>("work_queue_pending"));
  if(0 == work_queue_pending)
@@ -882,13 +367,12 @@ eleveldb_thread_pool::~eleveldb_thread_pool()
  enif_mutex_destroy(work_queue_lock);
  enif_cond_destroy(work_queue_pending);
 
- enif_mutex_destroy(threads_lock);
 }
 
 // Grow the thread pool by nthreads threads:
 bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
 {
- simple_scoped_lock l(threads_lock);
+ eleveldb::MutexLock l(threads_lock);
  ThreadData * new_thread;
 
  if(0 >= nthreads)
@@ -931,6 +415,7 @@ bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
  return true;
 }
 
+#if 0
 namespace {
 
 // Utility predicate: true if db_handle in write task matches given db handle:
@@ -942,7 +427,7 @@ struct db_matches
      : dbh(_dbh)
     {}
 
-    bool operator()(eleveldb::work_task_t*& rhs)
+    bool operator()(eleveldb::WorkTask*& rhs)
     {
         // We're only concerned with elements tied to our database handle:
         eleveldb::write_task_t *rhs_item = dynamic_cast<eleveldb::write_task_t *>(rhs);
@@ -955,7 +440,9 @@ struct db_matches
 };
 
 } // namespace
+#endif
 
+#if 0
 bool eleveldb_thread_pool::complete_jobs_for(eleveldb_db_handle* dbh)
 {
  if(0 == dbh)
@@ -972,11 +459,11 @@ bool eleveldb_thread_pool::complete_jobs_for(eleveldb_db_handle* dbh)
  simple_scoped_mutex_handle complete_jobs_mutex("complete_jobs_mutex");
 
  {
- simple_scoped_lock complete_jobs_lock(complete_jobs_mutex);
+ MutexLock complete_jobs_lock(complete_jobs_mutex);
 
  // Stop new jobs coming in during shuffle; after that, appending jobs is fine:
  {
- simple_scoped_lock l(work_queue_lock);
+ MutexLock l(work_queue_lock);
  std::stable_partition(work_queue.begin(), work_queue.end(), m);
  }
 
@@ -988,6 +475,7 @@ bool eleveldb_thread_pool::complete_jobs_for(eleveldb_db_handle* dbh)
 
  return true;
 }
+#endif
 
 // Shut down and destroy all threads in the thread pool:
 bool eleveldb_thread_pool::drain_thread_pool()
@@ -1015,7 +503,7 @@ bool eleveldb_thread_pool::drain_thread_pool()
  shutdown = true;
  enif_cond_broadcast(work_queue_pending);
 
- simple_scoped_lock l(threads_lock);
+ eleveldb::MutexLock l(threads_lock);
 #if 0
  while(!threads.empty())
   {
@@ -1030,25 +518,30 @@ bool eleveldb_thread_pool::drain_thread_pool()
  return rt();
 }
 
-bool eleveldb_thread_pool::notify_caller(eleveldb::work_task_t& work_item)
+bool eleveldb_thread_pool::notify_caller(eleveldb::WorkTask& work_item)
 {
  ErlNifPid pid;
  bool ret_flag(true);
 
- if(0 == enif_get_local_pid(work_item.local_env(), work_item.pid(), &pid))
-  return false;
 
  // Call the work function:
  basho::async_nif::work_result result = work_item();
 
  if (result.is_set())
  {
-     /* Assemble a notification of the following form:
-        { PID CallerHandle, ERL_NIF_TERM result } */
-     ERL_NIF_TERM result_tuple = enif_make_tuple2(work_item.local_env(),
-                                                  work_item.caller_ref(), result.result());
+     if(0 != enif_get_local_pid(work_item.local_env(), work_item.pid(), &pid))
+     {
+         /* Assemble a notification of the following form:
+            { PID CallerHandle, ERL_NIF_TERM result } */
+         ERL_NIF_TERM result_tuple = enif_make_tuple2(work_item.local_env(),
+                                                      work_item.caller_ref(), result.result());
 
-     ret_flag=(0 != enif_send(0, &pid, work_item.local_env(), result_tuple));
+         ret_flag=(0 != enif_send(0, &pid, work_item.local_env(), result_tuple));
+     }   // if
+     else
+     {
+         ret_flag=false;
+     }   // else
  }   // if
 
  return(ret_flag);
@@ -1073,12 +566,13 @@ void *eleveldb_write_thread_worker(void *args)
 {
     ThreadData &tdata = *(ThreadData *)args;
     eleveldb_thread_pool& h = tdata.m_Pool;
-    eleveldb::work_task_t * submission;
+    eleveldb::WorkTask * submission;
+
+    submission=NULL;
 
     while(!h.shutdown)
     {
         // cast away volatile
-        submission=(eleveldb::work_task_t *)tdata.m_DirectWork;
         if (NULL==submission)
         {
             // test non-blocking size for hint (much faster)
@@ -1099,7 +593,7 @@ void *eleveldb_write_thread_worker(void *args)
         }   // if
         else
         {
-            tdata.m_DirectWork=NULL;
+//            tdata.m_DirectWork=NULL;
         }   // else
 
         if (NULL!=submission)
@@ -1120,9 +614,11 @@ void *eleveldb_write_thread_worker(void *args)
         else
         {
             pthread_mutex_lock(&tdata.m_Mutex);
+            tdata.m_DirectWork=NULL;
             tdata.m_Available=1;
             pthread_cond_wait(&tdata.m_Condition, &tdata.m_Mutex);
             tdata.m_Available=0;    // safety
+            submission=(eleveldb::WorkTask *)tdata.m_DirectWork;
             pthread_mutex_unlock(&tdata.m_Mutex);
         }   // else
     }   // while
@@ -1138,43 +634,43 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
     const ERL_NIF_TERM* option;
     if (enif_get_tuple(env, item, &arity, &option))
     {
-        if (option[0] == ATOM_CREATE_IF_MISSING)
-            opts.create_if_missing = (option[1] == ATOM_TRUE);
-        else if (option[0] == ATOM_ERROR_IF_EXISTS)
-            opts.error_if_exists = (option[1] == ATOM_TRUE);
-        else if (option[0] == ATOM_PARANOID_CHECKS)
-            opts.paranoid_checks = (option[1] == ATOM_TRUE);
-        else if (option[0] == ATOM_MAX_OPEN_FILES)
+        if (option[0] == eleveldb::ATOM_CREATE_IF_MISSING)
+            opts.create_if_missing = (option[1] == eleveldb::ATOM_TRUE);
+        else if (option[0] == eleveldb::ATOM_ERROR_IF_EXISTS)
+            opts.error_if_exists = (option[1] == eleveldb::ATOM_TRUE);
+        else if (option[0] == eleveldb::ATOM_PARANOID_CHECKS)
+            opts.paranoid_checks = (option[1] == eleveldb::ATOM_TRUE);
+        else if (option[0] == eleveldb::ATOM_MAX_OPEN_FILES)
         {
             int max_open_files;
             if (enif_get_int(env, option[1], &max_open_files))
                 opts.max_open_files = max_open_files;
         }
-        else if (option[0] == ATOM_WRITE_BUFFER_SIZE)
+        else if (option[0] == eleveldb::ATOM_WRITE_BUFFER_SIZE)
         {
             unsigned long write_buffer_sz;
             if (enif_get_ulong(env, option[1], &write_buffer_sz))
                 opts.write_buffer_size = write_buffer_sz;
         }
-        else if (option[0] == ATOM_BLOCK_SIZE)
+        else if (option[0] == eleveldb::ATOM_BLOCK_SIZE)
         {
             /* DEPRECATED: the old block_size atom was actually ignored. */
             unsigned long block_sz;
             enif_get_ulong(env, option[1], &block_sz); // ignore
         }
-        else if (option[0] == ATOM_SST_BLOCK_SIZE)
+        else if (option[0] == eleveldb::ATOM_SST_BLOCK_SIZE)
         {
             unsigned long sst_block_sz(0);
             if (enif_get_ulong(env, option[1], &sst_block_sz))
              opts.block_size = sst_block_sz; // Note: We just set the "old" block_size option.
         }
-        else if (option[0] == ATOM_BLOCK_RESTART_INTERVAL)
+        else if (option[0] == eleveldb::ATOM_BLOCK_RESTART_INTERVAL)
         {
             int block_restart_interval;
             if (enif_get_int(env, option[1], &block_restart_interval))
                 opts.block_restart_interval = block_restart_interval;
         }
-        else if (option[0] == ATOM_CACHE_SIZE)
+        else if (option[0] == eleveldb::ATOM_CACHE_SIZE)
         {
             unsigned long cache_sz;
             if (enif_get_ulong(env, option[1], &cache_sz))
@@ -1183,9 +679,9 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                     opts.block_cache = leveldb::NewLRUCache(cache_sz);
                  }
         }
-        else if (option[0] == ATOM_COMPRESSION)
+        else if (option[0] == eleveldb::ATOM_COMPRESSION)
         {
-            if (option[1] == ATOM_TRUE)
+            if (option[1] == eleveldb::ATOM_TRUE)
             {
                 opts.compression = leveldb::kSnappyCompression;
             }
@@ -1194,20 +690,20 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                 opts.compression = leveldb::kNoCompression;
             }
         }
-        else if (option[0] == ATOM_USE_BLOOMFILTER)
+        else if (option[0] == eleveldb::ATOM_USE_BLOOMFILTER)
         {
             // By default, we want to use a 16-bit-per-key bloom filter on a
             // per-table basis. We only disable it if explicitly asked. Alternatively,
             // one can provide a value for # of bits-per-key.
             unsigned long bfsize = 16;
-            if (option[1] == ATOM_TRUE || enif_get_ulong(env, option[1], &bfsize))
+            if (option[1] == eleveldb::ATOM_TRUE || enif_get_ulong(env, option[1], &bfsize))
             {
                 opts.filter_policy = leveldb::NewBloomFilterPolicy2(bfsize);
             }
         }
     }
 
-    return ATOM_OK;
+    return eleveldb::ATOM_OK;
 }
 
 ERL_NIF_TERM parse_read_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::ReadOptions& opts)
@@ -1216,13 +712,13 @@ ERL_NIF_TERM parse_read_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::ReadO
     const ERL_NIF_TERM* option;
     if (enif_get_tuple(env, item, &arity, &option))
     {
-        if (option[0] == ATOM_VERIFY_CHECKSUMS)
-            opts.verify_checksums = (option[1] == ATOM_TRUE);
-        else if (option[0] == ATOM_FILL_CACHE)
-            opts.fill_cache = (option[1] == ATOM_TRUE);
+        if (option[0] == eleveldb::ATOM_VERIFY_CHECKSUMS)
+            opts.verify_checksums = (option[1] == eleveldb::ATOM_TRUE);
+        else if (option[0] == eleveldb::ATOM_FILL_CACHE)
+            opts.fill_cache = (option[1] == eleveldb::ATOM_TRUE);
     }
 
-    return ATOM_OK;
+    return eleveldb::ATOM_OK;
 }
 
 ERL_NIF_TERM parse_write_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::WriteOptions& opts)
@@ -1231,11 +727,11 @@ ERL_NIF_TERM parse_write_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Writ
     const ERL_NIF_TERM* option;
     if (enif_get_tuple(env, item, &arity, &option))
     {
-        if (option[0] == ATOM_SYNC)
-            opts.sync = (option[1] == ATOM_TRUE);
+        if (option[0] == eleveldb::ATOM_SYNC)
+            opts.sync = (option[1] == eleveldb::ATOM_TRUE);
     }
 
-    return ATOM_OK;
+    return eleveldb::ATOM_OK;
 }
 
 ERL_NIF_TERM write_batch_item(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::WriteBatch& batch)
@@ -1245,30 +741,30 @@ ERL_NIF_TERM write_batch_item(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::WriteB
     if (enif_get_tuple(env, item, &arity, &action) ||
         enif_is_atom(env, item))
     {
-        if (item == ATOM_CLEAR)
+        if (item == eleveldb::ATOM_CLEAR)
         {
             batch.Clear();
-            return ATOM_OK;
+            return eleveldb::ATOM_OK;
         }
 
         ErlNifBinary key, value;
 
-        if (action[0] == ATOM_PUT && arity == 3 &&
+        if (action[0] == eleveldb::ATOM_PUT && arity == 3 &&
             enif_inspect_binary(env, action[1], &key) &&
             enif_inspect_binary(env, action[2], &value))
         {
             leveldb::Slice key_slice((const char*)key.data, key.size);
             leveldb::Slice value_slice((const char*)value.data, value.size);
             batch.Put(key_slice, value_slice);
-            return ATOM_OK;
+            return eleveldb::ATOM_OK;
         }
 
-        if (action[0] == ATOM_DELETE && arity == 2 &&
+        if (action[0] == eleveldb::ATOM_DELETE && arity == 2 &&
             enif_inspect_binary(env, action[1], &key))
         {
             leveldb::Slice key_slice((const char*)key.data, key.size);
             batch.Delete(key_slice);
-            return ATOM_OK;
+            return eleveldb::ATOM_OK;
         }
     }
 
@@ -1276,6 +772,7 @@ ERL_NIF_TERM write_batch_item(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::WriteB
     return item;
 }
 
+#if 0
 // Free dynamic elements of iterator - acquire lock before calling
 static void free_itr(eleveldb_itr_handle* itr_handle)
 {
@@ -1322,7 +819,7 @@ static bool free_db(ErlNifEnv* env, eleveldb_db_handle* db_handle)
              ++iters_it)
         {
             eleveldb_itr_handle* itr_handle = *iters_it;
-            simple_scoped_lock l(itr_handle->itr_lock);
+            MutexLock l(itr_handle->itr_lock);
             free_itr(*iters_it);
         }
 
@@ -1357,245 +854,70 @@ static bool free_db(ErlNifEnv* env, eleveldb_db_handle* db_handle)
 
     return result;
 }
+#endif
+
 
 namespace eleveldb {
 
-ERL_NIF_TERM async_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM
+async_open(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
 {
- char db_name[4096];
+    char db_name[4096];
 
- if(!enif_get_string(env, argv[1], db_name, sizeof(db_name), ERL_NIF_LATIN1) ||
-    !enif_is_list(env, argv[2]))
-  {
-    return enif_make_badarg(env);
-  }
-
- ERL_NIF_TERM caller_ref = argv[0];
-
- eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
- leveldb::Options *opts = new leveldb::Options;
- fold(env, argv[2], parse_open_option, *opts);
-
- eleveldb::work_task_t *work_item = new eleveldb::open_task_t(
-                                        env, caller_ref,
-                                        db_name, opts
-                                       );
-
- if(false == priv.thread_pool.submit(work_item))
-  {
-    delete work_item;
-    return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
-  }
-
- return ATOM_OK;
-}
-
-ERL_NIF_TERM async_get(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
-{
- eleveldb_db_handle *db_handle = 0;
-
- const ERL_NIF_TERM& caller_ref = argv[0];
- const ERL_NIF_TERM& dbh_ref    = argv[1];
- const ERL_NIF_TERM& key_ref    = argv[2];
- const ERL_NIF_TERM& opts_ref   = argv[3];
-
- if(!enif_get_resource(env, dbh_ref, eleveldb_db_RESOURCE, (void **)&db_handle) ||
-    !enif_is_list(env, opts_ref))
-  {
-    return enif_make_badarg(env);
-  }
-
- if(0 == db_handle->db)
-  return error_einval(env);
-
- eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
- leveldb::ReadOptions *opts = new leveldb::ReadOptions();
- fold(env, opts_ref, parse_read_option, *opts);
-
- eleveldb::work_task_t *work_item = new eleveldb::get_task_t(
-                                        env, caller_ref,
-                                        db_handle, key_ref, opts
-                                       );
-
- if(false == priv.thread_pool.submit(work_item))
-  return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
-
- return ATOM_OK;
-}
-
-ERL_NIF_TERM async_iterator(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
-{
-    const ERL_NIF_TERM& caller_ref  = argv[0];
-    const ERL_NIF_TERM& dbh_ref     = argv[1];
-    const ERL_NIF_TERM& options_ref = argv[2];
-
-    const bool keys_only = ((argc == 4) && (argv[3] == ATOM_KEYS_ONLY));
-
-    eleveldb_db_handle* db_handle;
-
-    if (!enif_get_resource(env, dbh_ref, eleveldb_db_RESOURCE, (void**)&db_handle) &&
-        !enif_is_list(env, options_ref))
-     {
+    if(!enif_get_string(env, argv[1], db_name, sizeof(db_name), ERL_NIF_LATIN1) ||
+       !enif_is_list(env, argv[2]))
+    {
         return enif_make_badarg(env);
-     }
+    }   // if
 
-    simple_scoped_lock l(db_handle->db_lock);
+    ERL_NIF_TERM caller_ref = argv[0];
 
-    if(0 == db_handle->db)
-     return error_einval(env);
-
-    // Increment references to db_handle for duration of the iterator
-    enif_keep_resource(db_handle);
-
-    // Parse out the read options
-    leveldb::ReadOptions *opts = new leveldb::ReadOptions;
-    fold(env, options_ref, parse_read_option, *opts);
-
-    // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
-    eleveldb::work_task_t *work_item = new eleveldb::iter_task_t(
-                                            env, caller_ref,
-                                            db_handle, keys_only, opts);
+    leveldb::Options *opts = new leveldb::Options;
+    fold(env, argv[2], parse_open_option, *opts);
+
+    eleveldb::WorkTask *work_item = new eleveldb::OpenTask(env, caller_ref,
+                                                              db_name, opts);
 
     if(false == priv.thread_pool.submit(work_item))
-     return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
-
-    return ATOM_OK;
-}
-
-ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
-{
- // const ERL_NIF_TERM& caller_ref       = argv[0];
- const ERL_NIF_TERM& itr_handle_ref   = argv[1];
- const ERL_NIF_TERM& action_or_target = argv[2];
- ERL_NIF_TERM ret_term;
-
- eleveldb_itr_handle *itr_handle = 0;
-
- bool submit_new_request(true);
-
- if(!enif_get_resource(env, itr_handle_ref, eleveldb_itr_RESOURCE, (void **)&itr_handle))
-  return enif_make_badarg(env);
-
- // Now that we have our resource, lock it while we submit the job and increment the refcount:
- // simple_scoped_lock l(itr_handle->itr_lock);
-
- // Reuse ref from iterator creation
- const ERL_NIF_TERM& caller_ref = itr_handle->itr_ref;
-
- /* We can be invoked with two different arities from Erlang. If our "action_atom" parameter is not
- in fact an atom, then it is actually a seek target. Let's find out which we are: */
- eleveldb::iter_move_task_t::action_t action = eleveldb::iter_move_task_t::SEEK;
-
- // If we have an atom, it's one of these (action_or_target's value is ignored):
- if(enif_is_atom(env, action_or_target))
- {
-    if(ATOM_FIRST == action_or_target)  action = eleveldb::iter_move_task_t::FIRST;
-    if(ATOM_LAST == action_or_target)   action = eleveldb::iter_move_task_t::LAST;
-    if(ATOM_NEXT == action_or_target)   action = eleveldb::iter_move_task_t::NEXT;
-    if(ATOM_PREV == action_or_target)   action = eleveldb::iter_move_task_t::PREV;
- }
-
- // before we launch a background job for "next iteration", see if there is a
- //  prefetch waiting for us (SEEK always "wins" and that condition is used)
-// if (eleveldb::detail::compare_and_swap(&itr_handle->m_handoff_atomic, 0, 1))
- if (__sync_bool_compare_and_swap(&itr_handle->m_handoff_atomic, 0, 1))
- {
-     // nope
-     ret_term = enif_make_copy(env, itr_handle->itr_ref);
-
-     leveldb::gPerfCounters->Inc(leveldb::ePerfDebug1);
-     submit_new_request=(eleveldb::iter_move_task_t::NEXT != action);
- }
- else
- {
-     // why yes there is.  copy the key/value info into a return tuple before
-     //  we launch the iterator for "next" again
-     if(!itr_handle->itr->Valid())
-         ret_term=enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
-
-     else if (itr_handle->keys_only)
-         ret_term=enif_make_tuple2(env, ATOM_OK, slice_to_binary(env, itr_handle->itr->key()));
-     else
-         ret_term=enif_make_tuple3(env, ATOM_OK,
-                           slice_to_binary(env, itr_handle->itr->key()),
-                           slice_to_binary(env, itr_handle->itr->value()));
-
-     // reset for next race
-     itr_handle->m_handoff_atomic=0;
-     submit_new_request=true;
- }   // else
-
-
- // only build request if actually need to submit it
- if (submit_new_request)
- {
-    eleveldb::iter_move_task_t * move_item;
-
-    move_item=itr_handle->reuse_move;
-
-    if (NULL==move_item)
     {
-        move_item = new eleveldb::iter_move_task_t(
-            env, caller_ref,
-            itr_handle, action
-            );
-
-        // prevent deletes during worker loop
-        move_item->RefInc();
-        itr_handle->reuse_move=move_item;
+        delete work_item;
+        return enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref);
     }
 
-    move_item->action=action;
+    return eleveldb::ATOM_OK;
 
-    if (eleveldb::iter_move_task_t::SEEK == action)
-    {
-        ErlNifBinary key;
-
-        if(!enif_inspect_binary(env, action_or_target, &key))
-        {
-            move_item->RefDec();
-            itr_handle->reuse_move=NULL;
-            return enif_make_tuple2(env, ATOM_EINVAL, caller_ref);
-        }   // if
-
-        move_item->seek_target.assign((const char *)key.data, key.size);
-    }   // else
-
-    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-    if(false == priv.thread_pool.submit(move_item))
-    {
-        move_item->RefDec();
-        itr_handle->reuse_move=NULL;
-        return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
-    }   // if
- }   // if
-
- return ret_term;
-}
+}   // async_open
 
 
-ERL_NIF_TERM async_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM
+async_write(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
 {
     const ERL_NIF_TERM& caller_ref = argv[0];
     const ERL_NIF_TERM& handle_ref = argv[1];
     const ERL_NIF_TERM& action_ref = argv[2];
     const ERL_NIF_TERM& opts_ref   = argv[3];
 
-    eleveldb_db_handle* handle(0);
+    ReferencePtr<DbObject> db_ptr;
 
-    if(!enif_get_resource(env, handle_ref, eleveldb_db_RESOURCE, (void**)&handle) ||
-       !enif_is_list(env, action_ref) ||
-       !enif_is_list(env, opts_ref))
+    db_ptr.assign(DbObject::RetrieveDbObject(env, handle_ref));
+
+    if(NULL==db_ptr.get()
+       || !enif_is_list(env, action_ref)
+       || !enif_is_list(env, opts_ref))
     {
         return enif_make_badarg(env);
     }
 
-    if(0 == handle->db)
+    // is this even possible?
+    if(NULL == db_ptr->m_Db)
      return error_einval(env);
 
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
@@ -1605,110 +927,370 @@ ERL_NIF_TERM async_write(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
     // Seed the batch's data:
     ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, *batch);
-    if(ATOM_OK != result)
-     {
-        return enif_make_tuple3(env, ATOM_ERROR, caller_ref,
-                                     enif_make_tuple2(env, ATOM_BAD_WRITE_ACTION,
-                                                      result));
-     }
+    if(eleveldb::ATOM_OK != result)
+    {
+        return enif_make_tuple3(env, eleveldb::ATOM_ERROR, caller_ref,
+                                enif_make_tuple2(env, eleveldb::ATOM_BAD_WRITE_ACTION,
+                                                 result));
+    }   // if
 
     leveldb::WriteOptions* opts = new leveldb::WriteOptions;
     fold(env, argv[3], parse_write_option, *opts);
 
-    // Increment the refcount on the database handle so it doesn't vanish:
-    enif_keep_resource(handle);
-
-    eleveldb::work_task_t* work_item = new eleveldb::write_task_t(
-                                        env, caller_ref,
-                                        handle, batch, opts
-                                       );
+    eleveldb::WorkTask* work_item = new eleveldb::WriteTask(env, caller_ref,
+                                                            db_ptr.get(), batch, opts);
 
     if(false == priv.thread_pool.submit(work_item))
-     return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+        return enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref);
 
-    return ATOM_OK;
+    return eleveldb::ATOM_OK;
 }
 
-} // namespace eleveldb
 
-ERL_NIF_TERM eleveldb_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM
+async_get(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
 {
-    eleveldb_db_handle* db_handle;
+    const ERL_NIF_TERM& caller_ref = argv[0];
+    const ERL_NIF_TERM& dbh_ref    = argv[1];
+    const ERL_NIF_TERM& key_ref    = argv[2];
+    const ERL_NIF_TERM& opts_ref   = argv[3];
 
-    if (!enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
-     return enif_make_badarg(env);
+    ReferencePtr<DbObject> db_ptr;
 
-    return free_db(env, db_handle) ? ATOM_OK : error_einval(env);
-}
+    db_ptr.assign(DbObject::RetrieveDbObject(env, dbh_ref));
 
-ERL_NIF_TERM eleveldb_iterator_close(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
-{
-    eleveldb_itr_handle* itr_handle;
-    if (enif_get_resource(env, argv[0], eleveldb_itr_RESOURCE, (void**)&itr_handle))
-    {
-        // Make sure locks are acquired in the same order to close/free_db
-        // to avoid a deadlock.
-        enif_mutex_lock(itr_handle->db_handle->db_lock);
-        enif_mutex_lock(itr_handle->itr_lock);
-
-        if (itr_handle->db_handle->iters)
-        {
-            // db may have been closed before the iter (the unit test
-            // does an evil close-inside-fold)
-            itr_handle->db_handle->iters->erase(itr_handle);
-        }
-        free_itr(itr_handle);
-
-        enif_mutex_unlock(itr_handle->itr_lock);
-        enif_mutex_unlock(itr_handle->db_handle->db_lock);
-
-        enif_release_resource(itr_handle->db_handle); // matches keep in eleveldb_iterator()
-
-        return ATOM_OK;
-    }
-    else
+    if(NULL==db_ptr.get()
+       || !enif_is_list(env, opts_ref)
+       || !enif_is_binary(env, key_ref))
     {
         return enif_make_badarg(env);
     }
-}
 
-ERL_NIF_TERM eleveldb_status(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+    if(NULL == db_ptr->m_Db)
+        return error_einval(env);
+
+    leveldb::ReadOptions *opts = new leveldb::ReadOptions();
+    fold(env, opts_ref, parse_read_option, *opts);
+
+    eleveldb::WorkTask *work_item = new eleveldb::GetTask(env, caller_ref,
+                                                          db_ptr.get(), key_ref, opts);
+
+    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+    if(false == priv.thread_pool.submit(work_item))
+        return enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref);
+
+    return eleveldb::ATOM_OK;
+
+}   // async_get
+
+
+ERL_NIF_TERM
+async_iterator(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
 {
-    eleveldb_db_handle* db_handle;
-    ErlNifBinary name_bin;
+    const ERL_NIF_TERM& caller_ref  = argv[0];
+    const ERL_NIF_TERM& dbh_ref     = argv[1];
+    const ERL_NIF_TERM& options_ref = argv[2];
 
-    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle) &&
-        enif_inspect_binary(env, argv[1], &name_bin))
+    const bool keys_only = ((argc == 4) && (argv[3] == ATOM_KEYS_ONLY));
+
+    ReferencePtr<DbObject> db_ptr;
+
+    db_ptr.assign(DbObject::RetrieveDbObject(env, dbh_ref));
+
+    if(NULL==db_ptr.get()
+       || !enif_is_list(env, options_ref))
+     {
+        return enif_make_badarg(env);
+     }
+
+    // likely useless
+    if(NULL == db_ptr->m_Db)
+        return error_einval(env);
+
+    // Parse out the read options
+    leveldb::ReadOptions *opts = new leveldb::ReadOptions;
+    fold(env, options_ref, parse_read_option, *opts);
+
+    eleveldb::WorkTask *work_item = new eleveldb::IterTask(env, caller_ref,
+                                                           db_ptr.get(), keys_only, opts);
+
+    // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
+    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+    if(false == priv.thread_pool.submit(work_item))
+        return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+
+    return ATOM_OK;
+
+}   // async_iterator
+
+
+ERL_NIF_TERM
+async_iterator_move(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    // const ERL_NIF_TERM& caller_ref       = argv[0];
+    const ERL_NIF_TERM& itr_handle_ref   = argv[1];
+    const ERL_NIF_TERM& action_or_target = argv[2];
+    ERL_NIF_TERM ret_term;
+
+    bool submit_new_request(true);
+
+    ReferencePtr<ItrObject> itr_ptr;
+
+    itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_handle_ref));
+
+    if(NULL==itr_ptr.get())
+        return enif_make_badarg(env);
+
+
+
+    // Reuse ref from iterator creation
+    const ERL_NIF_TERM& caller_ref = itr_ptr->itr_ref;
+
+    /* We can be invoked with two different arities from Erlang. If our "action_atom" parameter is not
+       in fact an atom, then it is actually a seek target. Let's find out which we are: */
+    eleveldb::MoveTask::action_t action = eleveldb::MoveTask::SEEK;
+
+    // If we have an atom, it's one of these (action_or_target's value is ignored):
+    if(enif_is_atom(env, action_or_target))
     {
-        simple_scoped_lock l(db_handle->db_lock);
+        if(ATOM_FIRST == action_or_target)  action = eleveldb::MoveTask::FIRST;
+        if(ATOM_LAST == action_or_target)   action = eleveldb::MoveTask::LAST;
+        if(ATOM_NEXT == action_or_target)   action = eleveldb::MoveTask::NEXT;
+        if(ATOM_PREV == action_or_target)   action = eleveldb::MoveTask::PREV;
+    }   // if
 
-        if (db_handle->db == NULL)
+    // before we launch a background job for "next iteration", see if there is a
+    //  prefetch waiting for us (SEEK always "wins" and that condition is used)
+    // if (eleveldb::detail::compare_and_swap(&itr_ptr->m_handoff_atomic, 0, 1))
+    if (__sync_bool_compare_and_swap(&itr_ptr->m_handoff_atomic, 0, 1)
+        || eleveldb::MoveTask::NEXT != action)
+    {
+        // nope
+        ret_term = enif_make_copy(env, itr_ptr->itr_ref);
+
+        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug1);
+        submit_new_request=(eleveldb::MoveTask::NEXT != action);
+    }
+    else
+    {
+        // why yes there is.  copy the key/value info into a return tuple before
+        //  we launch the iterator for "next" again
+        if(!itr_ptr->itr->Valid())
+            ret_term=enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
+
+        else if (itr_ptr->keys_only)
+            ret_term=enif_make_tuple2(env, ATOM_OK, slice_to_binary(env, itr_ptr->itr->key()));
+        else
+            ret_term=enif_make_tuple3(env, ATOM_OK,
+                                      slice_to_binary(env, itr_ptr->itr->key()),
+                                      slice_to_binary(env, itr_ptr->itr->value()));
+
+        // reset for next race
+        itr_ptr->m_handoff_atomic=0;
+        submit_new_request=true;
+    }   // else
+
+
+    // only build request if actually need to submit it
+    if (submit_new_request)
+    {
+        eleveldb::MoveTask * move_item;
+
+        move_item=itr_ptr->reuse_move;
+
+        // old item could still be exiting the thread, cannot
+        //  reuse
+        if (NULL!=move_item)
+        {
+            move_item->RefDec();
+            move_item=NULL;
+        }   // if
+
+        move_item = new eleveldb::MoveTask(env, caller_ref,
+                                           itr_ptr.get(), action);
+
+        // prevent deletes during worker loop
+        move_item->RefInc();
+        itr_ptr->reuse_move=move_item;
+
+        move_item->action=action;
+
+        if (eleveldb::MoveTask::SEEK == action)
+        {
+            ErlNifBinary key;
+
+            if(!enif_inspect_binary(env, action_or_target, &key))
+            {
+                move_item->RefDec();
+                itr_ptr->reuse_move=NULL;
+                return enif_make_tuple2(env, ATOM_EINVAL, caller_ref);
+            }   // if
+
+            move_item->seek_target.assign((const char *)key.data, key.size);
+        }   // else
+
+        eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+        if(false == priv.thread_pool.submit(move_item))
+        {
+            move_item->RefDec();
+            itr_ptr->reuse_move=NULL;
+            return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
+        }   // if
+    }   // if
+
+    return ret_term;
+
+}   // async_iter_move
+
+
+} // namespace eleveldb
+
+
+ERL_NIF_TERM
+eleveldb_close(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    eleveldb::DbObject * db_ptr;
+    ERL_NIF_TERM ret_term;
+
+    ret_term=eleveldb::ATOM_OK;
+
+    db_ptr=eleveldb::DbObject::RetrieveDbObject(env, argv[0]);
+
+    if (NULL!=db_ptr)
+    {
+        // set closing flag ... atomic likely unnecessary (but safer)
+        __sync_bool_compare_and_swap(&db_ptr->m_CloseRequested, 0, 1);
+
+        // remove reference count from the RetrieveDbObject call above
+        db_ptr->RefDec();
+
+        // remove "open database" from reference count,
+        //  but it does NOT have a matching erlang ref.
+        // ... db_ptr no longer known valid after call
+        db_ptr->RefDec(false);
+        db_ptr=NULL;
+
+        ret_term=eleveldb::ATOM_OK;
+    }   // if
+    else
+    {
+        ret_term=enif_make_badarg(env);
+    }   // else
+
+    return(ret_term);
+
+}  // eleveldb_close
+
+
+ERL_NIF_TERM
+eleveldb_iterator_close(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    eleveldb::ItrObject * itr_ptr;
+    ERL_NIF_TERM ret_term;
+
+    ret_term=eleveldb::ATOM_OK;
+
+    itr_ptr=eleveldb::ItrObject::RetrieveItrObject(env, argv[0]);
+
+    if (NULL!=itr_ptr)
+    {
+        // set closing flag ... atomic likely unnecessary (but safer)
+        __sync_bool_compare_and_swap(&itr_ptr->m_CloseRequested, 0, 1);
+
+        // if there is an active move object, set it up to delete
+        //  (reuse_move holds a counter to this object, which will
+        //   release when move object destructs)
+        if (NULL!=itr_ptr->reuse_move)
+        {
+            itr_ptr->reuse_move->RefDec();
+            itr_ptr->reuse_move=NULL;
+        }   // if
+
+        // remove reference count from RetrieveItrObject call above
+        itr_ptr->RefDec();
+
+        // remove "open iterator" from reference count,
+        //  but it does NOT have a matching erlang ref.
+        // ... db_ptr no longer known valid after call
+        itr_ptr->RefDec(false);
+        itr_ptr=NULL;
+
+        ret_term=eleveldb::ATOM_OK;
+    }   // if
+    else
+    {
+        ret_term=enif_make_badarg(env);
+    }   // else
+
+    return(ret_term);
+
+}   // elveldb_iterator_close
+
+
+ERL_NIF_TERM
+eleveldb_status(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    ErlNifBinary name_bin;
+    eleveldb::ReferencePtr<eleveldb::DbObject> db_ptr;
+
+    db_ptr.assign(eleveldb::DbObject::RetrieveDbObject(env, argv[0]));
+
+    if(NULL!=db_ptr.get()
+       && enif_inspect_binary(env, argv[1], &name_bin))
+    {
+        if (db_ptr->m_Db == NULL)
         {
             return error_einval(env);
         }
 
         leveldb::Slice name((const char*)name_bin.data, name_bin.size);
         std::string value;
-        if (db_handle->db->GetProperty(name, &value))
+        if (db_ptr->m_Db->GetProperty(name, &value))
         {
             ERL_NIF_TERM result;
             unsigned char* result_buf = enif_make_new_binary(env, value.size(), &result);
             memcpy(result_buf, value.c_str(), value.size());
 
-            return enif_make_tuple2(env, ATOM_OK, result);
+            return enif_make_tuple2(env, eleveldb::ATOM_OK, result);
         }
         else
         {
-            return ATOM_ERROR;
+            return eleveldb::ATOM_ERROR;
         }
     }
     else
     {
         return enif_make_badarg(env);
     }
-}
+}   // eleveldb_status
 
-ERL_NIF_TERM eleveldb_repair(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+
+ERL_NIF_TERM
+eleveldb_repair(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
 {
     char name[4096];
     if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1))
@@ -1719,20 +1301,25 @@ ERL_NIF_TERM eleveldb_repair(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
         leveldb::Status status = leveldb::RepairDB(name, opts);
         if (!status.ok())
         {
-            return error_tuple(env, ATOM_ERROR_DB_REPAIR, status);
+            return error_tuple(env, eleveldb::ATOM_ERROR_DB_REPAIR, status);
         }
         else
         {
-            return ATOM_OK;
+            return eleveldb::ATOM_OK;
         }
     }
     else
     {
         return enif_make_badarg(env);
     }
-}
+}   // eleveldb_repair
 
-ERL_NIF_TERM eleveldb_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+
+ERL_NIF_TERM
+eleveldb_destroy(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
 {
     char name[4096];
     if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1) &&
@@ -1745,42 +1332,49 @@ ERL_NIF_TERM eleveldb_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[
         leveldb::Status status = leveldb::DestroyDB(name, opts);
         if (!status.ok())
         {
-            return error_tuple(env, ATOM_ERROR_DB_DESTROY, status);
+            return error_tuple(env, eleveldb::ATOM_ERROR_DB_DESTROY, status);
         }
         else
         {
-            return ATOM_OK;
+            return eleveldb::ATOM_OK;
         }
     }
     else
     {
         return enif_make_badarg(env);
     }
-}
 
-ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+}   // eleveldb_destroy
+
+
+ERL_NIF_TERM
+eleveldb_is_empty(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
 {
-    eleveldb_db_handle* db_handle;
-    if (enif_get_resource(env, argv[0], eleveldb_db_RESOURCE, (void**)&db_handle))
-    {
-        simple_scoped_lock l(db_handle->db_lock);
+    eleveldb::ReferencePtr<eleveldb::DbObject> db_ptr;
 
-        if (db_handle->db == NULL)
+    db_ptr.assign(eleveldb::DbObject::RetrieveDbObject(env, argv[0]));
+
+    if(NULL!=db_ptr.get())
+    {
+        if (db_ptr->m_Db == NULL)
         {
             return error_einval(env);
         }
 
         leveldb::ReadOptions opts;
-        leveldb::Iterator* itr = db_handle->db->NewIterator(opts);
+        leveldb::Iterator* itr = db_ptr->m_Db->NewIterator(opts);
         itr->SeekToFirst();
         ERL_NIF_TERM result;
         if (itr->Valid())
         {
-            result = ATOM_FALSE;
+            result = eleveldb::ATOM_FALSE;
         }
         else
         {
-            result = ATOM_TRUE;
+            result = eleveldb::ATOM_TRUE;
         }
         delete itr;
 
@@ -1790,22 +1384,26 @@ ERL_NIF_TERM eleveldb_is_empty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
     {
         return enif_make_badarg(env);
     }
-}
+}   // eleveldb_is_empty
 
+
+#if 0
 static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
 {
- free_db(env, reinterpret_cast<eleveldb_db_handle *>(arg));
+// free_db(env, reinterpret_cast<eleveldb_db_handle *>(arg));
 }
+
 
 static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
 {
+#if 0
     // Delete any dynamically allocated memory stored in eleveldb_itr_handle
     eleveldb_itr_handle* itr_handle = (eleveldb_itr_handle*)arg;
 
     // No need to lock iter - it's the last reference
     if (itr_handle->itr != 0)
     {
-    simple_scoped_lock l(itr_handle->db_handle->db_lock);
+    MutexLock l(itr_handle->db_handle->db_lock);
 
         if (itr_handle->db_handle->iters)
         {
@@ -1817,12 +1415,14 @@ static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
     }
 
     enif_mutex_destroy(itr_handle->itr_lock);
+#endif
 }
+#endif
 
 static void on_unload(ErlNifEnv *env, void *priv_data)
 {
- eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(priv_data);
- delete p;
+    eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(priv_data);
+    delete p;
 }
 
 static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
@@ -1830,14 +1430,9 @@ try
 {
     *priv_data = 0;
 
-    ErlNifResourceFlags flags = (ErlNifResourceFlags)(ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER);
-
-    eleveldb_db_RESOURCE = enif_open_resource_type(env, NULL, "eleveldb_db_resource",
-                                                    &eleveldb_db_resource_cleanup,
-                                                    flags, NULL);
-    eleveldb_itr_RESOURCE = enif_open_resource_type(env, NULL, "eleveldb_itr_resource",
-                                                     &eleveldb_itr_resource_cleanup,
-                                                     flags, NULL);
+    // inform erlang of our two resource types
+    eleveldb::DbObject::CreateDbObjectType(env);
+    eleveldb::ItrObject::CreateItrObjectType(env);
 
     /* Gather local initialization data: */
     struct _local
@@ -1851,7 +1446,7 @@ try
 
     /* Seed our private data with appropriate values: */
     if(!enif_is_list(env, load_info))
-     throw std::invalid_argument("on_load::load_info");
+        throw std::invalid_argument("on_load::load_info");
 
     ERL_NIF_TERM load_info_head;
 
@@ -1895,49 +1490,51 @@ try
     // Initialize common atoms
 
 #define ATOM(Id, Value) { Id = enif_make_atom(env, Value); }
-    ATOM(ATOM_OK, "ok");
-    ATOM(ATOM_ERROR, "error");
-    ATOM(ATOM_EINVAL, "einval");
-    ATOM(ATOM_TRUE, "true");
-    ATOM(ATOM_FALSE, "false");
-    ATOM(ATOM_CREATE_IF_MISSING, "create_if_missing");
-    ATOM(ATOM_ERROR_IF_EXISTS, "error_if_exists");
-    ATOM(ATOM_WRITE_BUFFER_SIZE, "write_buffer_size");
-    ATOM(ATOM_MAX_OPEN_FILES, "max_open_files");
-    ATOM(ATOM_BLOCK_SIZE, "block_size");
-    ATOM(ATOM_SST_BLOCK_SIZE, "sst_block_size");
-    ATOM(ATOM_BLOCK_RESTART_INTERVAL, "block_restart_interval");
-    ATOM(ATOM_ERROR_DB_OPEN,"db_open");
-    ATOM(ATOM_ERROR_DB_PUT, "db_put");
-    ATOM(ATOM_NOT_FOUND, "not_found");
-    ATOM(ATOM_VERIFY_CHECKSUMS, "verify_checksums");
-    ATOM(ATOM_FILL_CACHE,"fill_cache");
-    ATOM(ATOM_SYNC, "sync");
-    ATOM(ATOM_ERROR_DB_DELETE, "db_delete");
-    ATOM(ATOM_CLEAR, "clear");
-    ATOM(ATOM_PUT, "put");
-    ATOM(ATOM_DELETE, "delete");
-    ATOM(ATOM_ERROR_DB_WRITE, "db_write");
-    ATOM(ATOM_BAD_WRITE_ACTION, "bad_write_action");
-    ATOM(ATOM_KEEP_RESOURCE_FAILED, "keep_resource_failed");
-    ATOM(ATOM_ITERATOR_CLOSED, "iterator_closed");
-    ATOM(ATOM_FIRST, "first");
-    ATOM(ATOM_LAST, "last");
-    ATOM(ATOM_NEXT, "next");
-    ATOM(ATOM_PREV, "prev");
-    ATOM(ATOM_INVALID_ITERATOR, "invalid_iterator");
-    ATOM(ATOM_CACHE_SIZE, "cache_size");
-    ATOM(ATOM_PARANOID_CHECKS, "paranoid_checks");
-    ATOM(ATOM_ERROR_DB_DESTROY, "error_db_destroy");
-    ATOM(ATOM_ERROR_DB_REPAIR, "error_db_repair");
-    ATOM(ATOM_KEYS_ONLY, "keys_only");
-    ATOM(ATOM_COMPRESSION, "compression");
-    ATOM(ATOM_USE_BLOOMFILTER, "use_bloomfilter");
+    ATOM(eleveldb::ATOM_OK, "ok");
+    ATOM(eleveldb::ATOM_ERROR, "error");
+    ATOM(eleveldb::ATOM_EINVAL, "einval");
+    ATOM(eleveldb::ATOM_TRUE, "true");
+    ATOM(eleveldb::ATOM_FALSE, "false");
+    ATOM(eleveldb::ATOM_CREATE_IF_MISSING, "create_if_missing");
+    ATOM(eleveldb::ATOM_ERROR_IF_EXISTS, "error_if_exists");
+    ATOM(eleveldb::ATOM_WRITE_BUFFER_SIZE, "write_buffer_size");
+    ATOM(eleveldb::ATOM_MAX_OPEN_FILES, "max_open_files");
+    ATOM(eleveldb::ATOM_BLOCK_SIZE, "block_size");
+    ATOM(eleveldb::ATOM_SST_BLOCK_SIZE, "sst_block_size");
+    ATOM(eleveldb::ATOM_BLOCK_RESTART_INTERVAL, "block_restart_interval");
+    ATOM(eleveldb::ATOM_ERROR_DB_OPEN,"db_open");
+    ATOM(eleveldb::ATOM_ERROR_DB_PUT, "db_put");
+    ATOM(eleveldb::ATOM_NOT_FOUND, "not_found");
+    ATOM(eleveldb::ATOM_VERIFY_CHECKSUMS, "verify_checksums");
+    ATOM(eleveldb::ATOM_FILL_CACHE,"fill_cache");
+    ATOM(eleveldb::ATOM_SYNC, "sync");
+    ATOM(eleveldb::ATOM_ERROR_DB_DELETE, "db_delete");
+    ATOM(eleveldb::ATOM_CLEAR, "clear");
+    ATOM(eleveldb::ATOM_PUT, "put");
+    ATOM(eleveldb::ATOM_DELETE, "delete");
+    ATOM(eleveldb::ATOM_ERROR_DB_WRITE, "db_write");
+    ATOM(eleveldb::ATOM_BAD_WRITE_ACTION, "bad_write_action");
+    ATOM(eleveldb::ATOM_KEEP_RESOURCE_FAILED, "keep_resource_failed");
+    ATOM(eleveldb::ATOM_ITERATOR_CLOSED, "iterator_closed");
+    ATOM(eleveldb::ATOM_FIRST, "first");
+    ATOM(eleveldb::ATOM_LAST, "last");
+    ATOM(eleveldb::ATOM_NEXT, "next");
+    ATOM(eleveldb::ATOM_PREV, "prev");
+    ATOM(eleveldb::ATOM_INVALID_ITERATOR, "invalid_iterator");
+    ATOM(eleveldb::ATOM_CACHE_SIZE, "cache_size");
+    ATOM(eleveldb::ATOM_PARANOID_CHECKS, "paranoid_checks");
+    ATOM(eleveldb::ATOM_ERROR_DB_DESTROY, "error_db_destroy");
+    ATOM(eleveldb::ATOM_ERROR_DB_REPAIR, "error_db_repair");
+    ATOM(eleveldb::ATOM_KEYS_ONLY, "keys_only");
+    ATOM(eleveldb::ATOM_COMPRESSION, "compression");
+    ATOM(eleveldb::ATOM_USE_BLOOMFILTER, "use_bloomfilter");
 
 #undef ATOM
 
     return 0;
 }
+
+
 catch(std::exception& e)
 {
     /* Refuse to load the NIF module (I see no way right now to return a more specific exception
@@ -1948,6 +1545,7 @@ catch(...)
 {
     return -1;
 }
+
 
 extern "C" {
     ERL_NIF_INIT(eleveldb, nif_funcs, &on_load, NULL, NULL, &on_unload);
