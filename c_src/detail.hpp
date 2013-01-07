@@ -24,6 +24,7 @@
  #define __ELEVELDB_DETAIL_HPP 1
 
 #include <stdint.h>
+#include <stddef.h>
 
 /* These can be hopefully-replaced with constexpr or compile-time assert later: */
 #if defined(OS_SOLARIS) || defined(SOLARIS) || defined(sun)
