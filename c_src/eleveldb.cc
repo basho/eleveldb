@@ -83,6 +83,7 @@ ERL_NIF_TERM ATOM_FALSE;
 ERL_NIF_TERM ATOM_OK;
 ERL_NIF_TERM ATOM_ERROR;
 ERL_NIF_TERM ATOM_EINVAL;
+ERL_NIF_TERM ATOM_BADARG;
 ERL_NIF_TERM ATOM_CREATE_IF_MISSING;
 ERL_NIF_TERM ATOM_ERROR_IF_EXISTS;
 ERL_NIF_TERM ATOM_WRITE_BUFFER_SIZE;
@@ -1495,6 +1496,7 @@ try
     ATOM(eleveldb::ATOM_OK, "ok");
     ATOM(eleveldb::ATOM_ERROR, "error");
     ATOM(eleveldb::ATOM_EINVAL, "einval");
+    ATOM(eleveldb::ATOM_BADARG, "badarg");
     ATOM(eleveldb::ATOM_TRUE, "true");
     ATOM(eleveldb::ATOM_FALSE, "false");
     ATOM(eleveldb::ATOM_CREATE_IF_MISSING, "create_if_missing");
