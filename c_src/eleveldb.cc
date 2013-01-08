@@ -786,11 +786,7 @@ static void free_itr(eleveldb_itr_handle* itr_handle)
 
     enif_free_env(itr_handle->itr_ref_env);
 
-    if (NULL!=itr_handle->reuse_move)
-    {
-        itr_handle->reuse_move->RefDec();
-        itr_handle->reuse_move=NULL;
-    }   // if
+    ReleaseReuseMove();
 }
 
 // Free dynamic elements of database - acquire lock before calling
@@ -1125,15 +1121,9 @@ async_iterator_move(
     {
         eleveldb::MoveTask * move_item;
 
-        move_item=itr_ptr->reuse_move;
-
-        // old item could still be exiting the thread, cannot
+        // old item could still be active on its thread, cannot
         //  reuse
-        if (NULL!=move_item)
-        {
-            move_item->RefDec();
-            move_item=NULL;
-        }   // if
+        itr_ptr->ReleaseReuseMove();
 
         move_item = new eleveldb::MoveTask(env, caller_ref,
                                            itr_ptr.get(), action);
@@ -1150,8 +1140,7 @@ async_iterator_move(
 
             if(!enif_inspect_binary(env, action_or_target, &key))
             {
-                move_item->RefDec();
-                itr_ptr->reuse_move=NULL;
+                itr_ptr->ReleaseReuseMove();
                 return enif_make_tuple2(env, ATOM_EINVAL, caller_ref);
             }   // if
 
@@ -1162,8 +1151,7 @@ async_iterator_move(
 
         if(false == priv.thread_pool.submit(move_item))
         {
-            move_item->RefDec();
-            itr_ptr->reuse_move=NULL;
+            itr_ptr->ReleaseReuseMove();
             return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
         }   // if
     }   // if
@@ -1236,11 +1224,7 @@ eleveldb_iterator_close(
             // if there is an active move object, set it up to delete
             //  (reuse_move holds a counter to this object, which will
             //   release when move object destructs)
-            if (NULL!=itr_ptr->reuse_move)
-            {
-                itr_ptr->reuse_move->RefDec();
-                itr_ptr->reuse_move=NULL;
-            }   // if
+            itr_ptr->ReleaseReuseMove();
 
             // remove "open iterator" from reference count,
             //  but it does NOT have a matching erlang ref.
@@ -1407,43 +1391,12 @@ eleveldb_is_empty(
 }   // eleveldb_is_empty
 
 
-#if 0
-static void eleveldb_db_resource_cleanup(ErlNifEnv* env, void* arg)
-{
-// free_db(env, reinterpret_cast<eleveldb_db_handle *>(arg));
-}
-
-
-static void eleveldb_itr_resource_cleanup(ErlNifEnv* env, void* arg)
-{
-#if 0
-    // Delete any dynamically allocated memory stored in eleveldb_itr_handle
-    eleveldb_itr_handle* itr_handle = (eleveldb_itr_handle*)arg;
-
-    // No need to lock iter - it's the last reference
-    if (itr_handle->itr != 0)
-    {
-    MutexLock l(itr_handle->db_handle->db_lock);
-
-        if (itr_handle->db_handle->iters)
-        {
-            itr_handle->db_handle->iters->erase(itr_handle);
-        }
-        free_itr(itr_handle);
-
-        enif_release_resource(itr_handle->db_handle);  // matches keep in eleveldb_iterator()
-    }
-
-    enif_mutex_destroy(itr_handle->itr_lock);
-#endif
-}
-#endif
-
 static void on_unload(ErlNifEnv *env, void *priv_data)
 {
     eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(priv_data);
     delete p;
 }
+
 
 static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 try

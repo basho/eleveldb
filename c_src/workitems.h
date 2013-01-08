@@ -133,8 +133,8 @@ public:
 
     leveldb::Options * m_DbOptions;
 
-    volatile uint32_t m_CloseRequested;                      // 1 once api close called, 2 once thread starts destructor
-    volatile uint32_t m_ActiveCount;                     // number of active api calls this moment
+    volatile uint32_t m_CloseRequested;  // 1 once api close called, 2 once thread starts destructor, 3 destructor done
+    volatile uint32_t m_ActiveCount;     // number of active api calls this moment
 
     // DO NOT USE CONTAINER OBJECTS
     //  ... these must be live after destructor called
@@ -179,15 +179,15 @@ public:
     bool keys_only;
 
 
-    volatile uint32_t m_handoff_atomic;    //!< matthew's atomic foreground/background prefetch flag.
+    volatile uint32_t m_handoff_atomic;  //!< matthew's atomic foreground/background prefetch flag.
     ERL_NIF_TERM itr_ref;
     ErlNifEnv *itr_ref_env;
-    class MoveTask * reuse_move;           //!< iterator work object that is reused instead of lots malloc/free
+    volatile class MoveTask * reuse_move;//!< iterator work object that is reused instead of lots malloc/free
 
     ReferencePtr<DbObject> m_DbPtr;
 
-    volatile uint32_t m_CloseRequested;                      // 1 once api close called, 2 once thread starts destructor
-    volatile uint32_t m_ActiveCount;                     // number of active api calls this moment
+    volatile uint32_t m_CloseRequested;  // 1 once api close called, 2 once thread starts destructor, 3 destructor done
+    volatile uint32_t m_ActiveCount;     // number of active api calls this moment
 
     // DO NOT USE CONTAINER OBJECTS
     //  ... these must be live after destructor called
@@ -215,6 +215,8 @@ public:
 
     void RefDec(bool ErlRefToo=true);
 
+    void ReleaseReuseMove();
+
 private:
     ItrObject();
     ItrObject(const ItrObject &);            // no copy
@@ -240,9 +242,9 @@ protected:
 
     bool resubmit_work;           //!< true if this work item is loaded for prefetch
 
-    volatile uint32_t m_CloseRequested;                      // 1 once api close called, 2 once thread starts destructor
     ErlNifPid local_pid;   // maintain for task lifetime (JFW)
 
+    int m_DeleteCount;
  public:
 
     WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref);

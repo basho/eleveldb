@@ -138,12 +138,16 @@ DbObject::DbObjectResourceCleanup(
 
     if (compare_and_swap(&db_ptr->m_CloseRequested, 0, 1))
     {
-
-        pthread_mutex_lock(&db_ptr->m_CloseMutex);
         // clear C++ only reference
         db_ptr->RefDec(false);
 
-        if (0!=db_ptr->m_ActiveCount)
+    }   // if
+
+    // has object completed activities AND destructor called
+    if (3!=db_ptr->m_CloseRequested)
+    {
+        pthread_mutex_lock(&db_ptr->m_CloseMutex);
+        if (3!=db_ptr->m_CloseRequested)
         {
             pthread_cond_wait(&db_ptr->m_CloseCond, &db_ptr->m_CloseMutex);
         }   // if
@@ -200,6 +204,7 @@ DbObject::~DbObject()
     }   // if
 
     pthread_mutex_lock(&m_CloseMutex);
+    m_CloseRequested=3;
     pthread_cond_broadcast(&m_CloseCond);
     pthread_mutex_unlock(&m_CloseMutex);
 
@@ -336,33 +341,34 @@ ItrObject::ItrObjectResourceCleanup(
     {
         leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);
 
-        pthread_mutex_lock(&itr_ptr->m_CloseMutex);
 
         // if there is an active move object, set it up to delete
         //  (reuse_move holds a counter to this object, which will
         //   release when move object destructs)
-        if (NULL!=itr_ptr->reuse_move)
-        {
-            itr_ptr->reuse_move->RefDec();
-            itr_ptr->reuse_move=NULL;
-        }   // if
+        itr_ptr->ReleaseReuseMove();
 
         // clear C++ only reference
         itr_ptr->RefDec(false);
 
-        if (0!=itr_ptr->m_ActiveCount)
+    }   // if
+
+    // quick test if any work pending
+    if (3!=itr_ptr->m_CloseRequested)
+    {
+        pthread_mutex_lock(&itr_ptr->m_CloseMutex);
+
+        // retest after mutex helc
+        if (3!=itr_ptr->m_CloseRequested)
         {
             pthread_cond_wait(&itr_ptr->m_CloseCond, &itr_ptr->m_CloseMutex);
         }   // if
         pthread_mutex_unlock(&itr_ptr->m_CloseMutex);
     }   // if
 
-
     pthread_mutex_destroy(&itr_ptr->m_CloseMutex);
     pthread_cond_destroy(&itr_ptr->m_CloseCond);
 
     leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
-
 
     return;
 
@@ -398,14 +404,12 @@ ItrObject::~ItrObject()
     if (NULL!=itr_ref_env)
         enif_free_env(itr_ref_env);
 
-    if (NULL!=reuse_move)
-    {
-        reuse_move->RefDec();
-        reuse_move=NULL;
-    }   // if
-
+    // not likely to have active reuse item since it would
+    //  block destruction
+    ReleaseReuseMove();
 
     pthread_mutex_lock(&m_CloseMutex);
+    m_CloseRequested=3;
     pthread_cond_broadcast(&m_CloseCond);
     pthread_mutex_unlock(&m_CloseMutex);
 
@@ -450,6 +454,24 @@ ItrObject::RefDec(bool ErlRefToo)
 }   // ItrObject::RefDec
 
 
+void
+ItrObject::ReleaseReuseMove()
+{
+    MoveTask * ptr;
+
+    // move pointer off ItrObject first, then decrement ...
+    //  otherwise there is potential for infinite loop
+    ptr=(MoveTask *)reuse_move;
+    if (compare_and_swap(&reuse_move, ptr, (MoveTask *)NULL)
+        && NULL!=ptr)
+    {
+        ptr->RefDec();
+    }   // if
+
+    return;
+
+}   // ItrObject::ReleaseReuseMove()
+
 
 /**
  * WorkTask functions
@@ -457,7 +479,7 @@ ItrObject::RefDec(bool ErlRefToo)
 
 
 WorkTask::WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref)
-    : ref_count(0), terms_set(false), resubmit_work(false)
+    : ref_count(0), terms_set(false), resubmit_work(false), m_DeleteCount(0)
 {
     if (NULL!=caller_env)
     {
@@ -478,7 +500,7 @@ WorkTask::WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref)
 
 
 WorkTask::WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref, DbObject * DbPtr)
-    : m_DbPtr(DbPtr), ref_count(0), terms_set(false), resubmit_work(false)
+    : m_DbPtr(DbPtr), ref_count(0), terms_set(false), resubmit_work(false), m_DeleteCount(0)
 {
     if (NULL!=caller_env)
     {
@@ -502,6 +524,7 @@ WorkTask::~WorkTask()
 {
     ErlNifEnv * env_ptr;
 
+    ++m_DeleteCount;
     env_ptr=local_env_;
     if (compare_and_swap(&local_env_, env_ptr, (ErlNifEnv *)NULL)
         && NULL!=env_ptr)
