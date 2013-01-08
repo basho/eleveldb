@@ -220,7 +220,7 @@ DbObject::RefInc(bool ErlRefToo)
 {
 //    if (ErlRefToo)
 //        enif_keep_resource(this);
-    eleveldb::add_and_fetch(&m_ActiveCount, 1);
+    eleveldb::inc_and_fetch(&m_ActiveCount);
 
 }   // DbObject::RefInc
 
@@ -230,7 +230,7 @@ DbObject::RefDec(bool ErlRefToo)
 {
     uint32_t cur_count;
 
-    cur_count=eleveldb::sub_and_fetch(&m_ActiveCount, 1);
+    cur_count=eleveldb::dec_and_fetch(&m_ActiveCount);
 
     // this the last active after close requested?
     //  (atomic swap should be unnecessary ... but going for safety)
@@ -425,7 +425,7 @@ ItrObject::RefInc(bool ErlRefToo)
 {
 //    if (ErlRefToo)
 //        enif_keep_resource(this);
-    eleveldb::add_and_fetch(&m_ActiveCount, 1);
+    eleveldb::inc_and_fetch(&m_ActiveCount);
 
 }   // ItrObject::RefInc
 
@@ -435,7 +435,7 @@ ItrObject::RefDec(bool ErlRefToo)
 {
     uint32_t cur_count;
 
-    cur_count=eleveldb::sub_and_fetch(&m_ActiveCount, 1);
+    cur_count=eleveldb::dec_and_fetch(&m_ActiveCount);
 
     // this the last active after close requested?
     //  (atomic swap should be unnecessary ... but going for safety)
@@ -553,7 +553,7 @@ WorkTask::recycle()
 
 
 uint32_t
-WorkTask::RefInc() {return(eleveldb::add_and_fetch(&ref_count, 1));};
+WorkTask::RefInc() {return(eleveldb::inc_and_fetch(&ref_count));};
 
 
 void
@@ -561,7 +561,7 @@ WorkTask::RefDec()
 {
     volatile uint32_t current_refs;
 
-    current_refs=eleveldb::sub_and_fetch(&ref_count, 1);
+    current_refs=eleveldb::dec_and_fetch(&ref_count);
     if (0==current_refs)
         delete this;
 

@@ -288,7 +288,7 @@ private:
          {
              // no waiting threads, put on backlog queue
              lock();
-             eleveldb::add_and_fetch(&work_queue_atomic, 1);
+             eleveldb::inc_and_fetch(&work_queue_atomic);
              work_queue.push_back(item);
              unlock();
 
@@ -585,7 +585,7 @@ void *eleveldb_write_thread_worker(void *args)
                 {
                     submission=h.work_queue.front();
                     h.work_queue.pop_front();
-                    eleveldb::sub_and_fetch(&h.work_queue_atomic, 1);
+                    eleveldb::dec_and_fetch(&h.work_queue_atomic);
                     h.perf()->Inc(leveldb::ePerfElevelDequeued);
                 }   // if
 

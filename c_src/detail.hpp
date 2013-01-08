@@ -69,64 +69,64 @@ inline bool compare_and_swap(volatile PtrT *ptr, const ValueT& comp_val, const V
 
 
 template <typename ValueT>
-inline ValueT add_and_fetch(volatile ValueT *ptr, const int& comp_val);
+inline ValueT inc_and_fetch(volatile ValueT *ptr);
 
 template <>
-inline uint64_t add_and_fetch(volatile uint64_t *ptr, const int& val)
+inline uint64_t inc_and_fetch(volatile uint64_t *ptr)
 {
 #if ELEVELDB_IS_SOLARIS
-    return atomic_add_64_nv(ptr, val);
+    return atomic_inc_64_nv(ptr);
 #else
-    return __sync_add_and_fetch(ptr, val);
+    return __sync_add_and_fetch(ptr, 1);
 #endif
 }
 
 template <>
-inline uint32_t add_and_fetch(volatile uint32_t *ptr, const int& val)
+inline uint32_t inc_and_fetch(volatile uint32_t *ptr)
 {
 #if ELEVELDB_IS_SOLARIS
-    return atomic_add_32_nv(ptr, val);
+    return atomic_inc_32_nv(ptr);
 #else
-    return __sync_add_and_fetch(ptr, val);
+    return __sync_add_and_fetch(ptr, 1);
 #endif
 }
 
 #ifdef __APPLE__
 template <>
-inline size_t add_and_fetch(volatile size_t *ptr, const int& val)
+inline size_t inc_and_fetch(volatile size_t *ptr)
 {
-    return __sync_add_and_fetch(ptr, val);
+    return __sync_add_and_fetch(ptr, 1);
 }
 #endif
 
 template <typename ValueT>
-inline ValueT sub_and_fetch(volatile ValueT *ptr, const int& comp_val);
+inline ValueT dec_and_fetch(volatile ValueT *ptr);
 
 template <>
-inline uint64_t sub_and_fetch(volatile uint64_t *ptr, const int& val)
+inline uint64_t dec_and_fetch(volatile uint64_t *ptr)
 {
 #if ELEVELDB_IS_SOLARIS
-    return atomic_dec_64_nv(ptr, val);
+    return atomic_dec_64_nv(ptr);
 #else
-    return __sync_sub_and_fetch(ptr, val);
+    return __sync_sub_and_fetch(ptr, 1);
 #endif
 }
 
 template <>
-inline uint32_t sub_and_fetch(volatile uint32_t *ptr, const int& val)
+inline uint32_t dec_and_fetch(volatile uint32_t *ptr)
 {
 #if ELEVELDB_IS_SOLARIS
-    return atomic_dec_32_nv(ptr, val);
+    return atomic_dec_32_nv(ptr);
 #else
-    return __sync_sub_and_fetch(ptr, val);
+    return __sync_sub_and_fetch(ptr, 1);
 #endif
 }
 
 #ifdef __APPLE__
 template <>
-inline size_t sub_and_fetch(volatile size_t *ptr, const int& val)
+inline size_t dec_and_fetch(volatile size_t *ptr)
 {
-    return __sync_sub_and_fetch(ptr, val);
+    return __sync_sub_and_fetch(ptr, 1);
 }
 #endif
 
