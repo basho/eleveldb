@@ -138,7 +138,6 @@ DbObject::DbObjectResourceCleanup(
 
     if (compare_and_swap(&db_ptr->m_CloseRequested, 0, 1))
     {
-        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug2);
 
         pthread_mutex_lock(&db_ptr->m_CloseMutex);
         // clear C++ only reference
@@ -214,8 +213,8 @@ DbObject::~DbObject()
 void
 DbObject::RefInc(bool ErlRefToo)
 {
-    if (ErlRefToo)
-        enif_keep_resource(this);
+//    if (ErlRefToo)
+//        enif_keep_resource(this);
     eleveldb::add_and_fetch(&m_ActiveCount, 1);
 
 }   // DbObject::RefInc
@@ -237,8 +236,8 @@ DbObject::RefDec(bool ErlRefToo)
     }   // if
 
     // do this second so no race on destructor versus GC
-    if (ErlRefToo)
-        enif_release_resource(this);
+//    if (ErlRefToo)
+//        enif_release_resource(this);
 
     return;
 
@@ -331,11 +330,23 @@ ItrObject::ItrObjectResourceCleanup(
 
     itr_ptr=(ItrObject *)Arg;
 
+    leveldb::gPerfCounters->Inc(leveldb::ePerfDebug2);
+
     if (compare_and_swap(&itr_ptr->m_CloseRequested, 0, 1))
     {
         leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);
 
         pthread_mutex_lock(&itr_ptr->m_CloseMutex);
+
+        // if there is an active move object, set it up to delete
+        //  (reuse_move holds a counter to this object, which will
+        //   release when move object destructs)
+        if (NULL!=itr_ptr->reuse_move)
+        {
+            itr_ptr->reuse_move->RefDec();
+            itr_ptr->reuse_move=NULL;
+        }   // if
+
         // clear C++ only reference
         itr_ptr->RefDec(false);
 
@@ -349,6 +360,8 @@ ItrObject::ItrObjectResourceCleanup(
 
     pthread_mutex_destroy(&itr_ptr->m_CloseMutex);
     pthread_cond_destroy(&itr_ptr->m_CloseCond);
+
+    leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
 
 
     return;
@@ -406,8 +419,8 @@ ItrObject::~ItrObject()
 void
 ItrObject::RefInc(bool ErlRefToo)
 {
-    if (ErlRefToo)
-        enif_keep_resource(this);
+//    if (ErlRefToo)
+//        enif_keep_resource(this);
     eleveldb::add_and_fetch(&m_ActiveCount, 1);
 
 }   // ItrObject::RefInc
@@ -429,8 +442,8 @@ ItrObject::RefDec(bool ErlRefToo)
     }   // if
 
     // do this second so no race on destructor versus GC
-    if (ErlRefToo)
-        enif_release_resource(this);
+//    if (ErlRefToo)
+//        enif_release_resource(this);
 
     return;
 

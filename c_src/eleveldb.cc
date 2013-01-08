@@ -1091,7 +1091,7 @@ async_iterator_move(
     // before we launch a background job for "next iteration", see if there is a
     //  prefetch waiting for us (SEEK always "wins" and that condition is used)
     // if (eleveldb::detail::compare_and_swap(&itr_ptr->m_handoff_atomic, 0, 1))
-    if (__sync_bool_compare_and_swap(&itr_ptr->m_handoff_atomic, 0, 1)
+    if (eleveldb::compare_and_swap(&itr_ptr->m_handoff_atomic, 0, 1)
         || eleveldb::MoveTask::NEXT != action)
     {
         // nope
@@ -1185,8 +1185,6 @@ eleveldb_close(
     eleveldb::DbObject * db_ptr;
     ERL_NIF_TERM ret_term;
 
-    leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
-
     ret_term=eleveldb::ATOM_OK;
 
     db_ptr=eleveldb::DbObject::RetrieveDbObject(env, argv[0]);
@@ -1194,7 +1192,7 @@ eleveldb_close(
     if (NULL!=db_ptr)
     {
         // set closing flag ... atomic likely unnecessary (but safer)
-        __sync_bool_compare_and_swap(&db_ptr->m_CloseRequested, 0, 1);
+        eleveldb::compare_and_swap(&db_ptr->m_CloseRequested, 0, 1);
 
         // remove reference count from the RetrieveDbObject call above
         db_ptr->RefDec();
@@ -1233,24 +1231,26 @@ eleveldb_iterator_close(
     if (NULL!=itr_ptr)
     {
         // set closing flag ... atomic likely unnecessary (but safer)
-        __sync_bool_compare_and_swap(&itr_ptr->m_CloseRequested, 0, 1);
-
-        // if there is an active move object, set it up to delete
-        //  (reuse_move holds a counter to this object, which will
-        //   release when move object destructs)
-        if (NULL!=itr_ptr->reuse_move)
+        if (eleveldb::compare_and_swap(&itr_ptr->m_CloseRequested, 0, 1))
         {
-            itr_ptr->reuse_move->RefDec();
-            itr_ptr->reuse_move=NULL;
+            // if there is an active move object, set it up to delete
+            //  (reuse_move holds a counter to this object, which will
+            //   release when move object destructs)
+            if (NULL!=itr_ptr->reuse_move)
+            {
+                itr_ptr->reuse_move->RefDec();
+                itr_ptr->reuse_move=NULL;
+            }   // if
+
+            // remove "open iterator" from reference count,
+            //  but it does NOT have a matching erlang ref.
+            // ... db_ptr no longer known valid after call
+            itr_ptr->RefDec(false);
         }   // if
 
         // remove reference count from RetrieveItrObject call above
         itr_ptr->RefDec();
 
-        // remove "open iterator" from reference count,
-        //  but it does NOT have a matching erlang ref.
-        // ... db_ptr no longer known valid after call
-        itr_ptr->RefDec(false);
         itr_ptr=NULL;
 
         ret_term=eleveldb::ATOM_OK;
