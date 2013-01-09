@@ -41,199 +41,27 @@
     #include "atoms.h"
 #endif
 
+#ifndef INCL_REFOBJECTS_H
+    #include "refobjects.h"
+#endif
+
 
 namespace eleveldb {
 
 /* Type returned from a work task: */
 typedef basho::async_nif::work_result   work_result;
 
-/**
- * Automatic lock and release of erlang reference
- */
-template <class TargetT>
-class ReferenceLock
-{
-    TargetT *t;    // assumes this won't vanish!
-
-public:
-    ReferenceLock(TargetT *_t)
-    : t(_t)
-    {
-        if(NULL != t)
-            enif_keep_resource(t);
-    }
-
-    ~ReferenceLock()
-    {
-        if (NULL!=t)
-            enif_release_resource(t);
-    }
-
-private:
- ReferenceLock();                         // no default construction
- ReferenceLock(const ReferenceLock &rhs); // no copy
- ReferenceLock & operator=(const ReferenceLock & rhs); // no assignment
-
-};  // ReferenceLock
-
-
-/**
- * Class to manage access and counting of references
- * to an erlang based reference object.  Reference counts
- * in the case can mean erlang and c++ counts simultaneously.
- */
-
-template <class TargetT>
-class ReferencePtr
-{
-    TargetT * t;
-
-public:
-    ReferencePtr()
-        : t(NULL)
-    {};
-
-    ReferencePtr(TargetT *_t)
-        : t(_t)
-    {
-        if (NULL!=t)
-            t->RefInc();
-    }
-
-    ReferencePtr(const ReferencePtr &rhs)
-    {t=rhs.t; if (NULL!=t) t->RefInc();};
-
-    ~ReferencePtr()
-    {
-        if (NULL!=t)
-            t->RefDec();
-    }
-
-    void assign(TargetT * _t) {t=_t;}; //  RefInc called by RetrieveXXObject
-
-    TargetT * get() {return(t);};
-
-    TargetT * operator->() {return(t);};
-
-private:
- ReferencePtr & operator=(const ReferencePtr & rhs); // no assignment
-
-};  // ReferencePtr
-
-
-/**
- * Per database object.  Created as erlang reference.
- *
- * Extra reference count created upon initialization, released on close.
- */
-class DbObject
-{
-public:
-    leveldb::DB* m_Db;                                   // NULL or leveldb database object
-
-    leveldb::Options * m_DbOptions;
-
-    volatile uint32_t m_CloseRequested;  // 1 once api close called, 2 once thread starts destructor, 3 destructor done
-    volatile uint32_t m_ActiveCount;     // number of active api calls this moment
-
-    // DO NOT USE CONTAINER OBJECTS
-    //  ... these must be live after destructor called
-    pthread_mutex_t m_CloseMutex;        //!< for erlang forced close
-    pthread_cond_t  m_CloseCond;         //!< for erlang forced close
-
-protected:
-    static ErlNifResourceType* m_Db_RESOURCE;
-
-public:
-    DbObject(leveldb::DB * DbPtr, leveldb::Options * Options);
-
-    virtual ~DbObject();  // needs to perform free_db
-
-    static void CreateDbObjectType(ErlNifEnv * Env);
-
-    static DbObject * CreateDbObject(leveldb::DB * Db, leveldb::Options * DbOptions);
-
-    static DbObject * RetrieveDbObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm);
-
-    static void DbObjectResourceCleanup(ErlNifEnv *Env, void * Arg);
-
-    void RefInc(bool ErlRefToo=true);
-
-    void RefDec(bool ErlRefToo=true);
-
-private:
-    DbObject();
-    DbObject(const DbObject&);              // nocopy
-    DbObject& operator=(const DbObject&);   // nocopyassign
-};  // class DbObject
-
-
-/**
- * Per Iterator object.  Created as erlang reference.
- */
-class ItrObject
-{
-public:
-    leveldb::Iterator*   itr;
-    const leveldb::Snapshot*   snapshot;
-    bool keys_only;
-
-
-    volatile uint32_t m_handoff_atomic;  //!< matthew's atomic foreground/background prefetch flag.
-    ERL_NIF_TERM itr_ref;
-    ErlNifEnv *itr_ref_env;
-    volatile class MoveTask * reuse_move;//!< iterator work object that is reused instead of lots malloc/free
-
-    ReferencePtr<DbObject> m_DbPtr;
-
-    volatile uint32_t m_CloseRequested;  // 1 once api close called, 2 once thread starts destructor, 3 destructor done
-    volatile uint32_t m_ActiveCount;     // number of active api calls this moment
-
-    // DO NOT USE CONTAINER OBJECTS
-    //  ... these must be live after destructor called
-    pthread_mutex_t m_CloseMutex;        //!< for erlang forced close
-    pthread_cond_t  m_CloseCond;         //!< for erlang forced close
-
-protected:
-    static ErlNifResourceType* m_Itr_RESOURCE;
-
-public:
-    ItrObject(DbObject *, bool);
-
-    virtual ~ItrObject(); // needs to perform free_itr
-
-    static void CreateItrObjectType(ErlNifEnv * Env);
-
-    static ItrObject * CreateItrObject(DbObject * Db, bool KeysOnly);
-
-    static ItrObject * RetrieveItrObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm,
-                                         bool ItrClosing=false);
-
-    static void ItrObjectResourceCleanup(ErlNifEnv *Env, void * Arg);
-
-    void RefInc(bool ErlRefToo=true);
-
-    void RefDec(bool ErlRefToo=true);
-
-    void ReleaseReuseMove();
-
-private:
-    ItrObject();
-    ItrObject(const ItrObject &);            // no copy
-    ItrObject & operator=(const ItrObject &); // no assignment
-};  // class ItrObject
 
 
 /**
  * Virtual base class for async NIF work items:
  */
-class WorkTask
+class WorkTask : public RefObject
 {
 public:
 
 protected:
     ReferencePtr<DbObject> m_DbPtr;             //!< access to database, and holds reference
-    volatile uint32_t ref_count;                //!< atomic count of users for auto delete
 
     ErlNifEnv      *local_env_;
     ERL_NIF_TERM   caller_ref_term;
@@ -244,7 +72,6 @@ protected:
 
     ErlNifPid local_pid;   // maintain for task lifetime (JFW)
 
-    int m_DeleteCount;
  public:
 
     WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref);
@@ -255,10 +82,6 @@ protected:
 
     virtual void prepare_recycle();
     virtual void recycle();
-
-    uint32_t RefInc();
-
-    void RefDec();
 
     virtual ErlNifEnv *local_env()         { return local_env_; }
 

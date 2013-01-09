@@ -1186,9 +1186,8 @@ eleveldb_close(
         db_ptr->RefDec();
 
         // remove "open database" from reference count,
-        //  but it does NOT have a matching erlang ref.
         // ... db_ptr no longer known valid after call
-        db_ptr->RefDec(false);
+        db_ptr->RefDec();
         db_ptr=NULL;
 
         ret_term=eleveldb::ATOM_OK;
@@ -1227,9 +1226,7 @@ eleveldb_iterator_close(
             itr_ptr->ReleaseReuseMove();
 
             // remove "open iterator" from reference count,
-            //  but it does NOT have a matching erlang ref.
-            // ... db_ptr no longer known valid after call
-            itr_ptr->RefDec(false);
+            itr_ptr->RefDec();
         }   // if
 
         // remove reference count from RetrieveItrObject call above
