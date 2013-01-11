@@ -97,6 +97,13 @@ public:
 
     virtual uint32_t RefDec();
 
+    // the following will sometimes be called AFTER the
+    //  destructor ... in which case the vtable is not valid
+    static bool InitiateCloseRequest(ErlRefObject * Object);
+
+    static void AwaitCloseAndDestructor(ErlRefObject * Object);
+
+
 private:
     ErlRefObject(const ErlRefObject&);              // nocopy
     ErlRefObject& operator=(const ErlRefObject&);   // nocopyassign
@@ -134,7 +141,17 @@ public:
             t->RefDec();
     }
 
-    void assign(TargetT * _t) {t=_t;}; //  RefInc called by RetrieveXXObject
+    void assign(TargetT * _t)
+    {
+        if (_t!=t)
+        {
+            if (NULL!=t)
+                t->RefDec();
+            t=_t;
+            if (NULL!=t)
+                t->RefInc();
+        }   // if
+    };
 
     TargetT * get() {return(t);};
 
@@ -144,6 +161,47 @@ private:
  ReferencePtr & operator=(const ReferencePtr & rhs); // no assignment
 
 };  // ReferencePtr
+
+
+/**
+ * Pointer to reference counting object that contains pointer
+ * to user's object.  Like std::shared_ptr but thread safe.
+ * Wrapper assumed to support RefInc(), RefDec(), and get()
+ */
+
+template <typename WrapperT, typename TargetT>
+class RefWrapperPtr
+{
+    WrapperT * m_Wrapper;
+
+public:
+    RefWrapperPtr()
+        : m_Wrapper(NULL)
+    {};
+
+    RefWrapperPtr(WrapperT * Wrapper)
+        : m_Wrapper(Wrapper)
+    {
+        if (NULL!=m_Wrapper)
+            m_Wrapper->RefInc();
+    }
+
+    ~RefWrapperPtr()
+    {
+        if (NULL!=m_Wrapper)
+            m_Wrapper->RefDec();
+    }
+
+
+    TargetT * get() {return((NULL!=m_Wrapper ? m_Wrapper.get() : NULL));};
+
+    TargetT * operator->() {return(get());};
+
+private:
+ RefWrapperPtr & operator=(const RefWrapperPtr & rhs); // no assignment
+ RefWrapperPtr(const RefWrapperPtr &rhs);              // no copy
+
+};  // RefWrapperPtr
 
 
 /**
@@ -165,7 +223,7 @@ protected:
 public:
     DbObject(leveldb::DB * DbPtr, leveldb::Options * Options);
 
-    virtual ~DbObject();  // needs to perform free_db
+    virtual ~DbObject();
 
     static void CreateDbObjectType(ErlNifEnv * Env);
 
@@ -183,19 +241,108 @@ private:
 
 
 /**
+ * A self deleting wrapper to contain leveldb snapshot pointer.
+ *   Needed because multiple LevelIteratorWrappers could be using
+ *   it ... and finishing at different times.
+ */
+
+class LevelSnapshotWrapper : public RefObject
+{
+public:
+    ReferencePtr<DbObject> m_DbPtr;  //!< need to keep db open for delete of this object
+    const leveldb::Snapshot * m_Snapshot;
+
+    // this is an odd place to put this info, but it
+    //  happens to have the exact same lifespan
+    ERL_NIF_TERM itr_ref;
+    ErlNifEnv *itr_ref_env;
+
+    LevelSnapshotWrapper(DbObject * DbPtr, const leveldb::Snapshot * Snapshot)
+        : m_DbPtr(DbPtr), m_Snapshot(Snapshot), itr_ref_env(NULL) {};
+
+    virtual ~LevelSnapshotWrapper()
+    {
+        if (NULL!=itr_ref_env)
+            enif_free_env(itr_ref_env);
+
+        if (NULL!=m_Snapshot)
+        {
+            // leveldb performs actual "delete" call on m_Shapshot's pointer
+            m_DbPtr->m_Db->ReleaseSnapshot(m_Snapshot);
+            m_Snapshot=NULL;
+        }   // if
+    }   // ~LevelSnapshotWrapper
+
+    const leveldb::Snapshot * get() {return(m_Snapshot);};
+    const leveldb::Snapshot * operator->() {return(m_Snapshot);};
+
+private:
+    LevelSnapshotWrapper(const LevelSnapshotWrapper &);            // no copy
+    LevelSnapshotWrapper& operator=(const LevelSnapshotWrapper &); // no assignment
+
+};  // LevelSnapshotWrapper
+
+
+
+/**
+ * A self deleting wrapper to contain leveldb iterator.
+ *   Used when an ItrObject needs to skip around and might
+ *   have a background MoveItem performing a prefetch on existing
+ *   iterator.
+ */
+
+class LevelIteratorWrapper : public RefObject
+{
+public:
+    ReferencePtr<DbObject> m_DbPtr;           //!< need to keep db open for delete of this object
+    ReferencePtr<LevelSnapshotWrapper> m_Snap;//!< keep snapshot active while this object is
+    leveldb::Iterator * m_Iterator;
+    volatile uint32_t m_HandoffAtomic;        //!< matthew's atomic foreground/background prefetch flag.
+    bool m_KeysOnly;                          //!< only return key values
+
+    LevelIteratorWrapper(DbObject * DbPtr, LevelSnapshotWrapper * Snapshot,
+                         leveldb::Iterator * Iterator, bool KeysOnly)
+        : m_DbPtr(DbPtr), m_Snap(Snapshot), m_Iterator(Iterator),
+        m_HandoffAtomic(0), m_KeysOnly(KeysOnly)
+    {};
+
+    virtual ~LevelIteratorWrapper()
+    {
+        if (NULL!=m_Iterator)
+        {
+            delete m_Iterator;
+            m_Iterator=NULL;
+        }   // if
+    }   // ~LevelIteratorWrapper
+
+    leveldb::Iterator * get() {return(m_Iterator);};
+    leveldb::Iterator * operator->() {return(m_Iterator);};
+
+    bool Valid() {return(m_Iterator->Valid());};
+    leveldb::Slice key() {return(m_Iterator->key());};
+    leveldb::Slice value() {return(m_Iterator->value());};
+
+private:
+    LevelIteratorWrapper(const LevelIteratorWrapper &);            // no copy
+    LevelIteratorWrapper& operator=(const LevelIteratorWrapper &); // no assignment
+
+
+};  // LevelIteratorWrapper
+
+
+
+/**
  * Per Iterator object.  Created as erlang reference.
  */
 class ItrObject : public ErlRefObject
 {
 public:
-    leveldb::Iterator*   itr;
-    const leveldb::Snapshot*   snapshot;
+    ReferencePtr<LevelIteratorWrapper> m_Iter;
+    ReferencePtr<LevelSnapshotWrapper> m_Snapshot;
+
     bool keys_only;
+    leveldb::ReadOptions * m_ReadOptions;
 
-
-    volatile uint32_t m_handoff_atomic;  //!< matthew's atomic foreground/background prefetch flag.
-    ERL_NIF_TERM itr_ref;
-    ErlNifEnv *itr_ref_env;
     volatile class MoveTask * reuse_move;//!< iterator work object that is reused instead of lots malloc/free
 
     ReferencePtr<DbObject> m_DbPtr;
@@ -204,20 +351,20 @@ protected:
     static ErlNifResourceType* m_Itr_RESOURCE;
 
 public:
-    ItrObject(DbObject *, bool);
+    ItrObject(DbObject *, bool, leveldb::ReadOptions *);
 
     virtual ~ItrObject(); // needs to perform free_itr
 
     static void CreateItrObjectType(ErlNifEnv * Env);
 
-    static ItrObject * CreateItrObject(DbObject * Db, bool KeysOnly);
+    static ItrObject * CreateItrObject(DbObject * Db, bool KeysOnly, leveldb::ReadOptions * Options);
 
     static ItrObject * RetrieveItrObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm,
                                          bool ItrClosing=false);
 
     static void ItrObjectResourceCleanup(ErlNifEnv *Env, void * Arg);
 
-    void ReleaseReuseMove();
+    bool ReleaseReuseMove();
 
 private:
     ItrObject();

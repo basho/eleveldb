@@ -180,8 +180,7 @@ OpenTask::operator()()
 work_result
 MoveTask::operator()()
 {
-
-    leveldb::Iterator* itr = m_ItrPtr->itr;
+    leveldb::Iterator* itr = m_ItrWrap->get();
 
     if(NULL == itr)
         return work_result(local_env(), ATOM_ERROR, ATOM_ITERATOR_CLOSED);
@@ -233,7 +232,7 @@ MoveTask::operator()()
 
     // who got back first, us or the erlang loop
 //    if (eleveldb::detail::compare_and_swap(&m_ItrPtr->m_handoff_atomic, 0, 1))
-    if (compare_and_swap(&m_ItrPtr->m_handoff_atomic, 0, 1))
+    if (compare_and_swap(&m_ItrWrap->m_HandoffAtomic, 0, 1))
     {
         // this is prefetch of next iteration.  It returned faster than actual
         //  request to retrieve it.  Stop and wait for erlang to catch up.
@@ -242,7 +241,7 @@ MoveTask::operator()()
     else
     {
         // setup next race for the response
-        m_ItrPtr->m_handoff_atomic=0;
+        m_ItrWrap->m_HandoffAtomic=0;
 
         if (NEXT==action || SEEK==action || FIRST==action)
         {
@@ -251,7 +250,7 @@ MoveTask::operator()()
         }   // if
 
         // erlang is waiting, send message
-        if(m_ItrPtr->keys_only)
+        if(m_ItrWrap->m_KeysOnly)
             return work_result(local_env(), ATOM_OK, slice_to_binary(local_env(), itr->key()));
 
         return work_result(local_env(), ATOM_OK,
@@ -271,7 +270,7 @@ MoveTask::local_env()
 
     if (!terms_set)
     {
-        caller_ref_term = enif_make_copy(local_env_, m_ItrPtr->itr_ref);
+        caller_ref_term = enif_make_copy(local_env_, m_ItrWrap->m_Snap->itr_ref);
         caller_pid_term = enif_make_pid(local_env_, &local_pid);
         terms_set=true;
     }   // if

@@ -242,28 +242,37 @@ public:
 
     virtual ~IterTask()
     {
+        // options should be NULL at this point
         delete options;
     }
 
     virtual work_result operator()()
     {
         ItrObject * itr_ptr;
+        const leveldb::Snapshot * snapshot;
+        leveldb::Iterator * iterator;
 
-        itr_ptr=ItrObject::CreateItrObject(m_DbPtr.get(), keys_only);
+        // NOTE: transfering ownership of options to ItrObject
+        itr_ptr=ItrObject::CreateItrObject(m_DbPtr.get(), keys_only, options);
 
-        itr_ptr->snapshot = m_DbPtr->m_Db->GetSnapshot();
-        options->snapshot = itr_ptr->snapshot;
-
-        itr_ptr->itr = m_DbPtr->m_Db->NewIterator(*options);
+        snapshot = m_DbPtr->m_Db->GetSnapshot();
+        itr_ptr->m_Snapshot.assign(new LevelSnapshotWrapper(m_DbPtr.get(), snapshot));
+        options->snapshot = snapshot;
 
         // Copy caller_ref to reuse in future iterator_move calls
-        itr_ptr->itr_ref_env = enif_alloc_env();
-        itr_ptr->itr_ref = enif_make_copy(itr_ptr->itr_ref_env, caller_ref());
+        itr_ptr->m_Snapshot->itr_ref_env = enif_alloc_env();
+        itr_ptr->m_Snapshot->itr_ref = enif_make_copy(itr_ptr->m_Snapshot->itr_ref_env,
+                                                      caller_ref());
+
+        iterator = m_DbPtr->m_Db->NewIterator(*options);
+        itr_ptr->m_Iter.assign(new LevelIteratorWrapper(m_DbPtr.get(), itr_ptr->m_Snapshot.get(),
+                                                        iterator, keys_only));
 
         ERL_NIF_TERM result = enif_make_resource(local_env(), itr_ptr);
 
         // release reference created during CreateItrObject()
         enif_release_resource(itr_ptr);
+        options=NULL;  // ptr ownership given to ItrObject
 
         return work_result(local_env(), ATOM_OK, result);
     }   // operator()
@@ -277,18 +286,19 @@ public:
     typedef enum { FIRST, LAST, NEXT, PREV, SEEK } action_t;
 
 protected:
-    ReferencePtr<ItrObject> m_ItrPtr;             //!< access to database, and holds reference
+    ReferencePtr<LevelIteratorWrapper> m_ItrWrap;             //!< access to database, and holds reference
 
 public:
     action_t                                       action;
     std::string                                 seek_target;
 
 public:
+
     // No seek target:
     MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
-             ItrObject *_itr_handle, action_t& _action)
+             LevelIteratorWrapper * IterWrap, action_t& _action)
         : WorkTask(NULL, _caller_ref),
-        m_ItrPtr(_itr_handle), action(_action)
+        m_ItrWrap(IterWrap), action(_action)
     {
         // special case construction
         local_env_=NULL;
@@ -297,17 +307,16 @@ public:
 
     // With seek target:
     MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
-             ItrObject *_itr_handle, action_t& _action,
+             LevelIteratorWrapper * IterWrap, action_t& _action,
              std::string& _seek_target)
         : WorkTask(NULL, _caller_ref),
-        m_ItrPtr(_itr_handle), action(_action),
+        m_ItrWrap(IterWrap), action(_action),
         seek_target(_seek_target)
         {
             // special case construction
             local_env_=NULL;
             enif_self(_caller_env, &local_pid);
         }
-
     virtual ~MoveTask() {};
 
     virtual work_result operator()();

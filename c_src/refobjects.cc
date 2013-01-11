@@ -99,9 +99,67 @@ ErlRefObject::ErlRefObject()
 ErlRefObject::~ErlRefObject()
 {
 
+    pthread_mutex_lock(&m_CloseMutex);
+    m_CloseRequested=3;
+    pthread_cond_broadcast(&m_CloseCond);
+    pthread_mutex_unlock(&m_CloseMutex);
+
     // DO NOT DESTROY m_CloseMutex or m_CloseCond here
 
 }   // ErlRefObject::~ErlRefObject
+
+
+bool
+ErlRefObject::InitiateCloseRequest(
+    ErlRefObject * Object)
+{
+    bool ret_flag;
+
+    ret_flag=false;
+
+    // special handling since destructor may have been called
+    if (NULL!=Object && 0==Object->m_CloseRequested)
+        ret_flag=compare_and_swap(&Object->m_CloseRequested, 0, 1);
+
+    return(ret_flag);
+
+}   // ErlRefObject::InitiateCloseRequest
+
+
+void
+ErlRefObject::AwaitCloseAndDestructor(
+    ErlRefObject * Object)
+{
+    // NOTE:  it is possible, actually likely, that this
+    //        routine is called AFTER the destructor is called
+    //        Don't panic.
+
+    if (NULL!=Object)
+    {
+        // quick test if any work pending
+        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug2);
+
+        if (3!=Object->m_CloseRequested)
+        {
+            pthread_mutex_lock(&Object->m_CloseMutex);
+
+            // retest after mutex helc
+            if (3!=Object->m_CloseRequested)
+            {
+                pthread_cond_wait(&Object->m_CloseCond, &Object->m_CloseMutex);
+            }   // if
+            pthread_mutex_unlock(&Object->m_CloseMutex);
+        }   // if
+        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);
+
+        pthread_mutex_destroy(&Object->m_CloseMutex);
+        pthread_cond_destroy(&Object->m_CloseCond);
+        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
+    }   // if
+
+    return;
+
+}   // ErlRefObject::AwaitCloseAndDestructor
 
 
 uint32_t
@@ -183,14 +241,10 @@ DbObject::RetrieveDbObject(
 
     if (enif_get_resource(Env, DbTerm, m_Db_RESOURCE, (void **)&ret_ptr))
     {
-        // increment erlang normal GC count, then our "fast" count
-        ret_ptr->RefInc();
-
         // has close been requested?
         if (ret_ptr->m_CloseRequested)
         {
             // object already closing
-            ret_ptr->RefDec();
             ret_ptr=NULL;
         }   // else
     }   // if
@@ -209,27 +263,14 @@ DbObject::DbObjectResourceCleanup(
 
     db_ptr=(DbObject *)Arg;
 
-    if (compare_and_swap(&db_ptr->m_CloseRequested, 0, 1))
+    // YES, the destructor may already have been called
+    if (InitiateCloseRequest(db_ptr))
     {
         db_ptr->RefDec();
     }   // if
 
-    // has object completed activities AND destructor called
-    if (3!=db_ptr->m_CloseRequested)
-    {
-        pthread_mutex_lock(&db_ptr->m_CloseMutex);
-        if (3!=db_ptr->m_CloseRequested)
-        {
-            pthread_cond_wait(&db_ptr->m_CloseCond, &db_ptr->m_CloseMutex);
-        }   // if
-        pthread_mutex_unlock(&db_ptr->m_CloseMutex);
-    }   // if
-
-    // need code for if process kills db (db references) while other threads still running
-    //  extra reference for erlang, extra user count for db ... have code here stop on condition
-    //  delete condition here
-    pthread_mutex_destroy(&db_ptr->m_CloseMutex);
-    pthread_cond_destroy(&db_ptr->m_CloseCond);
+    // YES, the destructor may already have been called
+    AwaitCloseAndDestructor(db_ptr);
 
     return;
 
@@ -265,11 +306,6 @@ DbObject::~DbObject()
         m_DbOptions = NULL;
     }   // if
 
-    pthread_mutex_lock(&m_CloseMutex);
-    m_CloseRequested=3;
-    pthread_cond_broadcast(&m_CloseCond);
-    pthread_mutex_unlock(&m_CloseMutex);
-
     // do not clean up m_CloseMutex and m_CloseCond
 
     return;
@@ -303,7 +339,8 @@ ItrObject::CreateItrObjectType(
 ItrObject *
 ItrObject::CreateItrObject(
     DbObject * DbPtr,
-    bool KeysOnly)
+    bool KeysOnly,
+    leveldb::ReadOptions * Options)
 {
     ItrObject * ret_ptr;
     void * alloc_ptr;
@@ -311,7 +348,7 @@ ItrObject::CreateItrObject(
     // the alloc call initializes the reference count to "one"
     alloc_ptr=enif_alloc_resource(m_Itr_RESOURCE, sizeof(ItrObject));
 
-    ret_ptr=new (alloc_ptr) ItrObject(DbPtr, KeysOnly);
+    ret_ptr=new (alloc_ptr) ItrObject(DbPtr, KeysOnly, Options);
 
     // manual reference increase to keep active until "close" called
     //  only inc local counter
@@ -335,15 +372,11 @@ ItrObject::RetrieveItrObject(
 
     if (enif_get_resource(Env, ItrTerm, m_Itr_RESOURCE, (void **)&ret_ptr))
     {
-        // increment erlang normal GC count, then our "fast" count
-        ret_ptr->RefInc();
-
         // has close been requested?
         if (ret_ptr->m_CloseRequested
             || (!ItrClosing && ret_ptr->m_DbPtr->m_CloseRequested))
         {
             // object already closing
-            ret_ptr->RefDec();
             ret_ptr=NULL;
         }   // else
     }   // if
@@ -362,38 +395,18 @@ ItrObject::ItrObjectResourceCleanup(
 
     itr_ptr=(ItrObject *)Arg;
 
-    leveldb::gPerfCounters->Inc(leveldb::ePerfDebug2);
-
-    if (compare_and_swap(&itr_ptr->m_CloseRequested, 0, 1))
+    if (InitiateCloseRequest(itr_ptr))
     {
-        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);
-
         // if there is an active move object, set it up to delete
         //  (reuse_move holds a counter to this object, which will
         //   release when move object destructs)
         itr_ptr->ReleaseReuseMove();
 
         itr_ptr->RefDec();
-
     }   // if
 
-    // quick test if any work pending
-    if (3!=itr_ptr->m_CloseRequested)
-    {
-        pthread_mutex_lock(&itr_ptr->m_CloseMutex);
-
-        // retest after mutex helc
-        if (3!=itr_ptr->m_CloseRequested)
-        {
-            pthread_cond_wait(&itr_ptr->m_CloseCond, &itr_ptr->m_CloseMutex);
-        }   // if
-        pthread_mutex_unlock(&itr_ptr->m_CloseMutex);
-    }   // if
-
-    pthread_mutex_destroy(&itr_ptr->m_CloseMutex);
-    pthread_cond_destroy(&itr_ptr->m_CloseCond);
-
-    leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
+    // YES this can be called after itr_ptr destructor.  Don't panic.
+    AwaitCloseAndDestructor(itr_ptr);
 
     return;
 
@@ -402,33 +415,20 @@ ItrObject::ItrObjectResourceCleanup(
 
 ItrObject::ItrObject(
     DbObject * DbPtr,
-    bool KeysOnly)
-    : itr(NULL), snapshot(NULL), keys_only(KeysOnly),
-      m_handoff_atomic(0), itr_ref_env(NULL), reuse_move(NULL),
-      m_DbPtr(DbPtr)
+    bool KeysOnly,
+    leveldb::ReadOptions * Options)
+    : keys_only(KeysOnly), m_ReadOptions(Options), reuse_move(NULL), m_DbPtr(DbPtr)
 {
 }   // ItrObject::ItrObject
 
 
 ItrObject::~ItrObject()
 {
-    delete itr;
-    itr=NULL;
-
-    if (NULL!=snapshot)
-        m_DbPtr->m_Db->ReleaseSnapshot(snapshot);
-
-    if (NULL!=itr_ref_env)
-        enif_free_env(itr_ref_env);
-
     // not likely to have active reuse item since it would
     //  block destruction
     ReleaseReuseMove();
 
-    pthread_mutex_lock(&m_CloseMutex);
-    m_CloseRequested=3;
-    pthread_cond_broadcast(&m_CloseCond);
-    pthread_mutex_unlock(&m_CloseMutex);
+    delete m_ReadOptions;
 
     // do not clean up m_CloseMutex and m_CloseCond
 
@@ -437,7 +437,7 @@ ItrObject::~ItrObject()
 }   // ItrObject::~ItrObject
 
 
-void
+bool
 ItrObject::ReleaseReuseMove()
 {
     MoveTask * ptr;
@@ -451,7 +451,7 @@ ItrObject::ReleaseReuseMove()
         ptr->RefDec();
     }   // if
 
-    return;
+    return(NULL!=ptr);
 
 }   // ItrObject::ReleaseReuseMove()
 

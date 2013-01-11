@@ -773,85 +773,6 @@ ERL_NIF_TERM write_batch_item(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::WriteB
     return item;
 }
 
-#if 0
-// Free dynamic elements of iterator - acquire lock before calling
-static void free_itr(eleveldb_itr_handle* itr_handle)
-{
-    if (itr_handle->itr)
-    {
-        delete itr_handle->itr;
-        itr_handle->itr = 0;
-        itr_handle->db_handle->db->ReleaseSnapshot(itr_handle->snapshot);
-    }   // if
-
-    enif_free_env(itr_handle->itr_ref_env);
-
-    ReleaseReuseMove();
-}
-
-// Free dynamic elements of database - acquire lock before calling
-static bool free_db(ErlNifEnv* env, eleveldb_db_handle* db_handle)
-{
-    if (0 == db_handle)
-     return false;
-
-    bool result = true;
-
-    // Tidy up any pending jobs:
-    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-    if (false == priv.thread_pool.complete_jobs_for(db_handle))
-     result = false;
-
-    if (db_handle->db_lock)
-     enif_mutex_lock(db_handle->db_lock);
-
-    if (db_handle->db)
-    {
-        // shutdown all the iterators - grab the lock as
-        // another thread could still be in eleveldb:fold
-        // which will get {error, einval} returned next time
-        for (std::set<eleveldb_itr_handle*>::iterator iters_it = db_handle->iters->begin();
-             iters_it != db_handle->iters->end();
-             ++iters_it)
-        {
-            eleveldb_itr_handle* itr_handle = *iters_it;
-            MutexLock l(itr_handle->itr_lock);
-            free_itr(*iters_it);
-        }
-
-        // close the db
-        delete db_handle->db;
-        db_handle->db = NULL;
-
-        // delete the iters
-        delete db_handle->iters;
-        db_handle->iters = NULL;
-    }
-
-    if (db_handle->options)
-    {
-        // Release any cache we explicitly allocated when setting up options
-        if (db_handle->options->block_cache)
-         delete db_handle->options->block_cache, db_handle->options->block_cache = 0;
-
-        // Clean up any filter policies
-        if (db_handle->options->filter_policy)
-         delete db_handle->options->filter_policy, db_handle->options->filter_policy = 0;
-
-        delete db_handle->options;
-        db_handle->options = NULL;
-     }
-
-    if (db_handle->db_lock)
-     {
-        enif_mutex_unlock(db_handle->db_lock);
-        enif_mutex_destroy(db_handle->db_lock), db_handle->db_lock = 0;
-     }
-
-    return result;
-}
-#endif
 
 
 namespace eleveldb {
@@ -1066,10 +987,8 @@ async_iterator_move(
     if(NULL==itr_ptr.get())
         return enif_make_badarg(env);
 
-
-
     // Reuse ref from iterator creation
-    const ERL_NIF_TERM& caller_ref = itr_ptr->itr_ref;
+    const ERL_NIF_TERM& caller_ref = itr_ptr->m_Snapshot->itr_ref;
 
     /* We can be invoked with two different arities from Erlang. If our "action_atom" parameter is not
        in fact an atom, then it is actually a seek target. Let's find out which we are: */
@@ -1084,34 +1003,63 @@ async_iterator_move(
         if(ATOM_PREV == action_or_target)   action = eleveldb::MoveTask::PREV;
     }   // if
 
-    // before we launch a background job for "next iteration", see if there is a
-    //  prefetch waiting for us (SEEK always "wins" and that condition is used)
-    // if (eleveldb::detail::compare_and_swap(&itr_ptr->m_handoff_atomic, 0, 1))
-    if (eleveldb::compare_and_swap(&itr_ptr->m_handoff_atomic, 0, 1)
-        || eleveldb::MoveTask::NEXT != action)
+
+    //
+    // Three situations:
+    //  - not a NEXT call
+    //  - NEXT call and no prefetch waiting
+    //  - NEXT call and prefetch is waiting
+    if (eleveldb::MoveTask::NEXT != action)
     {
-        // nope
-        ret_term = enif_make_copy(env, itr_ptr->itr_ref);
+        // is a prefetch potentially in play (cut it loose and its Iterator)
+        if (itr_ptr->ReleaseReuseMove())
+        {
+            leveldb::Iterator * iterator;
+
+            // NewIterator is fast, background not needed
+            iterator = itr_ptr->m_DbPtr->m_Db->NewIterator(*itr_ptr->m_ReadOptions);
+            itr_ptr->m_Iter.assign(new LevelIteratorWrapper(itr_ptr->m_DbPtr.get(), itr_ptr->m_Snapshot.get(),
+                                                        iterator, itr_ptr->keys_only));
+        }   // if
+
+        submit_new_request=true;
+        ret_term = enif_make_copy(env, itr_ptr->m_Snapshot->itr_ref);
+
+        // force reply to be a message
+        itr_ptr->m_Iter->m_HandoffAtomic=1;
+    }   // if
+
+    // before we launch a background job for "next iteration", see if there is a
+    //  prefetch waiting for us
+    else if (eleveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
+    {
+        // nope, no prefetch ... await a message to erlang queue
+        ret_term = enif_make_copy(env, itr_ptr->m_Snapshot->itr_ref);
 
         leveldb::gPerfCounters->Inc(leveldb::ePerfDebug1);
-        submit_new_request=(eleveldb::MoveTask::NEXT != action);
-    }
+        submit_new_request=false;
+    }   // else if
     else
     {
         // why yes there is.  copy the key/value info into a return tuple before
         //  we launch the iterator for "next" again
-        if(!itr_ptr->itr->Valid())
+        if(!itr_ptr->m_Iter->Valid())
             ret_term=enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
-        else if (itr_ptr->keys_only)
-            ret_term=enif_make_tuple2(env, ATOM_OK, slice_to_binary(env, itr_ptr->itr->key()));
+        else if (itr_ptr->m_Iter->m_KeysOnly)
+            ret_term=enif_make_tuple2(env, ATOM_OK, slice_to_binary(env, itr_ptr->m_Iter->key()));
         else
             ret_term=enif_make_tuple3(env, ATOM_OK,
-                                      slice_to_binary(env, itr_ptr->itr->key()),
-                                      slice_to_binary(env, itr_ptr->itr->value()));
+                                      slice_to_binary(env, itr_ptr->m_Iter->key()),
+                                      slice_to_binary(env, itr_ptr->m_Iter->value()));
 
         // reset for next race
-        itr_ptr->m_handoff_atomic=0;
+        itr_ptr->m_Iter->m_HandoffAtomic=0;
+
+        // old MoveItem could still be active on its thread, cannot
+        //  reuse ... but the current Iterator is good
+        itr_ptr->ReleaseReuseMove();
+
         submit_new_request=true;
     }   // else
 
@@ -1121,12 +1069,8 @@ async_iterator_move(
     {
         eleveldb::MoveTask * move_item;
 
-        // old item could still be active on its thread, cannot
-        //  reuse
-        itr_ptr->ReleaseReuseMove();
-
         move_item = new eleveldb::MoveTask(env, caller_ref,
-                                           itr_ptr.get(), action);
+                                           itr_ptr->m_Iter.get(), action);
 
         // prevent deletes during worker loop
         move_item->RefInc();
@@ -1180,15 +1124,13 @@ eleveldb_close(
     if (NULL!=db_ptr)
     {
         // set closing flag ... atomic likely unnecessary (but safer)
-        eleveldb::compare_and_swap(&db_ptr->m_CloseRequested, 0, 1);
-
-        // remove reference count from the RetrieveDbObject call above
-        db_ptr->RefDec();
-
-        // remove "open database" from reference count,
-        // ... db_ptr no longer known valid after call
-        db_ptr->RefDec();
-        db_ptr=NULL;
+        if (eleveldb::ErlRefObject::InitiateCloseRequest(db_ptr))
+        {
+            // remove "open database" from reference count,
+            // ... db_ptr no longer known valid after call
+            db_ptr->RefDec();
+            db_ptr=NULL;
+        }   // if
 
         ret_term=eleveldb::ATOM_OK;
     }   // if
@@ -1217,8 +1159,9 @@ eleveldb_iterator_close(
 
     if (NULL!=itr_ptr)
     {
+#if 0
         // set closing flag ... atomic likely unnecessary (but safer)
-        if (eleveldb::compare_and_swap(&itr_ptr->m_CloseRequested, 0, 1))
+        if (eleveldb::ErlRefObject::InitiateCloseRequest(itr_ptr))
         {
             // if there is an active move object, set it up to delete
             //  (reuse_move holds a counter to this object, which will
@@ -1228,10 +1171,7 @@ eleveldb_iterator_close(
             // remove "open iterator" from reference count,
             itr_ptr->RefDec();
         }   // if
-
-        // remove reference count from RetrieveItrObject call above
-        itr_ptr->RefDec();
-
+#endif
         itr_ptr=NULL;
 
         ret_term=eleveldb::ATOM_OK;
