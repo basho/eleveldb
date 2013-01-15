@@ -27,7 +27,7 @@
 
 #include "leveldb/db.h"
 #include "leveldb/write_batch.h"
-
+#include "leveldb/perf_count.h"
 
 #ifndef INCL_THREADING_H
     #include "threading.h"
@@ -164,47 +164,6 @@ private:
 
 
 /**
- * Pointer to reference counting object that contains pointer
- * to user's object.  Like std::shared_ptr but thread safe.
- * Wrapper assumed to support RefInc(), RefDec(), and get()
- */
-
-template <typename WrapperT, typename TargetT>
-class RefWrapperPtr
-{
-    WrapperT * m_Wrapper;
-
-public:
-    RefWrapperPtr()
-        : m_Wrapper(NULL)
-    {};
-
-    RefWrapperPtr(WrapperT * Wrapper)
-        : m_Wrapper(Wrapper)
-    {
-        if (NULL!=m_Wrapper)
-            m_Wrapper->RefInc();
-    }
-
-    ~RefWrapperPtr()
-    {
-        if (NULL!=m_Wrapper)
-            m_Wrapper->RefDec();
-    }
-
-
-    TargetT * get() {return((NULL!=m_Wrapper ? m_Wrapper.get() : NULL));};
-
-    TargetT * operator->() {return(get());};
-
-private:
- RefWrapperPtr & operator=(const RefWrapperPtr & rhs); // no assignment
- RefWrapperPtr(const RefWrapperPtr &rhs);              // no copy
-
-};  // RefWrapperPtr
-
-
-/**
  * Per database object.  Created as erlang reference.
  *
  * Extra reference count created upon initialization, released on close.
@@ -258,7 +217,9 @@ public:
     ErlNifEnv *itr_ref_env;
 
     LevelSnapshotWrapper(DbObject * DbPtr, const leveldb::Snapshot * Snapshot)
-        : m_DbPtr(DbPtr), m_Snapshot(Snapshot), itr_ref_env(NULL) {};
+        : m_DbPtr(DbPtr), m_Snapshot(Snapshot), itr_ref_env(NULL)
+    {
+    };
 
     virtual ~LevelSnapshotWrapper()
     {
@@ -304,7 +265,9 @@ public:
                          leveldb::Iterator * Iterator, bool KeysOnly)
         : m_DbPtr(DbPtr), m_Snap(Snapshot), m_Iterator(Iterator),
         m_HandoffAtomic(0), m_KeysOnly(KeysOnly)
-    {};
+    {
+        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);
+    };
 
     virtual ~LevelIteratorWrapper()
     {
@@ -313,6 +276,7 @@ public:
             delete m_Iterator;
             m_Iterator=NULL;
         }   // if
+        leveldb::gPerfCounters->Dec(leveldb::ePerfDebug3);
     }   // ~LevelIteratorWrapper
 
     leveldb::Iterator * get() {return(m_Iterator);};

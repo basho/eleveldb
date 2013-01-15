@@ -33,7 +33,6 @@
 
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
-#include "leveldb/perf_count.h"
 
 
 namespace eleveldb {
@@ -45,11 +44,13 @@ namespace eleveldb {
 RefObject::RefObject()
     : m_RefCount(0)
 {
+        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
 }   // RefObject::RefObject
 
 
 RefObject::~RefObject()
 {
+    leveldb::gPerfCounters->Dec(leveldb::ePerfDebug4);
 }   // RefObject::~RefObject
 
 
@@ -137,8 +138,6 @@ ErlRefObject::AwaitCloseAndDestructor(
     if (NULL!=Object)
     {
         // quick test if any work pending
-        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug2);
-
         if (3!=Object->m_CloseRequested)
         {
             pthread_mutex_lock(&Object->m_CloseMutex);
@@ -150,11 +149,9 @@ ErlRefObject::AwaitCloseAndDestructor(
             }   // if
             pthread_mutex_unlock(&Object->m_CloseMutex);
         }   // if
-        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);
 
         pthread_mutex_destroy(&Object->m_CloseMutex);
         pthread_cond_destroy(&Object->m_CloseCond);
-        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
     }   // if
 
     return;
@@ -397,10 +394,13 @@ ItrObject::ItrObjectResourceCleanup(
 
     if (InitiateCloseRequest(itr_ptr))
     {
+        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug2);
         // if there is an active move object, set it up to delete
         //  (reuse_move holds a counter to this object, which will
         //   release when move object destructs)
         itr_ptr->ReleaseReuseMove();
+        //itr_ptr->m_Iter.assign(NULL);
+        //itr_ptr->m_Snapshot.assign(NULL);
 
         itr_ptr->RefDec();
     }   // if

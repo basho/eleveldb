@@ -236,7 +236,6 @@ MoveTask::operator()()
     {
         // this is prefetch of next iteration.  It returned faster than actual
         //  request to retrieve it.  Stop and wait for erlang to catch up.
-        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug0);
     }   // if
     else
     {

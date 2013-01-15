@@ -933,6 +933,8 @@ async_iterator(
     const ERL_NIF_TERM& dbh_ref     = argv[1];
     const ERL_NIF_TERM& options_ref = argv[2];
 
+    leveldb::gPerfCounters->Inc(leveldb::ePerfDebug0);
+
     const bool keys_only = ((argc == 4) && (argv[3] == ATOM_KEYS_ONLY));
 
     ReferencePtr<DbObject> db_ptr;
@@ -1036,7 +1038,6 @@ async_iterator_move(
         // nope, no prefetch ... await a message to erlang queue
         ret_term = enif_make_copy(env, itr_ptr->m_Snapshot->itr_ref);
 
-        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug1);
         submit_new_request=false;
     }   // else if
     else
@@ -1152,6 +1153,7 @@ eleveldb_iterator_close(
 {
     eleveldb::ItrObject * itr_ptr;
     ERL_NIF_TERM ret_term;
+    leveldb::gPerfCounters->Dec(leveldb::ePerfDebug0);
 
     ret_term=eleveldb::ATOM_OK;
 
@@ -1159,19 +1161,21 @@ eleveldb_iterator_close(
 
     if (NULL!=itr_ptr)
     {
-#if 0
         // set closing flag ... atomic likely unnecessary (but safer)
         if (eleveldb::ErlRefObject::InitiateCloseRequest(itr_ptr))
         {
+    leveldb::gPerfCounters->Inc(leveldb::ePerfDebug1);
             // if there is an active move object, set it up to delete
             //  (reuse_move holds a counter to this object, which will
             //   release when move object destructs)
             itr_ptr->ReleaseReuseMove();
+            //itr_ptr->m_Iter.assign(NULL);
+            //itr_ptr->m_Snapshot.assign(NULL);
 
             // remove "open iterator" from reference count,
             itr_ptr->RefDec();
         }   // if
-#endif
+
         itr_ptr=NULL;
 
         ret_term=eleveldb::ATOM_OK;
