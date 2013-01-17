@@ -266,7 +266,6 @@ public:
         : m_DbPtr(DbPtr), m_Snap(Snapshot), m_Iterator(Iterator),
         m_HandoffAtomic(0), m_KeysOnly(KeysOnly)
     {
-        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);
     };
 
     virtual ~LevelIteratorWrapper()
@@ -276,7 +275,6 @@ public:
             delete m_Iterator;
             m_Iterator=NULL;
         }   // if
-        leveldb::gPerfCounters->Dec(leveldb::ePerfDebug3);
     }   // ~LevelIteratorWrapper
 
     leveldb::Iterator * get() {return(m_Iterator);};

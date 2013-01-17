@@ -880,8 +880,6 @@ async_iterator(
     const ERL_NIF_TERM& dbh_ref     = argv[1];
     const ERL_NIF_TERM& options_ref = argv[2];
 
-    leveldb::gPerfCounters->Inc(leveldb::ePerfDebug0);
-
     const bool keys_only = ((argc == 4) && (argv[3] == ATOM_KEYS_ONLY));
 
     ReferencePtr<DbObject> db_ptr;
@@ -910,7 +908,7 @@ async_iterator(
 
     if(false == priv.thread_pool.submit(work_item))
     {
-        delete work_item; 
+        delete work_item;
         return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
     }   // if
 
@@ -1111,7 +1109,6 @@ eleveldb_iterator_close(
 {
     eleveldb::ItrObject * itr_ptr;
     ERL_NIF_TERM ret_term;
-    leveldb::gPerfCounters->Dec(leveldb::ePerfDebug0);
 
     ret_term=eleveldb::ATOM_OK;
 
@@ -1122,7 +1119,6 @@ eleveldb_iterator_close(
         // set closing flag ... atomic likely unnecessary (but safer)
         if (eleveldb::ErlRefObject::InitiateCloseRequest(itr_ptr))
         {
-    leveldb::gPerfCounters->Inc(leveldb::ePerfDebug1);
             // if there is an active move object, set it up to delete
             //  (reuse_move holds a counter to this object, which will
             //   release when move object destructs)

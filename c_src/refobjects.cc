@@ -44,13 +44,13 @@ namespace eleveldb {
 RefObject::RefObject()
     : m_RefCount(0)
 {
-        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
+        leveldb::gPerfCounters->Inc(leveldb::ePerfElevelRefCreate);
 }   // RefObject::RefObject
 
 
 RefObject::~RefObject()
 {
-    leveldb::gPerfCounters->Dec(leveldb::ePerfDebug4);
+    leveldb::gPerfCounters->Inc(leveldb::ePerfElevelRefDelete);
 }   // RefObject::~RefObject
 
 
@@ -394,7 +394,6 @@ ItrObject::ItrObjectResourceCleanup(
 
     if (InitiateCloseRequest(itr_ptr))
     {
-        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug2);
         // if there is an active move object, set it up to delete
         //  (reuse_move holds a counter to this object, which will
         //   release when move object destructs)
