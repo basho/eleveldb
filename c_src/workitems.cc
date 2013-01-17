@@ -104,6 +104,8 @@ WorkTask::~WorkTask()
 {
     ErlNifEnv * env_ptr;
 
+    // this is likely overkill in the present code, but seemed
+    //  important at one time and leaving for safety
     env_ptr=local_env_;
     if (compare_and_swap(&local_env_, env_ptr, (ErlNifEnv *)NULL)
         && NULL!=env_ptr)
@@ -285,7 +287,7 @@ MoveTask::prepare_recycle()
 
     resubmit_work=true;
 
- }  // MoveTask::prepare_recycle
+}  // MoveTask::prepare_recycle
 
 
 void

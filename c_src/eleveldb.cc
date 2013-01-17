@@ -309,7 +309,7 @@ private:
 
  }   // submit
 
-
+  // not clear that this works or is testable
  bool resize_thread_pool(const size_t n)
  {
      eleveldb::MutexLock l(thread_resize_pool_mutex);
@@ -371,6 +371,7 @@ eleveldb_thread_pool::~eleveldb_thread_pool()
 }
 
 // Grow the thread pool by nthreads threads:
+//  may not work at this time ...
 bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
 {
  eleveldb::MutexLock l(threads_lock);
@@ -416,69 +417,9 @@ bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
  return true;
 }
 
-#if 0
-namespace {
-
-// Utility predicate: true if db_handle in write task matches given db handle:
-struct db_matches
-{
-    const eleveldb_db_handle* dbh;
-
-    db_matches(const eleveldb_db_handle* _dbh)
-     : dbh(_dbh)
-    {}
-
-    bool operator()(eleveldb::WorkTask*& rhs)
-    {
-        // We're only concerned with elements tied to our database handle:
-        eleveldb::write_task_t *rhs_item = dynamic_cast<eleveldb::write_task_t *>(rhs);
-
-        if(0 == rhs_item)
-         return false;
-
-        return dbh == rhs_item->db_handle;
-    }
-};
-
-} // namespace
-#endif
-
-#if 0
-bool eleveldb_thread_pool::complete_jobs_for(eleveldb_db_handle* dbh)
-{
- if(0 == dbh)
-  return true;  // nothing to do, but not a failure
-
- /* Our strategy for completion here is that we move any jobs pending for the handle we
- want to close to the front of the queue (in the same relative order), effectively giving
- them priority. When the next handle in the queue does not match our db handle, or there are
- no more jobs, we're done: */
-
- db_matches m(dbh);
-
- // We don't want more than one close operation to reshuffle:
- simple_scoped_mutex_handle complete_jobs_mutex("complete_jobs_mutex");
-
- {
- MutexLock complete_jobs_lock(complete_jobs_mutex);
-
- // Stop new jobs coming in during shuffle; after that, appending jobs is fine:
- {
- MutexLock l(work_queue_lock);
- std::stable_partition(work_queue.begin(), work_queue.end(), m);
- }
-
- // Signal all threads and drain our work first:
- enif_cond_broadcast(work_queue_pending);
- while(not work_queue.empty() and m(work_queue.front()))
-  ;
- }
-
- return true;
-}
-#endif
 
 // Shut down and destroy all threads in the thread pool:
+//   does not currently work
 bool eleveldb_thread_pool::drain_thread_pool()
 {
  struct release_thread
@@ -874,8 +815,11 @@ async_write(
                                                             db_ptr.get(), batch, opts);
 
     if(false == priv.thread_pool.submit(work_item))
+    {
+        delete work_item;
         return send_reply(env, caller_ref,
                           enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
+    }   // if
 
     return eleveldb::ATOM_OK;
 }
@@ -915,8 +859,11 @@ async_get(
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
     if(false == priv.thread_pool.submit(work_item))
+    {
+        delete work_item;
         return send_reply(env, caller_ref,
                           enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
+    }   // if
 
     return eleveldb::ATOM_OK;
 
@@ -962,7 +909,10 @@ async_iterator(
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
     if(false == priv.thread_pool.submit(work_item))
+    {
+        delete work_item; 
         return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
+    }   // if
 
     return ATOM_OK;
 
@@ -986,7 +936,9 @@ async_iterator_move(
 
     itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_handle_ref));
 
-    if(NULL==itr_ptr.get())
+    // prefetch logic broke PREV and not fixing for Riak
+    if(NULL==itr_ptr.get()
+       || (enif_is_atom(env, action_or_target) && ATOM_PREV==action_or_target))
         return enif_make_badarg(env);
 
     // Reuse ref from iterator creation
@@ -1086,6 +1038,7 @@ async_iterator_move(
             if(!enif_inspect_binary(env, action_or_target, &key))
             {
                 itr_ptr->ReleaseReuseMove();
+		itr_ptr->reuse_move=NULL;
                 return enif_make_tuple2(env, ATOM_EINVAL, caller_ref);
             }   // if
 
@@ -1097,6 +1050,7 @@ async_iterator_move(
         if(false == priv.thread_pool.submit(move_item))
         {
             itr_ptr->ReleaseReuseMove();
+	    itr_ptr->reuse_move=NULL;
             return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
         }   // if
     }   // if
@@ -1108,6 +1062,10 @@ async_iterator_move(
 
 } // namespace eleveldb
 
+
+/***
+ * HEY YOU, please convert this to an async operation
+ */
 
 ERL_NIF_TERM
 eleveldb_close(
@@ -1259,7 +1217,9 @@ eleveldb_repair(
     }
 }   // eleveldb_repair
 
-
+/**
+ * HEY YOU ... please make async
+ */
 ERL_NIF_TERM
 eleveldb_destroy(
     ErlNifEnv* env,

@@ -143,10 +143,10 @@ ErlRefObject::AwaitCloseAndDestructor(
             pthread_mutex_lock(&Object->m_CloseMutex);
 
             // retest after mutex helc
-            if (3!=Object->m_CloseRequested)
+            while (3!=Object->m_CloseRequested)
             {
                 pthread_cond_wait(&Object->m_CloseCond, &Object->m_CloseMutex);
-            }   // if
+            }   // while
             pthread_mutex_unlock(&Object->m_CloseMutex);
         }   // if
 
