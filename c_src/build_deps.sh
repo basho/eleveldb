@@ -8,7 +8,8 @@ if [ `uname -s` = 'SunOS' -a "${POSIX_SHELL}" != "true" ]; then
 fi
 unset POSIX_SHELL # clear it so if we invoke other scripts, they run as ksh as well
 
-LEVELDB_VSN="2b18c2ac517689eb6bb30b5764c165da6624eae4" # December 19, 2012 current development "master"
+LEVELDB_VSN="b491ad5e8de1ae92fe5db8d7547c2130fd8011b9" # Jan 18, 2013 mv-throttle-3b
+
 
 SNAPPY_VSN="1.0.4"
 
