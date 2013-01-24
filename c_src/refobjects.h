@@ -24,6 +24,7 @@
 #define INCL_REFOBJECTS_H
 
 #include <stdint.h>
+#include <list>
 
 #include "leveldb/db.h"
 #include "leveldb/write_batch.h"
@@ -96,6 +97,9 @@ public:
     virtual ~ErlRefObject();
 
     virtual uint32_t RefDec();
+
+    // allows for secondary close actions IF InitiateCloseRequest returns true
+    virtual void Shutdown()=0;
 
     // the following will sometimes be called AFTER the
     //  destructor ... in which case the vtable is not valid
@@ -175,6 +179,8 @@ public:
 
     leveldb::Options * m_DbOptions;
 
+    Mutex m_ItrMutex;                         //!< mutex protecting m_ItrList
+    std::list<class ItrObject *> m_ItrList;   //!< ItrObjects holding ref count to this
 
 protected:
     static ErlNifResourceType* m_Db_RESOURCE;
@@ -183,6 +189,13 @@ public:
     DbObject(leveldb::DB * DbPtr, leveldb::Options * Options);
 
     virtual ~DbObject();
+
+    virtual void Shutdown();
+
+    // manual back link to ItrObjects holding reference to this
+    void AddReference(class ItrObject *);
+
+    void RemoveReference(class ItrObject *);
 
     static void CreateDbObjectType(ErlNifEnv * Env);
 
@@ -316,6 +329,8 @@ public:
     ItrObject(DbObject *, bool, leveldb::ReadOptions *);
 
     virtual ~ItrObject(); // needs to perform free_itr
+
+    virtual void Shutdown();
 
     static void CreateItrObjectType(ErlNifEnv * Env);
 
