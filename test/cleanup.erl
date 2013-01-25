@@ -76,12 +76,18 @@ iterator_db_close_test() ->
                               error:badarg ->
                                   ok
                           end,
-                          eleveldb:iterator_close(Itr)
+                          try
+                              eleveldb:iterator_close(Itr)
+                          catch
+                              error:badarg ->
+                                  ok
+                          end
                   end),
     receive continue -> ok end,
     eleveldb:close(DB),
-    failed_open(),
+    %%failed_open(),
     wait_down(),
+    erlang:garbage_collect(),
     check(),
     ok.
 
