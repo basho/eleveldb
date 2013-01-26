@@ -122,6 +122,13 @@ ErlRefObject::InitiateCloseRequest(
     if (NULL!=Object && 0==Object->m_CloseRequested)
         ret_flag=compare_and_swap(&Object->m_CloseRequested, 0, 1);
 
+    // vtable is still good, this thread is initiating close
+    //   ask object to clean-up
+    if (ret_flag)
+    {
+        Object->Shutdown();
+    }   // if
+
     return(ret_flag);
 
 }   // ErlRefObject::InitiateCloseRequest
@@ -261,10 +268,7 @@ DbObject::DbObjectResourceCleanup(
     db_ptr=(DbObject *)Arg;
 
     // YES, the destructor may already have been called
-    if (InitiateCloseRequest(db_ptr))
-    {
-        db_ptr->RefDec();
-    }   // if
+    InitiateCloseRequest(db_ptr);
 
     // YES, the destructor may already have been called
     AwaitCloseAndDestructor(db_ptr);
@@ -303,12 +307,80 @@ DbObject::~DbObject()
         m_DbOptions = NULL;
     }   // if
 
+
+
+
+
     // do not clean up m_CloseMutex and m_CloseCond
 
     return;
 
 }   // DbObject::~DbObject
 
+
+void
+DbObject::Shutdown()
+{
+#if 1
+    bool again;
+    ItrObject * itr_ptr;
+
+    do
+    {
+        again=false;
+        itr_ptr=NULL;
+
+        // lock the ItrList
+        {
+            MutexLock lock(m_ItrMutex);
+
+            if (!m_ItrList.empty())
+            {
+                again=true;
+                itr_ptr=m_ItrList.front();
+                m_ItrList.pop_front();
+            }   // if
+        }
+
+        // must be outside lock so ItrObject can attempt
+        //  RemoveReference
+        if (again)
+            ItrObject::InitiateCloseRequest(itr_ptr);
+
+    } while(again);
+#endif
+
+    RefDec();
+
+    return;
+
+}   // DbObject::Shutdown
+
+
+void
+DbObject::AddReference(
+    ItrObject * ItrPtr)
+{
+    MutexLock lock(m_ItrMutex);
+
+    m_ItrList.push_back(ItrPtr);
+
+    return;
+
+}   // DbObject::AddReference
+
+
+void
+DbObject::RemoveReference(
+    ItrObject * ItrPtr)
+{
+    MutexLock lock(m_ItrMutex);
+
+    m_ItrList.remove(ItrPtr);
+
+    return;
+
+}   // DbObject::RemoveReference
 
 
 /**
@@ -392,17 +464,9 @@ ItrObject::ItrObjectResourceCleanup(
 
     itr_ptr=(ItrObject *)Arg;
 
-    if (InitiateCloseRequest(itr_ptr))
-    {
-        // if there is an active move object, set it up to delete
-        //  (reuse_move holds a counter to this object, which will
-        //   release when move object destructs)
-        itr_ptr->ReleaseReuseMove();
-        //itr_ptr->m_Iter.assign(NULL);
-        //itr_ptr->m_Snapshot.assign(NULL);
-
-        itr_ptr->RefDec();
-    }   // if
+    // vtable for itr_ptr could be invalid if close already
+    //  occurred
+    InitiateCloseRequest(itr_ptr);
 
     // YES this can be called after itr_ptr destructor.  Don't panic.
     AwaitCloseAndDestructor(itr_ptr);
@@ -418,6 +482,9 @@ ItrObject::ItrObject(
     leveldb::ReadOptions * Options)
     : keys_only(KeysOnly), m_ReadOptions(Options), reuse_move(NULL), m_DbPtr(DbPtr)
 {
+    if (NULL!=DbPtr)
+        DbPtr->AddReference(this);
+
 }   // ItrObject::ItrObject
 
 
@@ -429,11 +496,29 @@ ItrObject::~ItrObject()
 
     delete m_ReadOptions;
 
+    if (NULL!=m_DbPtr.get())
+        m_DbPtr->RemoveReference(this);
+
     // do not clean up m_CloseMutex and m_CloseCond
 
     return;
 
 }   // ItrObject::~ItrObject
+
+
+void
+ItrObject::Shutdown()
+{
+    // if there is an active move object, set it up to delete
+    //  (reuse_move holds a counter to this object, which will
+    //   release when move object destructs)
+    ReleaseReuseMove();
+
+    RefDec();
+
+    return;
+
+}   // ItrObject::CloseRequest
 
 
 bool

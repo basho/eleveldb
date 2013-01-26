@@ -1080,14 +1080,10 @@ eleveldb_close(
 
     if (NULL!=db_ptr)
     {
-        // set closing flag ... atomic likely unnecessary (but safer)
-        if (eleveldb::ErlRefObject::InitiateCloseRequest(db_ptr))
-        {
-            // remove "open database" from reference count,
-            // ... db_ptr no longer known valid after call
-            db_ptr->RefDec();
-            db_ptr=NULL;
-        }   // if
+        // set closing flag
+        eleveldb::ErlRefObject::InitiateCloseRequest(db_ptr);
+
+        db_ptr=NULL;
 
         ret_term=eleveldb::ATOM_OK;
     }   // if
@@ -1117,18 +1113,7 @@ eleveldb_iterator_close(
     if (NULL!=itr_ptr)
     {
         // set closing flag ... atomic likely unnecessary (but safer)
-        if (eleveldb::ErlRefObject::InitiateCloseRequest(itr_ptr))
-        {
-            // if there is an active move object, set it up to delete
-            //  (reuse_move holds a counter to this object, which will
-            //   release when move object destructs)
-            itr_ptr->ReleaseReuseMove();
-            //itr_ptr->m_Iter.assign(NULL);
-            //itr_ptr->m_Snapshot.assign(NULL);
-
-            // remove "open iterator" from reference count,
-            itr_ptr->RefDec();
-        }   // if
+        eleveldb::ErlRefObject::InitiateCloseRequest(itr_ptr);
 
         itr_ptr=NULL;
 

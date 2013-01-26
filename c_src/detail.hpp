@@ -49,7 +49,7 @@ template <>
 inline bool compare_and_swap(volatile uint32_t *ptr, const int& comp_val, const int& exchange_val)
 {
 #if ELEVELDB_IS_SOLARIS
-    return (1==atomic_cas_32(ptr, comp_val, exchange_val));
+  return ((uint32_t) comp_val==atomic_cas_32(ptr, comp_val, exchange_val));
 #else
     return __sync_bool_compare_and_swap(ptr, comp_val, exchange_val);
 #endif
@@ -66,7 +66,6 @@ inline bool compare_and_swap(volatile PtrT *ptr, const ValueT& comp_val, const V
     return __sync_bool_compare_and_swap(ptr, comp_val, exchange_val);
 #endif
 }
-
 
 template <typename ValueT>
 inline ValueT inc_and_fetch(volatile ValueT *ptr);
