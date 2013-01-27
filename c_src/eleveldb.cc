@@ -558,7 +558,11 @@ void *eleveldb_write_thread_worker(void *args)
             pthread_mutex_lock(&tdata.m_Mutex);
             tdata.m_DirectWork=NULL;
             tdata.m_Available=1;
-            pthread_cond_wait(&tdata.m_Condition, &tdata.m_Mutex);
+
+            // only wait if we are really sure no work pending
+            if (0==h.work_queue_atomic)
+                pthread_cond_wait(&tdata.m_Condition, &tdata.m_Mutex);
+
             tdata.m_Available=0;    // safety
             submission=(eleveldb::WorkTask *)tdata.m_DirectWork;
             pthread_mutex_unlock(&tdata.m_Mutex);
