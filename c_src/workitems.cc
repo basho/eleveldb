@@ -187,30 +187,15 @@ MoveTask::operator()()
     if(NULL == itr)
         return work_result(local_env(), ATOM_ERROR, ATOM_ITERATOR_CLOSED);
 
-
     switch(action)
     {
-        case FIRST:
-            itr->SeekToFirst();
-            break;
+        case FIRST: itr->SeekToFirst(); break;
 
-        case LAST:
-            itr->SeekToLast();
-            break;
+        case LAST:  itr->SeekToLast();  break;
 
-        case NEXT:
-            if(!itr->Valid())
-                return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
+        case NEXT:  if(itr->Valid()) itr->Next(); break;
 
-            itr->Next();
-            break;
-
-        case PREV:
-            if(!itr->Valid())
-                return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
-
-            itr->Prev();
-            break;
+        case PREV:  if(itr->Valid()) itr->Prev(); break;
 
         case SEEK:
         {
@@ -229,8 +214,6 @@ MoveTask::operator()()
 
     }   // switch
 
-    if(!itr->Valid())
-        return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
     // who got back first, us or the erlang loop
 //    if (eleveldb::detail::compare_and_swap(&m_ItrPtr->m_handoff_atomic, 0, 1))
@@ -238,25 +221,34 @@ MoveTask::operator()()
     {
         // this is prefetch of next iteration.  It returned faster than actual
         //  request to retrieve it.  Stop and wait for erlang to catch up.
+        //  (even if this result is an Invalid() )
     }   // if
     else
     {
         // setup next race for the response
         m_ItrWrap->m_HandoffAtomic=0;
 
-        if (NEXT==action || SEEK==action || FIRST==action)
+        if(itr->Valid())
         {
-            prepare_recycle();
-            action=NEXT;
+            if (NEXT==action || SEEK==action || FIRST==action)
+            {
+                prepare_recycle();
+                action=NEXT;
+            }   // if
+
+            // erlang is waiting, send message
+            if(m_ItrWrap->m_KeysOnly)
+                return work_result(local_env(), ATOM_OK, slice_to_binary(local_env(), itr->key()));
+
+            return work_result(local_env(), ATOM_OK,
+                               slice_to_binary(local_env(), itr->key()),
+                               slice_to_binary(local_env(), itr->value()));
         }   // if
+        else
+        {
+            return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
+        }   // else
 
-        // erlang is waiting, send message
-        if(m_ItrWrap->m_KeysOnly)
-            return work_result(local_env(), ATOM_OK, slice_to_binary(local_env(), itr->key()));
-
-        return work_result(local_env(), ATOM_OK,
-                           slice_to_binary(local_env(), itr->key()),
-                           slice_to_binary(local_env(), itr->value()));
     }   // else
 
     return(work_result());
