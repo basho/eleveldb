@@ -164,9 +164,40 @@ public:
 };  // class WriteTask
 
 
+/**
+ * Alternate object for retrieving data out of leveldb.
+ *  Reduces one memcpy operation.
+ */
+class BinaryValue : public leveldb::Value
+{
+private:
+    ErlNifEnv* m_env;
+    ERL_NIF_TERM& m_value_bin;
+
+    BinaryValue(const BinaryValue&);
+    void operator=(const BinaryValue&);
+
+public:
+
+    BinaryValue(ErlNifEnv* env, ERL_NIF_TERM& value_bin)
+    : m_env(env), m_value_bin(value_bin)
+    {};
+
+    virtual ~BinaryValue() {};
+
+    BinaryValue & assign(const char* data, size_t size)
+    {
+        unsigned char* v = enif_make_new_binary(m_env, size, &m_value_bin);
+        memcpy(v, data, size);
+        return *this;
+    };
+
+};
+
 
 /**
- * Background object for async get
+ * Background object for async get,
+ *  using new BinaryValue object
  */
 
 class GetTask : public WorkTask
@@ -197,20 +228,14 @@ public:
 
     virtual work_result operator()()
     {
-        std::string value;
+        ERL_NIF_TERM value_bin;
+        BinaryValue value(local_env(), value_bin);
         leveldb::Slice key_slice(m_Key);
 
         leveldb::Status status = m_DbPtr->m_Db->Get(*options, key_slice, &value);
 
         if(!status.ok())
             return work_result(ATOM_NOT_FOUND);
-
-        ERL_NIF_TERM value_bin;
-
-        // The documentation does not say if this can fail:
-        unsigned char *result = enif_make_new_binary(local_env(), value.size(), &value_bin);
-
-        memcpy(result, value.data(), value.size());
 
         return work_result(local_env(), ATOM_OK, value_bin);
     }
