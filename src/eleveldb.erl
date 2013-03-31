@@ -41,6 +41,9 @@
          iterator_move/2,
          iterator_close/1]).
 
+-export_type([db_ref/0,
+              itr_ref/0]).
+
 -on_load(init/0).
 
 -ifdef(TEST).
