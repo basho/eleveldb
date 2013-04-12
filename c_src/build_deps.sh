@@ -31,8 +31,15 @@ MAKE=${MAKE:-make}
 # Changed "make" to $MAKE
 
 case "$1" in
-    clean)
+    rm-deps)
         rm -rf leveldb system snappy-$SNAPPY_VSN
+        ;;
+
+    clean)
+        rm -rf system snappy-$SNAPPY_VSN
+        if [ -d leveldb ]; then
+            gmake -C leveldb clean
+        fi
         ;;
 
     test)
