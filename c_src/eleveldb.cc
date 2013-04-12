@@ -254,8 +254,13 @@ private:
                  //  of signal to cover one other race condition
                  //  that should never happen with single thread waiting.
                  pthread_mutex_lock(&threads[index]->m_Mutex);
-                 threads[index]->m_DirectWork=work;
-                 pthread_cond_broadcast(&threads[index]->m_Condition);
+                 if (threads[index]->m_DirectWork == NULL) {
+                     threads[index]->m_DirectWork=work;
+                     pthread_cond_broadcast(&threads[index]->m_Condition);
+                 }
+                 else {
+                     ret_flag = false;
+                 }
                  pthread_mutex_unlock(&threads[index]->m_Mutex);
              }   // if
          }   // if
@@ -552,19 +557,34 @@ void *eleveldb_write_thread_worker(void *args)
             submission->RefDec();
 
             submission=NULL;
+
+            // protect with a local to avoid having compiler re-order the 2 assignment and resulting into condition check issue elsewhere
+            pthread_mutex_lock(&tdata.m_Mutex);
+            if (tdata.m_DirectWork == NULL) {
+                tdata.m_Available = 1;
+            }
+            pthread_mutex_unlock(&tdata.m_Mutex);
         }   // if
         else
         {
             pthread_mutex_lock(&tdata.m_Mutex);
-            tdata.m_DirectWork=NULL;
-            tdata.m_Available=1;
-
-            // only wait if we are really sure no work pending
-            if (0==h.work_queue_atomic)
-                pthread_cond_wait(&tdata.m_Condition, &tdata.m_Mutex);
-
-            tdata.m_Available=0;    // safety
             submission=(eleveldb::WorkTask *)tdata.m_DirectWork;
+            if (NULL==submission)
+            {
+                tdata.m_Available = 1;
+                // only wait if we are really sure no work pending
+                if (0==h.work_queue_atomic)
+                    pthread_cond_wait(&tdata.m_Condition, &tdata.m_Mutex);
+            }
+
+            if (submission == NULL)
+            {
+                submission=(eleveldb::WorkTask *)tdata.m_DirectWork;
+            }
+            else {
+                tdata.m_Available = 0;
+            }
+            tdata.m_DirectWork=NULL;
             pthread_mutex_unlock(&tdata.m_Mutex);
         }   // else
     }   // while
