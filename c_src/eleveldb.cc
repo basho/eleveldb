@@ -529,7 +529,8 @@ void *eleveldb_write_thread_worker(void *args)
 
     while(!h.shutdown)
     {
-        // cast away volatile
+        // is work assigned yet?
+        //  check backlog work queue if not
         if (NULL==submission)
         {
             // test non-blocking size for hint (much faster)
@@ -548,10 +549,7 @@ void *eleveldb_write_thread_worker(void *args)
                 h.unlock();
             }   // if
         }   // if
-        else
-        {
-//            tdata.m_DirectWork=NULL;
-        }   // else
+
 
         // a work item identified (direct or queue), work it!
         //  then loop to test queue again
@@ -576,7 +574,7 @@ void *eleveldb_write_thread_worker(void *args)
         else
         {
             pthread_mutex_lock(&tdata.m_Mutex);
-            tdata.m_DirectWork=NULL;
+            tdata.m_DirectWork=NULL; // safety
 
             // only wait if we are really sure no work pending
             if (0==h.work_queue_atomic)
@@ -588,6 +586,8 @@ void *eleveldb_write_thread_worker(void *args)
 
             tdata.m_Available=0;    // safety
             submission=(eleveldb::WorkTask *)tdata.m_DirectWork; // NULL is valid
+            tdata.m_DirectWork=NULL;// safety
+
             pthread_mutex_unlock(&tdata.m_Mutex);
         }   // else
     }   // while
