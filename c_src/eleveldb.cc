@@ -227,7 +227,10 @@ private:
  void unlock()                  { enif_mutex_unlock(work_queue_lock); }
 
 
- bool FindWaitingThread(eleveldb::WorkTask * work)
+bool                           // returns true if available worker thread found and claimed
+FindWaitingThread(
+    eleveldb::WorkTask * work) // non-NULL to pass current work directly to a thread,
+                               // NULL to potentially nudge an available worker toward backlog queue
  {
      bool ret_flag;
      size_t start, index, pool_size;
@@ -242,10 +245,16 @@ private:
 
      do
      {
+         // perform quick test to see thread available
          if (0!=threads[index]->m_Available)
          {
+             // perform expensive compare and swap to potentially
+             //  claim worker thread (this is an exclusive claim to the worker)
              ret_flag = eleveldb::compare_and_swap(&threads[index]->m_Available, 1, 0);
 
+             // the compare/swap only succeeds if worker thread is sitting on
+             //  pthread_cond_wait ... or is about to be there but is holding
+             //  the mutex already
              if (ret_flag)
              {
 
@@ -503,7 +512,13 @@ class eleveldb_priv_data
  {}
 };
 
-/* Poll the work queue, submit jobs to leveldb: */
+
+/**
+ * Worker threads:  worker threads have 3 states:
+ *  A. doing nothing, available to be claimed: m_Available=1
+ *  B. processing work passed by Erlang thread: m_Available=0, m_DirectWork=<non-null>
+ *  C. processing backlog queue of work: m_Available=0, m_DirectWork=NULL
+ */
 void *eleveldb_write_thread_worker(void *args)
 {
     ThreadData &tdata = *(ThreadData *)args;
@@ -514,7 +529,8 @@ void *eleveldb_write_thread_worker(void *args)
 
     while(!h.shutdown)
     {
-        // cast away volatile
+        // is work assigned yet?
+        //  check backlog work queue if not
         if (NULL==submission)
         {
             // test non-blocking size for hint (much faster)
@@ -533,11 +549,10 @@ void *eleveldb_write_thread_worker(void *args)
                 h.unlock();
             }   // if
         }   // if
-        else
-        {
-//            tdata.m_DirectWork=NULL;
-        }   // else
 
+
+        // a work item identified (direct or queue), work it!
+        //  then loop to test queue again
         if (NULL!=submission)
         {
             eleveldb_thread_pool::notify_caller(*submission);
@@ -553,18 +568,26 @@ void *eleveldb_write_thread_worker(void *args)
 
             submission=NULL;
         }   // if
+
+        // no work found, attempt to go into wait state
+        //  (but retest queue before sleep due to race condition)
         else
         {
             pthread_mutex_lock(&tdata.m_Mutex);
-            tdata.m_DirectWork=NULL;
-            tdata.m_Available=1;
+            tdata.m_DirectWork=NULL; // safety
 
             // only wait if we are really sure no work pending
             if (0==h.work_queue_atomic)
+	    {
+                // yes, thread going to wait. set available now.
+	        tdata.m_Available=1;
                 pthread_cond_wait(&tdata.m_Condition, &tdata.m_Mutex);
+	    }    // if
 
             tdata.m_Available=0;    // safety
-            submission=(eleveldb::WorkTask *)tdata.m_DirectWork;
+            submission=(eleveldb::WorkTask *)tdata.m_DirectWork; // NULL is valid
+            tdata.m_DirectWork=NULL;// safety
+
             pthread_mutex_unlock(&tdata.m_Mutex);
         }   // else
     }   // while
