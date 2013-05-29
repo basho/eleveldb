@@ -104,7 +104,7 @@ iterator_db_close_test() ->
         %%failed_open(),
         wait_down(),
         erlang:garbage_collect(),
-        timer:sleep(500)
+        timer:sleep(500),
         check(),
         ok
     after
