@@ -40,7 +40,8 @@ assumption_test() ->
         io:format(user, "assumption_test: bottom\n", []),
         ok
     after
-        eleveldb:close(DB)
+        eleveldb:close(DB),
+        timer:sleep(500)
     end.
 
 %% Open/close
@@ -54,18 +55,24 @@ open_exit_test() ->
     spawn_wait(fun() ->
                        _DB = open()
                end),
+    timer:sleep(500),
     check().
 
 %% Iterator open/close
 iterator_test() ->
     DB = open(),
-    write(100, DB),
-    {ok, Itr} = eleveldb:iterator(DB, []),
-    iterate(Itr),
-    eleveldb:iterator_close(Itr),
-    eleveldb:close(DB),
-    check(),
-    ok.
+    try
+        write(100, DB),
+        {ok, Itr} = eleveldb:iterator(DB, []),
+        iterate(Itr),
+        eleveldb:iterator_close(Itr),
+        eleveldb:close(DB),
+        check(),
+        ok
+    after
+        catch eleveldb:close(DB),
+        timer:sleep(500)
+    end.
 
 %% Close DB while iterator running
 %% Expected: reopen should fail while iterator reference alive
@@ -73,43 +80,54 @@ iterator_test() ->
 %%           once iterator process exits, open should succeed
 iterator_db_close_test() ->
     DB = open(),
-    write(100, DB),
-    Parent = self(),
-    spawn_monitor(fun() ->
-                          {ok, Itr} = eleveldb:iterator(DB, []),
-                          Parent ! continue,
-                          try
-                              iterate(Itr, 10)
-                          catch
-                              error:badarg ->
-                                  ok
-                          end,
-                          try
-                              eleveldb:iterator_close(Itr)
-                          catch
-                              error:badarg ->
-                                  ok
-                          end
-                  end),
-    receive continue -> ok end,
-    eleveldb:close(DB),
-    %%failed_open(),
-    wait_down(),
-    erlang:garbage_collect(),
-    check(),
-    ok.
+    try
+        write(100, DB),
+        Parent = self(),
+        spawn_monitor(fun() ->
+                              {ok, Itr} = eleveldb:iterator(DB, []),
+                              Parent ! continue,
+                              try
+                                  iterate(Itr, 10)
+                              catch
+                                  error:badarg ->
+                                      ok
+                              end,
+                              try
+                                  eleveldb:iterator_close(Itr)
+                              catch
+                                  error:badarg ->
+                                      ok
+                              end
+                      end),
+        receive continue -> ok end,
+        eleveldb:close(DB),
+        %%failed_open(),
+        wait_down(),
+        erlang:garbage_collect(),
+        timer:sleep(500)
+        check(),
+        ok
+    after
+        catch eleveldb:close(DB),
+        timer:sleep(500)
+    end.
 
 %% Iterate open, iterator process exit w/o close
 iterator_exit_test() ->
     DB = open(),
-    write(100, DB),
-    spawn_wait(fun() ->
-                       {ok, Itr} = eleveldb:iterator(DB, []),
-                       iterate(Itr)
-               end),
-    eleveldb:close(DB),
-    check(),
-    ok.
+    try
+        write(100, DB),
+        spawn_wait(fun() ->
+                           {ok, Itr} = eleveldb:iterator(DB, []),
+                           iterate(Itr)
+                   end),
+        eleveldb:close(DB),
+        check(),
+        ok
+    after
+        catch eleveldb:close(DB),
+        timer:sleep(500)
+    end.
 
 spawn_wait(F) ->
     spawn_monitor(F),
@@ -121,8 +139,11 @@ wait_down() ->
     end.
 
 check() ->
+    timer:sleep(500),
     DB = open(),
-    eleveldb:close(DB).
+    eleveldb:close(DB),
+    timer:sleep(500),
+    ok.
 
 open() ->
     {ok, Ref} = eleveldb:open(?COMMON_INSTANCE_DIR,
