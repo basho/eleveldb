@@ -29,11 +29,19 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-define(COMMON_INSTANCE_DIR, "/tmp/eleveldb.cleanup.test").
+
 %% Purposely reopen an already opened database to test failure assumption
 assumption_test() ->
     DB = open(),
-    failed_open(),
-    eleveldb:close(DB).
+    try
+        io:format(user, "assumption_test: top\n", []),
+        ok = failed_open(),
+        io:format(user, "assumption_test: bottom\n", []),
+        ok
+    after
+        eleveldb:close(DB)
+    end.
 
 %% Open/close
 open_close_test() ->
@@ -44,7 +52,7 @@ open_close_test() ->
 %% Open w/o close
 open_exit_test() ->
     spawn_wait(fun() ->
-                       DB = open()
+                       _DB = open()
                end),
     check().
 
@@ -117,17 +125,18 @@ check() ->
     eleveldb:close(DB).
 
 open() ->
-    {ok, Ref} = eleveldb:open("/tmp/eleveldb.cleanup.test",
+    {ok, Ref} = eleveldb:open(?COMMON_INSTANCE_DIR,
                               [{create_if_missing, true}]),
     Ref.
 
 failed_open() ->
-    {error, {db_open, _}} = eleveldb:open("/tmp/eleveldb.cleanup.test",
-                                          [{create_if_missing, true}]).
+    {error, {db_open, _}} = eleveldb:open(?COMMON_INSTANCE_DIR,
+                                          [{create_if_missing, true}]),
+    ok.
 
 write(N, DB) ->
     write(0, N, DB).
-write(Same, Same, DB) ->
+write(Same, Same, _DB) ->
     ok;
 write(N, End, DB) ->
     eleveldb:put(DB, <<N:64/integer>>, <<N:64/integer>>, []),

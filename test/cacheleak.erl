@@ -30,7 +30,7 @@ cacheleak_test_() ->
                               [] = os:cmd("rm -rf /tmp/eleveldb.cacheleak.test"),
                               Blobs = [{<<I:128/unsigned>>, compressible_bytes(10240)} ||
                                           I <- lists:seq(1, 10000)],
-                              cacheleak_loop(10, Blobs, 300000)
+                              cacheleak_loop(10, Blobs, 310000)
                       end}.
 
 %% It's very important for this test that the data is compressible. Otherwise,
@@ -65,7 +65,12 @@ cacheleak_loop(Count, Blobs, MaxFinalRSS) ->
     cacheleak_loop(Count-1, Blobs, MaxFinalRSS).
 
 rssmem() ->
-    Cmd = io_lib:format("ps -o rss= ~s", [os:getpid()]),
+    Cmd = io_lib:format("ps -o rss= -p ~s", [os:getpid()]),
     S = string:strip(os:cmd(Cmd), both),
-    {I, _} = string:to_integer(S),
-    I.
+    case string:to_integer(S) of
+        {error, _} ->
+            io:format(user, "Error parsing integer in: ~s\n", [S]),
+            error;
+        {I, _} ->
+            I
+    end.
