@@ -476,9 +476,7 @@ prop_put_delete_test_() ->
     %% We use the ?ALWAYS(300, ...) wrapper around the second test as a
     %% regression test.
     [{timeout, 3*Timeout1, {"No ?ALWAYS()", fun() -> qc(eqc:testing_time(Timeout1,prop_put_delete())) end}},
-     {timeout, 3*Timeout2, {"With ?ALWAYS()", fun() -> qc(eqc:testing_time(Timeout2,?ALWAYS(300,prop_put_delete()))) end}}].
-
-
+     {timeout, 10*Timeout2, {"With ?ALWAYS()", fun() -> qc(eqc:testing_time(Timeout2,?ALWAYS(150,prop_put_delete()))) end}}].
 
 -endif.
 
