@@ -47,6 +47,7 @@
 -on_load(init/0).
 
 -ifdef(TEST).
+-compile(export_all).
 -ifdef(EQC).
 -include_lib("eqc/include/eqc.hrl").
 -define(QC_OUT(P),
@@ -465,13 +466,17 @@ prop_put_delete() ->
                                                  [], [])),
                      ?assertEqual([{K, V} || {K, V} <- Model, V /= deleted],
                                   Actual),
+                     ok = eleveldb:close(Ref),
                      true
                  end)).
 
 prop_put_delete_test_() ->
-    {timeout, 3*60, fun() -> qc(prop_put_delete()) end}.
-
-
+    Timeout1 = 10,
+    Timeout2 = 15,
+    %% We use the ?ALWAYS(300, ...) wrapper around the second test as a
+    %% regression test.
+    [{timeout, 3*Timeout1, {"No ?ALWAYS()", fun() -> qc(eqc:testing_time(Timeout1,prop_put_delete())) end}},
+     {timeout, 10*Timeout2, {"With ?ALWAYS()", fun() -> qc(eqc:testing_time(Timeout2,?ALWAYS(150,prop_put_delete()))) end}}].
 
 -endif.
 
