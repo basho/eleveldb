@@ -90,6 +90,7 @@ init() ->
                          {block_restart_interval, pos_integer()} |
                          {cache_size, pos_integer()} |
                          {paranoid_checks, boolean()} |
+                         {verify_compactions, boolean()} |
                          {compression, boolean()} |
                          {use_bloomfilter, boolean() | pos_integer()} |
                          {write_threads, pos_integer()}].
@@ -266,6 +267,7 @@ option_types(open) ->
      {block_restart_interval, integer},
      {cache_size, integer},
      {paranoid_checks, bool},
+     {verify_compactions, bool},
      {compression, bool},
      {use_bloomfilter, any},
      {write_threads, integer}];
