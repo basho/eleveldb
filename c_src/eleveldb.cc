@@ -112,6 +112,7 @@ ERL_NIF_TERM ATOM_PREV;
 ERL_NIF_TERM ATOM_INVALID_ITERATOR;
 ERL_NIF_TERM ATOM_CACHE_SIZE;
 ERL_NIF_TERM ATOM_PARANOID_CHECKS;
+ERL_NIF_TERM ATOM_VERIFY_COMPACTIONS;
 ERL_NIF_TERM ATOM_ERROR_DB_DESTROY;
 ERL_NIF_TERM ATOM_KEYS_ONLY;
 ERL_NIF_TERM ATOM_COMPRESSION;
@@ -609,6 +610,8 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             opts.error_if_exists = (option[1] == eleveldb::ATOM_TRUE);
         else if (option[0] == eleveldb::ATOM_PARANOID_CHECKS)
             opts.paranoid_checks = (option[1] == eleveldb::ATOM_TRUE);
+        else if (option[0] == eleveldb::ATOM_VERIFY_COMPACTIONS)
+            opts.verify_compactions = (option[1] == eleveldb::ATOM_TRUE);
         else if (option[0] == eleveldb::ATOM_MAX_OPEN_FILES)
         {
             int max_open_files;
@@ -1406,6 +1409,7 @@ try
     ATOM(eleveldb::ATOM_INVALID_ITERATOR, "invalid_iterator");
     ATOM(eleveldb::ATOM_CACHE_SIZE, "cache_size");
     ATOM(eleveldb::ATOM_PARANOID_CHECKS, "paranoid_checks");
+    ATOM(eleveldb::ATOM_VERIFY_COMPACTIONS, "verify_compactions");
     ATOM(eleveldb::ATOM_ERROR_DB_DESTROY, "error_db_destroy");
     ATOM(eleveldb::ATOM_ERROR_DB_REPAIR, "error_db_repair");
     ATOM(eleveldb::ATOM_KEYS_ONLY, "keys_only");
