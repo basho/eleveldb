@@ -14,6 +14,10 @@
          {max_open_files, 20},
 
          %% Use bloom filter support by default
-         {use_bloomfilter, true}
+         {use_bloomfilter, true},
+
+         %% make sure that we're maximally safe by default
+         {verify_checksums, true},    
+         {paranoid_checks, true}
         ]}
  ]}.
