@@ -22,62 +22,80 @@
 #ifndef INCL_THREADING_H
 #define INCL_THREADING_H
 
-#include <pthread.h>
+#include <deque>
+#include <vector>
+#include "leveldb/perf_count.h"
+
+#ifndef INCL_MUTEX_H
+    #include "mutex.h"
+#endif
+
+#ifndef INCL_ELEVELDB_H
+    #include "eleveldb.h"
+#endif
 
 namespace eleveldb {
 
-/**
- * Autoinitializing mutex object
- */
-class Mutex
+// constant
+const size_t N_THREADS_MAX = 32767;
+
+// forward declare
+struct ThreadData;
+class WorkTask;
+
+
+class eleveldb_thread_pool
 {
-protected:
-    pthread_mutex_t m_Mutex;
-
-public:
-    Mutex() {pthread_mutex_init(&m_Mutex, NULL);};
-
-    ~Mutex() {pthread_mutex_destroy(&m_Mutex);};
-
-    pthread_mutex_t & get() {return(m_Mutex);};
-
-//    pthread_mutex_t * operator() {return(&m_Mutex);};
-
-    void Lock() {pthread_mutex_lock(&m_Mutex);};
-
-    void Unlock() {pthread_mutex_unlock(&m_Mutex);};
+    friend void *eleveldb_write_thread_worker(void *args);
 
 private:
-    Mutex(const Mutex & rhs);             // no copy
-    Mutex & operator=(const Mutex & rhs); // no assignment
+    eleveldb_thread_pool(const eleveldb_thread_pool&);             // nocopy
+    eleveldb_thread_pool& operator=(const eleveldb_thread_pool&);  // nocopyassign
 
-};  // class Mutex
-
-
-/**
- * Automatic lock and unlock of mutex
- */
-class MutexLock
-{
 protected:
 
-    Mutex & m_MutexObject;
-
-public:
-
-    explicit MutexLock(Mutex & MutexObject)
-        : m_MutexObject(MutexObject)
-    {m_MutexObject.Lock();};
-
-    ~MutexLock() {m_MutexObject.Unlock();};
+    typedef std::deque<eleveldb::WorkTask*> work_queue_t;
+    // typedef std::stack<ErlNifTid *>            thread_pool_t;
+    typedef std::vector<ThreadData *>   thread_pool_t;
 
 private:
+    thread_pool_t  threads;
+    eleveldb::Mutex threads_lock;       // protect resizing of the thread pool
+    eleveldb::Mutex thread_resize_pool_mutex;
 
-    MutexLock();                                  // no default constructor
-    MutexLock(const MutexLock & rhs);             // no copy constructor
-    MutexLock & operator=(const MutexLock & rhs); // no assignment constructor
-};  // class MutexLock
+    work_queue_t   work_queue;
+    ErlNifCond*    work_queue_pending; // flags job present in the work queue
+    ErlNifMutex*   work_queue_lock;    // protects access to work_queue
+    volatile size_t work_queue_atomic;   //!< atomic size to parallel work_queue.size().
 
+    volatile bool  shutdown;           // should we stop threads and shut down?
+
+public:
+    eleveldb_thread_pool(const size_t thread_pool_size);
+    ~eleveldb_thread_pool();
+
+public:
+    void lock()                    { enif_mutex_lock(work_queue_lock); }
+    void unlock()                  { enif_mutex_unlock(work_queue_lock); }
+
+    bool FindWaitingThread(eleveldb::WorkTask * work);
+
+    bool submit(eleveldb::WorkTask* item);
+
+    bool resize_thread_pool(const size_t n);
+
+    size_t work_queue_size() const { return work_queue.size(); }
+    bool shutdown_pending() const  { return shutdown; }
+    leveldb::PerformanceCounters * perf() const {return(leveldb::gPerfCounters);};
+
+
+private:
+    bool grow_thread_pool(const size_t nthreads);
+    bool drain_thread_pool();
+
+    static bool notify_caller(eleveldb::WorkTask& work_item);
+
+};  // class eleveldb_thread_pool
 
 } // namespace eleveldb
 
