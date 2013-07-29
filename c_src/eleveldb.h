@@ -50,5 +50,10 @@ ERL_NIF_TERM async_iterator_move(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
 
 } // namespace eleveldb
 
+namespace {
+const size_t N_THREADS_MAX = 32767;
+}
+
+
 
 #endif

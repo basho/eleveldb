@@ -29,8 +29,8 @@
 #include "leveldb/write_batch.h"
 
 
-#ifndef INCL_THREADING_H
-    #include "threading.h"
+#ifndef INCL_MUTEX_H
+    #include "mutex.h"
 #endif
 
 #ifndef __WORK_RESULT_HPP
