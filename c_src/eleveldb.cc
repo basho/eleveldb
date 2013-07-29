@@ -937,7 +937,7 @@ try
             if(0 == enif_get_int(env, tuple_data[1], &local.n_threads))
              throw std::invalid_argument("on_load::n_threads");
 
-            if(0 >= local.n_threads || N_THREADS_MAX < static_cast<size_t>(local.n_threads))
+            if(0 >= local.n_threads || eleveldb::N_THREADS_MAX < static_cast<size_t>(local.n_threads))
              throw std::range_error("on_load::n_threads");
          }
      }

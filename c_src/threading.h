@@ -36,6 +36,9 @@
 
 namespace eleveldb {
 
+// constant
+const size_t N_THREADS_MAX = 32767;
+
 // forward declare
 struct ThreadData;
 class WorkTask;
