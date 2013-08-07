@@ -90,7 +90,7 @@ inline uint32_t inc_and_fetch(volatile uint32_t *ptr)
 #endif
 }
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || (defined(__s390__) && !defined(__s390x__))
 template <>
 inline size_t inc_and_fetch(volatile size_t *ptr)
 {
@@ -121,7 +121,7 @@ inline uint32_t dec_and_fetch(volatile uint32_t *ptr)
 #endif
 }
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || (defined(__s390__) && !defined(__s390x__))
 template <>
 inline size_t dec_and_fetch(volatile size_t *ptr)
 {
