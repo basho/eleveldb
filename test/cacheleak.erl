@@ -2,7 +2,7 @@
 %%
 %%  eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 %%
-%% Copyright (c) 2010 Basho Technologies, Inc. All Rights Reserved.
+%% Copyright (c) 2010-2013 Basho Technologies, Inc. All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -53,6 +53,8 @@ cacheleak_loop(Count, Blobs, MaxFinalRSS) ->
                 [ok = eleveldb:put(Ref, I, B, []) || {I, B} <- Blobs],
                 eleveldb:fold(Ref, fun({_K, _V}, A) -> A end, [], [{fill_cache, true}]),
                 [{ok, B} = eleveldb:get(Ref, I, []) || {I, B} <- Blobs],
+                ok = eleveldb:close(Ref),
+                erlang:garbage_collect(),
                 io:format(user, "RSS1: ~p\n", [rssmem()])
         end,
     {_Pid, Mref} = spawn_monitor(F),
