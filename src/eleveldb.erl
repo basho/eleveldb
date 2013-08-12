@@ -106,7 +106,7 @@ init() ->
                           {delete, Key::binary()} |
                           clear].
 
--type iterator_action() :: first | last | next | prev | binary().
+-type iterator_action() :: first | last | next | prev | prefetch | binary().
 
 -opaque db_ref() :: binary().
 
@@ -308,10 +308,10 @@ fold_loop({error, invalid_iterator}, _Itr, _Fun, Acc0) ->
     Acc0;
 fold_loop({ok, K}, Itr, Fun, Acc0) ->
     Acc = Fun(K, Acc0),
-    fold_loop(iterator_move(Itr, next), Itr, Fun, Acc);
+    fold_loop(iterator_move(Itr, prefetch), Itr, Fun, Acc);
 fold_loop({ok, K, V}, Itr, Fun, Acc0) ->
     Acc = Fun({K, V}, Acc0),
-    fold_loop(iterator_move(Itr, next), Itr, Fun, Acc).
+    fold_loop(iterator_move(Itr, prefetch), Itr, Fun, Acc).
 
 validate_type({_Key, bool}, true)                            -> true;
 validate_type({_Key, bool}, false)                           -> true;

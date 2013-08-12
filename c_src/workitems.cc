@@ -193,6 +193,7 @@ MoveTask::operator()()
 
         case LAST:  itr->SeekToLast();  break;
 
+        case PREFETCH:
         case NEXT:  if(itr->Valid()) itr->Next(); break;
 
         case PREV:  if(itr->Valid()) itr->Prev(); break;
@@ -216,7 +217,6 @@ MoveTask::operator()()
 
 
     // who got back first, us or the erlang loop
-//    if (eleveldb::detail::compare_and_swap(&m_ItrPtr->m_handoff_atomic, 0, 1))
     if (compare_and_swap(&m_ItrWrap->m_HandoffAtomic, 0, 1))
     {
         // this is prefetch of next iteration.  It returned faster than actual
@@ -230,11 +230,8 @@ MoveTask::operator()()
 
         if(itr->Valid())
         {
-            if (NEXT==action || SEEK==action || FIRST==action)
-            {
+            if (PREFETCH==action)
                 prepare_recycle();
-                action=NEXT;
-            }   // if
 
             // erlang is waiting, send message
             if(m_ItrWrap->m_KeysOnly)
