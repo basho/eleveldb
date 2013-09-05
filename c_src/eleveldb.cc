@@ -109,6 +109,7 @@ ERL_NIF_TERM ATOM_FIRST;
 ERL_NIF_TERM ATOM_LAST;
 ERL_NIF_TERM ATOM_NEXT;
 ERL_NIF_TERM ATOM_PREV;
+ERL_NIF_TERM ATOM_PREFETCH;
 ERL_NIF_TERM ATOM_INVALID_ITERATOR;
 ERL_NIF_TERM ATOM_CACHE_SIZE;
 ERL_NIF_TERM ATOM_PARANOID_CHECKS;
@@ -539,9 +540,7 @@ async_iterator_move(
 
     itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_handle_ref));
 
-    // prefetch logic broke PREV and not fixing for Riak
-    if(NULL==itr_ptr.get()
-       || (enif_is_atom(env, action_or_target) && ATOM_PREV==action_or_target))
+    if(NULL==itr_ptr.get())
         return enif_make_badarg(env);
 
     // Reuse ref from iterator creation
@@ -558,26 +557,22 @@ async_iterator_move(
         if(ATOM_LAST == action_or_target)   action = eleveldb::MoveTask::LAST;
         if(ATOM_NEXT == action_or_target)   action = eleveldb::MoveTask::NEXT;
         if(ATOM_PREV == action_or_target)   action = eleveldb::MoveTask::PREV;
+        if(ATOM_PREFETCH == action_or_target)   action = eleveldb::MoveTask::PREFETCH;
     }   // if
 
 
     //
     // Three situations:
-    //  - not a NEXT call
-    //  - NEXT call and no prefetch waiting
-    //  - NEXT call and prefetch is waiting
-    if (eleveldb::MoveTask::NEXT != action)
-    {
-        // is a prefetch potentially in play (cut it loose and its Iterator)
-        if (itr_ptr->ReleaseReuseMove())
-        {
-            leveldb::Iterator * iterator;
+    //  #1 not a PREFETCH next call
+    //  #2 PREFETCH call and no prefetch waiting
+    //  #3 PREFETCH call and prefetch is waiting
 
-            // NewIterator is fast, background not needed
-            iterator = itr_ptr->m_DbPtr->m_Db->NewIterator(*itr_ptr->m_ReadOptions);
-            itr_ptr->m_Iter.assign(new LevelIteratorWrapper(itr_ptr->m_DbPtr.get(), itr_ptr->m_Snapshot.get(),
-                                                        iterator, itr_ptr->keys_only));
-        }   // if
+    // case #1
+    if (eleveldb::MoveTask::PREFETCH != action)
+    {
+        // current move object could still be in later stages of
+        //  worker thread completion ... race condition ...don't reuse
+        itr_ptr->ReleaseReuseMove();
 
         submit_new_request=true;
         ret_term = enif_make_copy(env, itr_ptr->m_Snapshot->itr_ref);
@@ -586,6 +581,7 @@ async_iterator_move(
         itr_ptr->m_Iter->m_HandoffAtomic=1;
     }   // if
 
+    // case #2
     // before we launch a background job for "next iteration", see if there is a
     //  prefetch waiting for us
     else if (eleveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
@@ -593,8 +589,25 @@ async_iterator_move(
         // nope, no prefetch ... await a message to erlang queue
         ret_term = enif_make_copy(env, itr_ptr->m_Snapshot->itr_ref);
 
-        submit_new_request=false;
+        // is this truly a wait for prefetch ... or actually the first prefetch request
+        if (!itr_ptr->m_Iter->m_PrefetchStarted)
+        {
+            submit_new_request=true;
+            itr_ptr->m_Iter->m_PrefetchStarted=true;
+            itr_ptr->ReleaseReuseMove();
+
+            // first must return via message
+            itr_ptr->m_Iter->m_HandoffAtomic=1;
+        }   // if
+
+        else
+        {
+            // await message that is already in the making
+            submit_new_request=false;
+        }   // else
     }   // else if
+
+    // case #3
     else
     {
         // why yes there is.  copy the key/value info into a return tuple before
@@ -717,6 +730,8 @@ eleveldb_iterator_close(
 
     if (NULL!=itr_ptr)
     {
+        itr_ptr->ReleaseReuseMove();
+
         // set closing flag ... atomic likely unnecessary (but safer)
         eleveldb::ErlRefObject::InitiateCloseRequest(itr_ptr);
 
@@ -981,6 +996,7 @@ try
     ATOM(eleveldb::ATOM_LAST, "last");
     ATOM(eleveldb::ATOM_NEXT, "next");
     ATOM(eleveldb::ATOM_PREV, "prev");
+    ATOM(eleveldb::ATOM_PREFETCH, "prefetch");
     ATOM(eleveldb::ATOM_INVALID_ITERATOR, "invalid_iterator");
     ATOM(eleveldb::ATOM_CACHE_SIZE, "cache_size");
     ATOM(eleveldb::ATOM_PARANOID_CHECKS, "paranoid_checks");
