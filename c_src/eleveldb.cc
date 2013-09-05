@@ -540,7 +540,6 @@ async_iterator_move(
 
     itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_handle_ref));
 
-    // prefetch logic broke PREV and not fixing for Riak
     if(NULL==itr_ptr.get())
         return enif_make_badarg(env);
 
