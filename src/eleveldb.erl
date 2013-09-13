@@ -95,7 +95,8 @@ init() ->
                          {verify_compactions, boolean()} |
                          {compression, boolean()} |
                          {use_bloomfilter, boolean() | pos_integer()} |
-                         {write_threads, pos_integer()}].
+                         {write_threads, pos_integer()} |
+                         {total_leveldb_mem, pos_integer()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()}].
@@ -269,7 +270,8 @@ option_types(open) ->
      {verify_compactions, bool},
      {compression, bool},
      {use_bloomfilter, any},
-     {write_threads, integer}];
+     {write_threads, integer},
+     {total_leveldb_mem, integer}];
 option_types(read) ->
     [{verify_checksums, bool},
      {fill_cache, bool}];

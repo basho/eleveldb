@@ -119,6 +119,7 @@ ERL_NIF_TERM ATOM_KEYS_ONLY;
 ERL_NIF_TERM ATOM_COMPRESSION;
 ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
 ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
+ERL_NIF_TERM ATOM_TOTAL_LEVELDB_MEM;
 
 }   // namespace eleveldb
 
@@ -247,6 +248,17 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (option[1] == eleveldb::ATOM_TRUE || enif_get_ulong(env, option[1], &bfsize))
             {
                 opts.filter_policy = leveldb::NewBloomFilterPolicy2(bfsize);
+            }
+        }
+        else if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM)
+        {
+            uint64_t memory_sz;
+            if (enif_get_uint64(env, option[1], &memory_sz))
+            {
+                if (memory_sz != 0)
+                 {
+                     opts.total_leveldb_mem = memory_sz;
+                 }
             }
         }
     }
@@ -1006,6 +1018,7 @@ try
     ATOM(eleveldb::ATOM_KEYS_ONLY, "keys_only");
     ATOM(eleveldb::ATOM_COMPRESSION, "compression");
     ATOM(eleveldb::ATOM_USE_BLOOMFILTER, "use_bloomfilter");
+    ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_leveldb_mem");
 
 #undef ATOM
 
