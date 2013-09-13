@@ -219,6 +219,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (enif_get_int(env, option[1], &block_restart_interval))
                 opts.block_restart_interval = block_restart_interval;
         }
+#if 0
         else if (option[0] == eleveldb::ATOM_CACHE_SIZE)
         {
             unsigned long cache_sz;
@@ -228,6 +229,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                     opts.block_cache = leveldb::NewLRUCache(cache_sz);
                  }
         }
+#endif
         else if (option[0] == eleveldb::ATOM_COMPRESSION)
         {
             if (option[1] == eleveldb::ATOM_TRUE)
