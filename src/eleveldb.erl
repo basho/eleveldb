@@ -96,7 +96,8 @@ init() ->
                          {compression, boolean()} |
                          {use_bloomfilter, boolean() | pos_integer()} |
                          {write_threads, pos_integer()} |
-                         {total_leveldb_mem, pos_integer()}].
+                         {total_leveldb_mem, pos_integer()} |
+                         {is_internal_db, boolean()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()}].
@@ -271,7 +272,8 @@ option_types(open) ->
      {compression, bool},
      {use_bloomfilter, any},
      {write_threads, integer},
-     {total_leveldb_mem, integer}];
+     {total_leveldb_mem, integer},
+     {is_internal_db, bool}];
 option_types(read) ->
     [{verify_checksums, bool},
      {fill_cache, bool}];
