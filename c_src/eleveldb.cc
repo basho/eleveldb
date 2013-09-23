@@ -34,6 +34,7 @@
 
 #include "leveldb/db.h"
 #include "leveldb/comparator.h"
+#include "leveldb/env.h"
 #include "leveldb/write_batch.h"
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
@@ -919,6 +920,8 @@ static void on_unload(ErlNifEnv *env, void *priv_data)
 {
     eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(priv_data);
     delete p;
+
+    leveldb::Env::Shutdown();
 }
 
 
