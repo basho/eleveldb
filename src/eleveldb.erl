@@ -87,6 +87,7 @@ init() ->
                          {error_if_exists, boolean()} |
                          {write_buffer_size, pos_integer()} |
                          {max_open_files, pos_integer()} |
+                         {total_memory, pos_integer()} |
                          {block_size, pos_integer()} |                  %% DEPRECATED
                          {sst_block_size, pos_integer()} |
                          {block_restart_interval, pos_integer()} |
@@ -119,7 +120,8 @@ async_open(_CallerRef, _Name, _Opts) ->
 -spec open(string(), open_options()) -> {ok, db_ref()} | {error, any()}.
 open(Name, Opts) ->
     CallerRef = make_ref(),
-    async_open(CallerRef, Name, Opts),
+    Opts2 = add_open_defaults(Opts),
+    async_open(CallerRef, Name, Opts2),
     ?WAIT_FOR_REPLY(CallerRef).
 
 -spec close(db_ref()) -> ok | {error, any()}.
@@ -261,6 +263,7 @@ option_types(open) ->
      {error_if_exists, bool},
      {write_buffer_size, integer},
      {max_open_files, integer},
+     {total_memory, integer},
      {block_size, integer},                            %% DEPRECATED
      {sst_block_size, integer},
      {block_restart_interval, integer},
@@ -290,6 +293,28 @@ validate_options(Type, Opts) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+%% @doc Appends default open arguments that are better figured out
+%% in the Erlang side of things. Most get a default down in leveldb
+%% code. Currently only system total memory reported by memsup,
+%% if available.
+add_open_defaults(Opts) ->
+    case not proplists:is_defined(total_memory, Opts)
+        andalso is_pid(whereis(memsup)) of
+        true ->
+            case proplists:get_value(system_total_memory,
+                                     memsup:get_system_memory_data(),
+                                     undefined) of
+                N when is_integer(N) ->
+                    [{total_memory, N}|Opts];
+                _ ->
+                    Opts
+            end;
+        false ->
+            Opts
+    end.
+
+
+
 do_fold(Itr, Fun, Acc0, Opts) ->
     try
         %% Extract {first_key, binary()} and seek to that key as a starting
