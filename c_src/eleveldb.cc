@@ -387,8 +387,8 @@ async_open(
     // convert total_leveldb_mem to byte count if it arrived as percent
     //  This happens now because there is no guarantee as to when the total_memory
     //  value would be read relative to total_leveldb_mem_percent in the option fold
-    if (0 < opts.total_leveldb_mem && opts.total_leveldb_mem<=100)
-        opts.total_leveldb_mem=(opts.total_leveldb_mem * gCurrentTotalMemory)/100;
+    if (0 < opts->total_leveldb_mem && opts->total_leveldb_mem<=100)
+        opts->total_leveldb_mem=(opts->total_leveldb_mem * gCurrentTotalMemory)/100;
 
     eleveldb::WorkTask *work_item = new eleveldb::OpenTask(env, caller_ref,
                                                               db_name, opts);
