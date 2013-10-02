@@ -86,17 +86,17 @@ init() ->
 -type open_options() :: [{create_if_missing, boolean()} |
                          {error_if_exists, boolean()} |
                          {write_buffer_size, pos_integer()} |
-                         {max_open_files, pos_integer()} |
                          {block_size, pos_integer()} |                  %% DEPRECATED
                          {sst_block_size, pos_integer()} |
                          {block_restart_interval, pos_integer()} |
-                         {cache_size, pos_integer()} |
                          {paranoid_checks, boolean()} |
                          {verify_compactions, boolean()} |
                          {compression, boolean()} |
                          {use_bloomfilter, boolean() | pos_integer()} |
                          {write_threads, pos_integer()} |
+                         {total_memory, pos_integer()} |
                          {total_leveldb_mem, pos_integer()} |
+                         {total_leveldb_mem_percent, pos_integer()} |
                          {is_internal_db, boolean()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
@@ -121,7 +121,8 @@ async_open(_CallerRef, _Name, _Opts) ->
 -spec open(string(), open_options()) -> {ok, db_ref()} | {error, any()}.
 open(Name, Opts) ->
     CallerRef = make_ref(),
-    async_open(CallerRef, Name, Opts),
+    Opts2 = add_open_defaults(Opts),
+    async_open(CallerRef, Name, Opts2),
     ?WAIT_FOR_REPLY(CallerRef).
 
 -spec close(db_ref()) -> ok | {error, any()}.
@@ -262,17 +263,17 @@ option_types(open) ->
     [{create_if_missing, bool},
      {error_if_exists, bool},
      {write_buffer_size, integer},
-     {max_open_files, integer},
      {block_size, integer},                            %% DEPRECATED
      {sst_block_size, integer},
      {block_restart_interval, integer},
-     {cache_size, integer},
      {paranoid_checks, bool},
      {verify_compactions, bool},
      {compression, bool},
      {use_bloomfilter, any},
      {write_threads, integer},
+     {total_memory, integer},
      {total_leveldb_mem, integer},
+     {total_leveldb_mem_percent, integer},
      {is_internal_db, bool}];
 option_types(read) ->
     [{verify_checksums, bool},
@@ -294,6 +295,27 @@ validate_options(Type, Opts) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+%% @doc Appends default open arguments that are better figured out
+%% in the Erlang side of things. Most get a default down in leveldb
+%% code. Currently only system total memory reported by memsup,
+%% if available.
+add_open_defaults(Opts) ->
+    case not proplists:is_defined(total_memory, Opts)
+        andalso is_pid(whereis(memsup)) of
+        true ->
+            case proplists:get_value(system_total_memory,
+                                     memsup:get_system_memory_data(),
+                                     undefined) of
+                N when is_integer(N) ->
+                    [{total_memory, N}|Opts];
+                _ ->
+                    Opts
+            end;
+        false ->
+            Opts
+    end.
+
+
 do_fold(Itr, Fun, Acc0, Opts) ->
     try
         %% Extract {first_key, binary()} and seek to that key as a starting

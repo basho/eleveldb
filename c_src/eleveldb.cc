@@ -88,8 +88,6 @@ ERL_NIF_TERM ATOM_BADARG;
 ERL_NIF_TERM ATOM_CREATE_IF_MISSING;
 ERL_NIF_TERM ATOM_ERROR_IF_EXISTS;
 ERL_NIF_TERM ATOM_WRITE_BUFFER_SIZE;
-ERL_NIF_TERM ATOM_MAX_OPEN_FILES;
-ERL_NIF_TERM ATOM_BLOCK_SIZE;                    /* DEPRECATED */
 ERL_NIF_TERM ATOM_SST_BLOCK_SIZE;
 ERL_NIF_TERM ATOM_BLOCK_RESTART_INTERVAL;
 ERL_NIF_TERM ATOM_ERROR_DB_OPEN;
@@ -112,7 +110,6 @@ ERL_NIF_TERM ATOM_NEXT;
 ERL_NIF_TERM ATOM_PREV;
 ERL_NIF_TERM ATOM_PREFETCH;
 ERL_NIF_TERM ATOM_INVALID_ITERATOR;
-ERL_NIF_TERM ATOM_CACHE_SIZE;
 ERL_NIF_TERM ATOM_PARANOID_CHECKS;
 ERL_NIF_TERM ATOM_VERIFY_COMPACTIONS;
 ERL_NIF_TERM ATOM_ERROR_DB_DESTROY;
@@ -120,13 +117,12 @@ ERL_NIF_TERM ATOM_KEYS_ONLY;
 ERL_NIF_TERM ATOM_COMPRESSION;
 ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
 ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
+ERL_NIF_TERM ATOM_TOTAL_MEMORY;
 ERL_NIF_TERM ATOM_TOTAL_LEVELDB_MEM;
+ERL_NIF_TERM ATOM_TOTAL_LEVELDB_MEM_PERCENT;
 ERL_NIF_TERM ATOM_IS_INTERNAL_DB;
 
 }   // namespace eleveldb
-
-
-
 
 
 using std::nothrow;
@@ -136,7 +132,7 @@ struct eleveldb_itr_handle;
 class eleveldb_thread_pool;
 class eleveldb_priv_data;
 
-
+static volatile uint64_t gCurrentTotalMemory=0;
 
 // Erlang helpers:
 ERL_NIF_TERM error_einval(ErlNifEnv* env)
@@ -191,23 +187,11 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             opts.paranoid_checks = (option[1] == eleveldb::ATOM_TRUE);
         else if (option[0] == eleveldb::ATOM_VERIFY_COMPACTIONS)
             opts.verify_compactions = (option[1] == eleveldb::ATOM_TRUE);
-        else if (option[0] == eleveldb::ATOM_MAX_OPEN_FILES)
-        {
-            int max_open_files;
-            if (enif_get_int(env, option[1], &max_open_files))
-                opts.max_open_files = max_open_files;
-        }
         else if (option[0] == eleveldb::ATOM_WRITE_BUFFER_SIZE)
         {
             unsigned long write_buffer_sz;
             if (enif_get_ulong(env, option[1], &write_buffer_sz))
                 opts.write_buffer_size = write_buffer_sz;
-        }
-        else if (option[0] == eleveldb::ATOM_BLOCK_SIZE)
-        {
-            /* DEPRECATED: the old block_size atom was actually ignored. */
-            unsigned long block_sz;
-            enif_get_ulong(env, option[1], &block_sz); // ignore
         }
         else if (option[0] == eleveldb::ATOM_SST_BLOCK_SIZE)
         {
@@ -221,17 +205,6 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (enif_get_int(env, option[1], &block_restart_interval))
                 opts.block_restart_interval = block_restart_interval;
         }
-#if 0
-        else if (option[0] == eleveldb::ATOM_CACHE_SIZE)
-        {
-            unsigned long cache_sz;
-            if (enif_get_ulong(env, option[1], &cache_sz))
-                if (cache_sz != 0)
-                 {
-                    opts.block_cache = leveldb::NewLRUCache(cache_sz);
-                 }
-        }
-#endif
         else if (option[0] == eleveldb::ATOM_COMPRESSION)
         {
             if (option[1] == eleveldb::ATOM_TRUE)
@@ -254,6 +227,24 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                 opts.filter_policy = leveldb::NewBloomFilterPolicy2(bfsize);
             }
         }
+        else if (option[0] == eleveldb::ATOM_TOTAL_MEMORY)
+        {
+            uint64_t memory_sz;
+            if (enif_get_uint64(env, option[1], &memory_sz))
+            {
+                // ignoring memory size below 2G, going with defaults
+                if (1024*1024*1024L < memory_sz)
+                {
+                    gCurrentTotalMemory = memory_sz;
+                }
+                // did a dynamic VM just have a memory resize?
+                //  just in case reset the global
+                else if (0 != memory_sz)
+                {
+                    gCurrentTotalMemory = 0;
+                }   // else if
+            }
+        }
         else if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM)
         {
             uint64_t memory_sz;
@@ -261,6 +252,18 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             {
                 if (memory_sz != 0)
                  {
+                     opts.total_leveldb_mem = memory_sz;
+                 }
+            }
+        }
+        else if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM_PERCENT)
+        {
+            uint64_t memory_sz;
+            if (enif_get_uint64(env, option[1], &memory_sz))
+            {
+                if (0 < memory_sz && memory_sz <= 100)
+                 {
+                     // this gets noticed later and applied against gCurrentTotalMemory
                      opts.total_leveldb_mem = memory_sz;
                  }
             }
@@ -380,6 +383,12 @@ async_open(
 
     leveldb::Options *opts = new leveldb::Options;
     fold(env, argv[2], parse_open_option, *opts);
+
+    // convert total_leveldb_mem to byte count if it arrived as percent
+    //  This happens now because there is no guarantee as to when the total_memory
+    //  value would be read relative to total_leveldb_mem_percent in the option fold
+    if (0 < opts.total_leveldb_mem && opts.total_leveldb_mem<=100)
+        opts.total_leveldb_mem=(opts.total_leveldb_mem * gCurrentTotalMemory)/100;
 
     eleveldb::WorkTask *work_item = new eleveldb::OpenTask(env, caller_ref,
                                                               db_name, opts);
@@ -999,8 +1008,6 @@ try
     ATOM(eleveldb::ATOM_CREATE_IF_MISSING, "create_if_missing");
     ATOM(eleveldb::ATOM_ERROR_IF_EXISTS, "error_if_exists");
     ATOM(eleveldb::ATOM_WRITE_BUFFER_SIZE, "write_buffer_size");
-    ATOM(eleveldb::ATOM_MAX_OPEN_FILES, "max_open_files");
-    ATOM(eleveldb::ATOM_BLOCK_SIZE, "block_size");
     ATOM(eleveldb::ATOM_SST_BLOCK_SIZE, "sst_block_size");
     ATOM(eleveldb::ATOM_BLOCK_RESTART_INTERVAL, "block_restart_interval");
     ATOM(eleveldb::ATOM_ERROR_DB_OPEN,"db_open");
@@ -1023,7 +1030,6 @@ try
     ATOM(eleveldb::ATOM_PREV, "prev");
     ATOM(eleveldb::ATOM_PREFETCH, "prefetch");
     ATOM(eleveldb::ATOM_INVALID_ITERATOR, "invalid_iterator");
-    ATOM(eleveldb::ATOM_CACHE_SIZE, "cache_size");
     ATOM(eleveldb::ATOM_PARANOID_CHECKS, "paranoid_checks");
     ATOM(eleveldb::ATOM_VERIFY_COMPACTIONS, "verify_compactions");
     ATOM(eleveldb::ATOM_ERROR_DB_DESTROY, "error_db_destroy");
@@ -1031,7 +1037,9 @@ try
     ATOM(eleveldb::ATOM_KEYS_ONLY, "keys_only");
     ATOM(eleveldb::ATOM_COMPRESSION, "compression");
     ATOM(eleveldb::ATOM_USE_BLOOMFILTER, "use_bloomfilter");
+    ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_memory");
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_leveldb_mem");
+    ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_leveldb_mem_percent");
     ATOM(eleveldb::ATOM_IS_INTERNAL_DB, "is_internal_db");
 
 #undef ATOM
