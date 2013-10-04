@@ -139,7 +139,8 @@
 %% can alternately be assigned as a byte count via total_leveldb_mem instead.
 {mapping, "multi_backend.$name.leveldb.total_leveldb_mem_percent", "riak_kv.multi_backend", [
   {default, "45"},
-  {datatype, integer}
+  {datatype, integer},
+  {level, advanced}
 ]}.
 
 
