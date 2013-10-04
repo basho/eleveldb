@@ -229,8 +229,10 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         }
         else if (option[0] == eleveldb::ATOM_TOTAL_MEMORY)
         {
-            uint64_t memory_sz;
-            if (enif_get_uint64(env, option[1], &memory_sz))
+            // NOTE: uint64_t memory_sz and enif_get_uint64() do NOT compile
+            // correctly on some platforms.  Why?  because it's Erlang.
+            unsigned long memory_sz;
+            if (enif_get_ulong(env, option[1], &memory_sz))
             {
                 // ignoring memory size below 2G, going with defaults
                 if (1024*1024*1024L < memory_sz)
@@ -247,8 +249,8 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         }
         else if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM)
         {
-            uint64_t memory_sz;
-            if (enif_get_uint64(env, option[1], &memory_sz))
+            unsigned long memory_sz;
+            if (enif_get_ulong(env, option[1], &memory_sz))
             {
                 if (memory_sz != 0)
                  {
@@ -258,8 +260,8 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         }
         else if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM_PERCENT)
         {
-            uint64_t memory_sz;
-            if (enif_get_uint64(env, option[1], &memory_sz))
+            unsigned long memory_sz;
+            if (enif_get_ulong(env, option[1], &memory_sz))
             {
                 if (0 < memory_sz && memory_sz <= 100)
                  {
