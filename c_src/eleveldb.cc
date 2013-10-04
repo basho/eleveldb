@@ -1039,9 +1039,9 @@ try
     ATOM(eleveldb::ATOM_KEYS_ONLY, "keys_only");
     ATOM(eleveldb::ATOM_COMPRESSION, "compression");
     ATOM(eleveldb::ATOM_USE_BLOOMFILTER, "use_bloomfilter");
-    ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_memory");
+    ATOM(eleveldb::ATOM_TOTAL_MEMORY, "total_memory");
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_leveldb_mem");
-    ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_leveldb_mem_percent");
+    ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM_PERCENT, "total_leveldb_mem_percent");
     ATOM(eleveldb::ATOM_IS_INTERNAL_DB, "is_internal_db");
 
 #undef ATOM
