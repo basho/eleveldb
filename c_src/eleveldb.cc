@@ -392,6 +392,11 @@ async_open(
     if (0 < opts->total_leveldb_mem && opts->total_leveldb_mem<=100)
         opts->total_leveldb_mem=(opts->total_leveldb_mem * gCurrentTotalMemory)/100;
 
+    // it could be that we are only activating internal databases (or they come up first)
+    //  give them all RAM knowing flexcache will reduce it to 20% or so
+    if (0 == opts->total_leveldb_mem && opts->is_internal_db)
+        opts->total_leveldb_mem = gCurrentTotalMemory;
+
     eleveldb::WorkTask *work_item = new eleveldb::OpenTask(env, caller_ref,
                                                               db_name, opts);
 
