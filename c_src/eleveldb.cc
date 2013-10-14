@@ -234,7 +234,9 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             unsigned long memory_sz;
             if (enif_get_ulong(env, option[1], &memory_sz))
             {
-                // ignoring memory size below 2G, going with defaults
+                // ignoring memory size below 1G, going with defaults
+                //  (because Erlang/Riak need 1G to themselves making
+                //   percentage of memory unreliable)
                 if (1024*1024*1024L < memory_sz)
                 {
                     gCurrentTotalMemory = memory_sz;

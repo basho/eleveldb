@@ -30,7 +30,7 @@ cacheleak_test_() ->
                               [] = os:cmd("rm -rf /tmp/eleveldb.cacheleak.test"),
                               Blobs = [{<<I:128/unsigned>>, compressible_bytes(10240)} ||
                                           I <- lists:seq(1, 10000)],
-                              cacheleak_loop(10, Blobs, 400000)
+                              cacheleak_loop(10, Blobs, 500000)
                       end}.
 
 %% It's very important for this test that the data is compressible. Otherwise,
