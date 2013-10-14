@@ -8,10 +8,12 @@
                   stdlib
                  ]},
   {env, [
-         %% Max file handles to keep open by default
-         %% NOTE: 20 is the lowest value permitted by LevelDB; if you set it lower
-         %%       than this, LevelDB will bump override it up to 20
-         {max_open_files, 20},
+         %% what percent of total memory should go to 
+         %%  leveldb.  Default is 15% on the basis of
+         %%  a single development machine running 5 
+         %%  Riak instances would therefore claim 75%.
+         %% REAL users will want this at 75 to 80
+         {total_leveldb_mem_percent, 15},
 
          %% Use bloom filter support by default
          {use_bloomfilter, true}
