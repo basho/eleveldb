@@ -97,7 +97,8 @@ init() ->
                          {total_memory, pos_integer()} |
                          {total_leveldb_mem, pos_integer()} |
                          {total_leveldb_mem_percent, pos_integer()} |
-                         {is_internal_db, boolean()}].
+                         {is_internal_db, boolean()} |
+                         {limited_developer_mem, boolean()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()}].
@@ -274,7 +275,8 @@ option_types(open) ->
      {total_memory, integer},
      {total_leveldb_mem, integer},
      {total_leveldb_mem_percent, integer},
-     {is_internal_db, bool}];
+     {is_internal_db, bool},
+     {limited_developer_mem, bool}];
 option_types(read) ->
     [{verify_checksums, bool},
      {fill_cache, bool}];
