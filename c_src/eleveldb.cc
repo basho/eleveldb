@@ -121,6 +121,7 @@ ERL_NIF_TERM ATOM_TOTAL_MEMORY;
 ERL_NIF_TERM ATOM_TOTAL_LEVELDB_MEM;
 ERL_NIF_TERM ATOM_TOTAL_LEVELDB_MEM_PERCENT;
 ERL_NIF_TERM ATOM_IS_INTERNAL_DB;
+ERL_NIF_TERM ATOM_LIMITED_DEVELOPER_MEM;
 
 }   // namespace eleveldb
 
@@ -278,6 +279,13 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                 opts.is_internal_db = true;
             else
                 opts.is_internal_db = false;
+        }
+        else if (option[0] == eleveldb::ATOM_LIMITED_DEVELOPER_MEM)
+        {
+            if (option[1] == eleveldb::ATOM_TRUE)
+                opts.limited_developer_mem = true;
+            else
+                opts.limited_developer_mem = false;
         }
     }
 
@@ -1050,6 +1058,7 @@ try
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_leveldb_mem");
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM_PERCENT, "total_leveldb_mem_percent");
     ATOM(eleveldb::ATOM_IS_INTERNAL_DB, "is_internal_db");
+    ATOM(eleveldb::ATOM_LIMITED_DEVELOPER_MEM, "limited_developer_mem");
 
 #undef ATOM
 
