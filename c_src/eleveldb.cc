@@ -20,6 +20,8 @@
 //
 // -------------------------------------------------------------------
 
+#include <syslog.h>
+
 #include <new>
 #include <set>
 #include <stack>
@@ -181,6 +183,19 @@ struct EleveldbOptions
           m_LimitedDeveloper(false)
         {};
 
+    void Dump()
+    {
+        syslog(LOG_ERR, "         m_EleveldbThreads: %d\n", m_EleveldbThreads);
+        syslog(LOG_ERR, "       m_LeveldbImmThreads: %d\n", m_LeveldbImmThreads);
+        syslog(LOG_ERR, "   m_LeveldbBGWriteThreads: %d\n", m_LeveldbBGWriteThreads);
+        syslog(LOG_ERR, "   m_LeveldbOverlapThreads: %d\n", m_LeveldbOverlapThreads);
+        syslog(LOG_ERR, "  m_LeveldbGroomingThreads: %d\n", m_LeveldbGroomingThreads);
+
+        syslog(LOG_ERR, "         m_TotalMemPercent: %d\n", m_TotalMemPercent);
+        syslog(LOG_ERR, "                m_TotalMem: %d\n", m_TotalMem);
+
+        syslog(LOG_ERR, "        m_LimitedDeveloper: %s\n", (m_LimitedDeveloper ? "true" : "false"));
+    }   // Dump
 };  // struct EleveldbOptions
 
 
@@ -206,10 +221,12 @@ private:
 
 ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOptions& opts)
 {
+    syslog(LOG_ERR, "parse_init_option called");
     int arity;
     const ERL_NIF_TERM* option;
     if (enif_get_tuple(env, item, &arity, &option))
     {
+        syslog(LOG_ERR, "is tuple");
         if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM)
         {
             unsigned long memory_sz;
@@ -1041,27 +1058,7 @@ try
     eleveldb::DbObject::CreateDbObjectType(env);
     eleveldb::ItrObject::CreateItrObjectType(env);
 
-    /* Seed our private data with appropriate values: */
-    if(enif_is_list(env, load_info))
-    {
-        EleveldbOptions load_options;
-
-        fold(env, load_info, parse_init_option, load_options);
-
-        /* Spin up the thread pool, set up all private data: */
-        eleveldb_priv_data *priv = new eleveldb_priv_data(load_options);
-
-        *priv_data = priv;
-
-    }   // if
-
-    else
-    {
-        // anything non-zero is "fail"
-        ret_val=1;
-    }   // else
-    // Initialize common atoms
-
+// must initialize atoms before processing options
 #define ATOM(Id, Value) { Id = enif_make_atom(env, Value); }
     ATOM(eleveldb::ATOM_OK, "ok");
     ATOM(eleveldb::ATOM_ERROR, "error");
@@ -1108,6 +1105,28 @@ try
     ATOM(eleveldb::ATOM_LIMITED_DEVELOPER_MEM, "limited_developer_mem");
 
 #undef ATOM
+
+
+    // read options that apply to global eleveldb environment
+    if(enif_is_list(env, load_info))
+    {
+        EleveldbOptions load_options;
+
+        fold(env, load_info, parse_init_option, load_options);
+
+        /* Spin up the thread pool, set up all private data: */
+        eleveldb_priv_data *priv = new eleveldb_priv_data(load_options);
+
+        *priv_data = priv;
+
+    }   // if
+
+    else
+    {
+        // anything non-zero is "fail"
+        ret_val=1;
+    }   // else
+    // Initialize common atoms
 
     return ret_val;
 }

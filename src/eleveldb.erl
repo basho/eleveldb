@@ -81,7 +81,6 @@ init() ->
                  Dir ->
                      filename:join(Dir, "eleveldb")
              end,
-%%    erlang:load_nif(SoName, [{write_threads,NumWriteThreads}]).
     erlang:load_nif(SoName, application:get_all_env(eleveldb)).
 
 -type open_options() :: [{create_if_missing, boolean()} |
