@@ -488,7 +488,7 @@ async_open(
     //  value would be read relative to total_leveldb_mem_percent in the option fold
     uint64_t use_memory;
 
-    // start will all memory
+    // start with all memory
     use_memory=gCurrentTotalMemory;
 
     // adjust to specific memory size
