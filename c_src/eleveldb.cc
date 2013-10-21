@@ -208,11 +208,12 @@ public:
     EleveldbOptions m_Opts;
     eleveldb::eleveldb_thread_pool thread_pool;
 
-    eleveldb_priv_data(EleveldbOptions & Options)
+    explicit eleveldb_priv_data(EleveldbOptions & Options)
     : m_Opts(Options), thread_pool(Options.m_EleveldbThreads)
         {}
 
 private:
+    eleveldb_priv_data();                                      // no default constructor
     eleveldb_priv_data(const eleveldb_priv_data&);             // nocopy
     eleveldb_priv_data& operator=(const eleveldb_priv_data&);  // nocopyassign
 
@@ -221,12 +222,10 @@ private:
 
 ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOptions& opts)
 {
-    syslog(LOG_ERR, "parse_init_option called");
     int arity;
     const ERL_NIF_TERM* option;
     if (enif_get_tuple(env, item, &arity, &option))
     {
-        syslog(LOG_ERR, "is tuple");
         if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM)
         {
             unsigned long memory_sz;
@@ -649,7 +648,7 @@ async_iterator(
     // Parse out the read options
     leveldb::ReadOptions *opts = new leveldb::ReadOptions;
     fold(env, options_ref, parse_read_option, *opts);
-
+    opts->fill_cache=true;
     eleveldb::WorkTask *work_item = new eleveldb::IterTask(env, caller_ref,
                                                            db_ptr.get(), keys_only, opts);
 
