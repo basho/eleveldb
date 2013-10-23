@@ -8,7 +8,7 @@ if [ `uname -s` = 'SunOS' -a "${POSIX_SHELL}" != "true" ]; then
 fi
 unset POSIX_SHELL # clear it so if we invoke other scripts, they run as ksh as well
 
-LEVELDB_VSN="1.3.3"
+LEVELDB_VSN="989ef0843644cd3d245b2c423f9de387d0c4fc7d" # Special build voxer purge bjs-manifest-repair branch
 
 SNAPPY_VSN="1.0.4"
 
