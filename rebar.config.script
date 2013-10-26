@@ -1,0 +1,31 @@
+%%-*- mode: erlang -*-
+
+%% Set the minimum Mac target to 10.8 for 10.9 or greater.  This runtime
+%% check is needed since rebar's system_architecture check looks only at
+%% the version of the OS used to build the Erlang runtime, not the version
+%% actually running.
+case os:type() of
+    {unix,darwin} ->
+        Opt = " -mmacosx-version-min=10.8",
+        [Mjr|_] = string:tokens(os:cmd("/usr/bin/uname -r"), "."),
+        Major = list_to_integer(Mjr),
+        if
+            Major >= 13 ->
+                Flags = ["CFLAGS", "CXXFLAGS", "DRV_CFLAGS", "DRV_LDFLAGS"],
+                {port_env, Vals} = lists:keyfind(port_env, 1, CONFIG),
+                Fold = fun({Flag,Val}, Acc) ->
+                               case lists:member(Flag, Flags) of
+                                   true ->
+                                      [{Flag, Val++Opt}|Acc];
+                                   false ->
+                                       Acc
+                               end
+                       end,
+                NewVals = lists:foldl(Fold, [], Vals),
+                lists:keyreplace(port_env, 1, CONFIG, {port_env, NewVals});
+            true ->
+                CONFIG
+        end;
+    _ ->
+        CONFIG
+end.
