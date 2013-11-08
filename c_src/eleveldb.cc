@@ -769,13 +769,6 @@ async_iterator_move(
         	assert(itr_ptr->m_Iter->m_CurrentData != 0);
         	ret_term = enif_make_tuple2(env, ATOM_OK, itr_ptr->m_Iter->m_CurrentData);
         }
-        /*else if (itr_ptr->m_Iter->m_KeysOnly)
-            ret_term=enif_make_tuple2(env, ATOM_OK, slice_to_binary(env, itr_ptr->m_Iter->key()));
-        else
-            ret_term=enif_make_tuple3(env, ATOM_OK,
-                                      slice_to_binary(env, itr_ptr->m_Iter->key()),
-                                      slice_to_binary(env, itr_ptr->m_Iter->value()));*/
-
 
         // reset for next race
         itr_ptr->m_Iter->m_HandoffAtomic=0;
