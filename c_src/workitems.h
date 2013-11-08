@@ -314,16 +314,17 @@ protected:
     ReferencePtr<LevelIteratorWrapper> m_ItrWrap;             //!< access to database, and holds reference
 
 public:
-    action_t                                       action;
+    action_t                                    action;
+    int											batch_size;
     std::string                                 seek_target;
 
 public:
 
     // No seek target:
     MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
-             LevelIteratorWrapper * IterWrap, action_t& _action)
+             LevelIteratorWrapper * IterWrap, action_t& _action, int _batch_size)
         : WorkTask(NULL, _caller_ref),
-        m_ItrWrap(IterWrap), action(_action)
+        m_ItrWrap(IterWrap), action(_action), batch_size(_batch_size)
     {
         // special case construction
         local_env_=NULL;
@@ -350,6 +351,12 @@ public:
 
     virtual void prepare_recycle();
     virtual void recycle();
+
+private:
+    void read_batch(leveldb::Iterator* itr);
+    void read_single(leveldb::Iterator* itr);
+    ERL_NIF_TERM extract(leveldb::Iterator* itr, bool keys_only);
+    void apply_action(leveldb::Iterator* itr);
 
 };  // class MoveTask
 

@@ -28,6 +28,7 @@
          delete/3,
          write/3,
          fold/4,
+         fold/5,
          fold_keys/4,
          status/2,
          destroy/2,
@@ -40,6 +41,7 @@
 -export([iterator/2,
          iterator/3,
          iterator_move/2,
+         iterator_move/3,
          iterator_close/1]).
 
 -export_type([db_ref/0,
@@ -180,27 +182,42 @@ iterator(Ref, Opts, keys_only) ->
     async_iterator(CallerRef, Ref, Opts, keys_only),
     ?WAIT_FOR_REPLY(CallerRef).
 
--spec async_iterator_move(reference(), itr_ref(), iterator_action()) -> {reference(), {ok, Key::binary(), Value::binary()}} |
-                                                                        {reference(), {ok, Key::binary()}} |
+-spec async_iterator_move(reference(), itr_ref(), iterator_action(), integer()) -> {reference(), {ok, [{Key::binary(), Value::binary()}]}} |
+                                                                        {reference(), {ok, [Key::binary()]}} |
                                                                         {reference(), {error, invalid_iterator}} |
                                                                         {reference(), {error, iterator_closed}}.
-async_iterator_move(_CallerRef, _IterRef, _IterAction) ->
+async_iterator_move(_CallerRef, _IterRef, _IterAction, _BatchSize) ->
     erlang:nif_error({error, not_loaded}).
 
--spec iterator_move(itr_ref(), iterator_action()) -> {ok, Key::binary(), Value::binary()} |
-                                                     {ok, Key::binary()} |
+-spec iterator_move(itr_ref(), iterator_action(), integer()) -> {ok, [{Key::binary(), Value::binary()}]} |
+                                                     {ok, [Key::binary()]} |
                                                      {error, invalid_iterator} |
                                                      {error, iterator_closed}.
-iterator_move(_IRef, _Loc) ->
-    case async_iterator_move(undefined, _IRef, _Loc) of
+iterator_move(_IRef, _Loc, BatchSize) ->
+    case async_iterator_move(undefined, _IRef, _Loc, BatchSize) of
     Ref when is_reference(Ref) ->
         receive
             {Ref, X}                    -> X
         end;
-    {ok, _}=Key -> Key;
-    {ok, _, _}=KeyVal -> KeyVal;
+    {ok, _}=KeyVal -> KeyVal;
     ER -> ER
     end.
+
+-spec iterator_move(itr_ref(), iterator_action()) -> {ok, {Key::binary(), Value::binary()}} |
+                                                     {ok, Key::binary()} |
+                                                     {error, invalid_iterator} |
+                                                     {error, iterator_closed}.
+
+iterator_move(IRef, Loc) ->
+    case iterator_move(IRef, Loc, 1) of
+        {ok, [{K, V}]} ->
+            {ok, K, V};
+        {ok, [K]} ->
+            {ok, K};
+        {error, _Reason} = E ->
+            E
+    end.
+            
 
 -spec iterator_close(itr_ref()) -> ok.
 iterator_close(IRef) ->
@@ -214,10 +231,14 @@ iterator_close_int(_IRef) ->
 
 %% Fold over the keys and values in the database
 %% will throw an exception if the database is closed while the fold runs
+-spec fold(db_ref(), fold_fun(), any(), read_options(), integer()) -> any().
+fold(Ref, Fun, Acc0, Opts, BatchSize) ->
+    {ok, Itr} = iterator(Ref, Opts),
+    do_fold(Itr, Fun, Acc0, Opts, BatchSize).
+
 -spec fold(db_ref(), fold_fun(), any(), read_options()) -> any().
 fold(Ref, Fun, Acc0, Opts) ->
-    {ok, Itr} = iterator(Ref, Opts),
-    do_fold(Itr, Fun, Acc0, Opts).
+    fold(Ref, Fun, Acc0, Opts, 1).
 
 -type fold_keys_fun() :: fun((Key::binary(), any()) -> any()).
 
@@ -226,7 +247,7 @@ fold(Ref, Fun, Acc0, Opts) ->
 -spec fold_keys(db_ref(), fold_keys_fun(), any(), read_options()) -> any().
 fold_keys(Ref, Fun, Acc0, Opts) ->
     {ok, Itr} = iterator(Ref, Opts, keys_only),
-    do_fold(Itr, Fun, Acc0, Opts).
+    do_fold(Itr, Fun, Acc0, Opts, 1).
 
 -spec status(db_ref(), Key::binary()) -> {ok, binary()} | error.
 status(Ref, Key) ->
@@ -318,28 +339,28 @@ add_open_defaults(Opts) ->
     end.
 
 
-do_fold(Itr, Fun, Acc0, Opts) ->
+do_fold(Itr, Fun, Acc0, Opts, BatchSize) ->
     try
         %% Extract {first_key, binary()} and seek to that key as a starting
         %% point for the iteration. The folding function should use throw if it
         %% wishes to terminate before the end of the fold.
         Start = proplists:get_value(first_key, Opts, first),
         true = is_binary(Start) or (Start == first),
-        fold_loop(iterator_move(Itr, Start), Itr, Fun, Acc0)
+        fold_loop(iterator_move(Itr, Start, BatchSize), Itr, Fun, Acc0, BatchSize)
     after
         iterator_close(Itr)
     end.
 
-fold_loop({error, iterator_closed}, _Itr, _Fun, Acc0) ->
+fold_loop({error, iterator_closed}, _Itr, _Fun, Acc0, _) ->
     throw({iterator_closed, Acc0});
-fold_loop({error, invalid_iterator}, _Itr, _Fun, Acc0) ->
+fold_loop({error, invalid_iterator}, _Itr, _Fun, Acc0, _) ->
     Acc0;
-fold_loop({ok, K}, Itr, Fun, Acc0) ->
-    Acc = Fun(K, Acc0),
-    fold_loop(iterator_move(Itr, prefetch), Itr, Fun, Acc);
-fold_loop({ok, K, V}, Itr, Fun, Acc0) ->
-    Acc = Fun({K, V}, Acc0),
-    fold_loop(iterator_move(Itr, prefetch), Itr, Fun, Acc).
+fold_loop({ok, KList}, Itr, Fun, Acc0, BatchSize) when is_list(KList) ->
+    Acc = lists:foldl(Fun ,Acc0, KList),
+    fold_loop(iterator_move(Itr, prefetch, BatchSize), Itr, Fun, Acc, BatchSize);
+fold_loop({ok, KVList}, Itr, Fun, Acc0, BatchSize) when is_list(KVList)->
+    Acc = lists:foldl(Fun, Acc0, KVList),
+    fold_loop(iterator_move(Itr, prefetch, BatchSize), Itr, Fun, Acc, BatchSize).
 
 validate_type({_Key, bool}, true)                            -> true;
 validate_type({_Key, bool}, false)                           -> true;

@@ -32,9 +32,40 @@ prev_test() ->
       eleveldb:put(Ref, <<"a">>, <<"x">>, []),
       eleveldb:put(Ref, <<"b">>, <<"y">>, []),
       {ok, I} = eleveldb:iterator(Ref, []),
-        ?assertEqual({ok, <<"a">>, <<"x">>},eleveldb:iterator_move(I, <<>>)),
-        ?assertEqual({ok, <<"b">>, <<"y">>},eleveldb:iterator_move(I, next)),
-        ?assertEqual({ok, <<"a">>, <<"x">>},eleveldb:iterator_move(I, prev))
+      io:format("got iter~n"),
+        ?assertEqual({ok, [{<<"a">>, <<"x">>}]},eleveldb:iterator_move(I, <<>> , 1)),
+        io:format("1~n"),
+        ?assertEqual({ok, [{<<"b">>, <<"y">>}]},eleveldb:iterator_move(I, next, 1)),
+      io:format("2~n"),
+        ?assertEqual({ok, [{<<"a">>, <<"x">>}]},eleveldb:iterator_move(I, prev, 1)),
+      io:format("3~n"),
+      
+      eleveldb:put(Ref, <<"c">>, <<"z">>, []),
+      {ok, I2} = eleveldb:iterator(Ref, []),
+      io:format("4~n"),
+        ?assertEqual({ok, [{<<"a">>, <<"x">>}]},eleveldb:iterator_move(I2, <<>> , 1)),
+      io:format("5~n"),
+        ?assertEqual({ok, [{<<"b">>, <<"y">>}, {<<"c">>, <<"z">>}]}, eleveldb:iterator_move(I2, next, 2)),
+      
+      {ok, I3} = eleveldb:iterator(Ref, []),
+      io:format("6~n"),
+        ?assertEqual({ok, [{<<"a">>, <<"x">>}]},eleveldb:iterator_move(I3, <<>> , 1)),
+      io:format("7~n"),
+        ?assertEqual({ok, [{<<"b">>, <<"y">>}]}, eleveldb:iterator_move(I3, prefetch, 1)),
+        ?assertEqual({ok, [{<<"c">>, <<"z">>}]}, eleveldb:iterator_move(I3, prefetch, 1)),
+      
+      {ok, I4} = eleveldb:iterator(Ref, []),
+      io:format("8~n"),
+        ?assertEqual({ok, [{<<"a">>, <<"x">>}]},eleveldb:iterator_move(I4, <<>> , 10)),
+      io:format("9~n"),
+        ?assertEqual({ok, [{<<"b">>, <<"y">>}, {<<"c">>, <<"z">>}]}, eleveldb:iterator_move(I4, prefetch, 20)),
+      io:format("9~n"),
+        ?assertEqual({error, invalid_iterator}, eleveldb:iterator_move(I4, prefetch, 2)),
+      
+      io:format("10~n"),
+      ?assertEqual([<<"cz">>, <<"by">>, <<"ax">>], eleveldb:fold(Ref, fun({K,V}, Acc) -> [<<K/binary, V/binary>>|Acc] end, [], [], 2)),
+      io:format("11~n"),
+      ?assertEqual([<<"cz">>, <<"by">>, <<"ax">>], eleveldb:fold(Ref, fun({K,V}, Acc) -> [<<K/binary, V/binary>>|Acc] end, [], [], 20))
     after
       eleveldb:close(Ref)
     end.

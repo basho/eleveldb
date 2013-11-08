@@ -74,7 +74,7 @@ static ErlNifFunc nif_funcs[] =
     {"async_iterator", 3, eleveldb::async_iterator},
     {"async_iterator", 4, eleveldb::async_iterator},
 
-    {"async_iterator_move", 3, eleveldb::async_iterator_move}
+    {"async_iterator_move", 4, eleveldb::async_iterator_move}
 };
 
 
@@ -151,6 +151,7 @@ static ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Sta
                             enif_make_tuple2(env, error, reason));
 }
 
+/*
 static ERL_NIF_TERM slice_to_binary(ErlNifEnv* env, leveldb::Slice s)
 {
     ERL_NIF_TERM result;
@@ -158,6 +159,7 @@ static ERL_NIF_TERM slice_to_binary(ErlNifEnv* env, leveldb::Slice s)
     memcpy(value, s.data(), s.size());
     return result;
 }
+*/
 
 /** struct for grabbing eleveldb environment options via fold
  *   ... then loading said options into eleveldb_priv_data
@@ -675,6 +677,11 @@ async_iterator_move(
     // const ERL_NIF_TERM& caller_ref       = argv[0];
     const ERL_NIF_TERM& itr_handle_ref   = argv[1];
     const ERL_NIF_TERM& action_or_target = argv[2];
+    const ERL_NIF_TERM& erl_batch_size       = argv[3];
+    int batch_size;
+    if (!enif_get_int(env, erl_batch_size, &batch_size)) {
+    	batch_size = 1;
+    }
     ERL_NIF_TERM ret_term;
 
     bool submit_new_request(true);
@@ -755,15 +762,20 @@ async_iterator_move(
     {
         // why yes there is.  copy the key/value info into a return tuple before
         //  we launch the iterator for "next" again
-        if(!itr_ptr->m_Iter->Valid())
+        if(!itr_ptr->m_Iter->Valid()) {
             ret_term=enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
-
-        else if (itr_ptr->m_Iter->m_KeysOnly)
+        }
+        else {
+        	assert(itr_ptr->m_Iter->m_CurrentData != 0);
+        	ret_term = enif_make_tuple2(env, ATOM_OK, itr_ptr->m_Iter->m_CurrentData);
+        }
+        /*else if (itr_ptr->m_Iter->m_KeysOnly)
             ret_term=enif_make_tuple2(env, ATOM_OK, slice_to_binary(env, itr_ptr->m_Iter->key()));
         else
             ret_term=enif_make_tuple3(env, ATOM_OK,
                                       slice_to_binary(env, itr_ptr->m_Iter->key()),
-                                      slice_to_binary(env, itr_ptr->m_Iter->value()));
+                                      slice_to_binary(env, itr_ptr->m_Iter->value()));*/
+
 
         // reset for next race
         itr_ptr->m_Iter->m_HandoffAtomic=0;
@@ -782,7 +794,7 @@ async_iterator_move(
         eleveldb::MoveTask * move_item;
 
         move_item = new eleveldb::MoveTask(env, caller_ref,
-                                           itr_ptr->m_Iter.get(), action);
+                                           itr_ptr->m_Iter.get(), action, batch_size);
 
         // prevent deletes during worker loop
         move_item->RefInc();

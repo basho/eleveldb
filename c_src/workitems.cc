@@ -187,22 +187,23 @@ MoveTask::operator()()
     if(NULL == itr)
         return work_result(local_env(), ATOM_ERROR, ATOM_ITERATOR_CLOSED);
 
+    m_ItrWrap->m_CurrentData = 0;
+
     switch(action)
     {
-        case FIRST: itr->SeekToFirst(); break;
+        case FIRST: itr->SeekToFirst(); read_single(itr); break;
 
-        case LAST:  itr->SeekToLast();  break;
+        case LAST:  itr->SeekToLast();  read_single(itr); break;
 
         case PREFETCH:
-        case NEXT:  if(itr->Valid()) itr->Next(); break;
-
-        case PREV:  if(itr->Valid()) itr->Prev(); break;
+        case NEXT:
+        case PREV:  read_batch(itr); break;
 
         case SEEK:
         {
             leveldb::Slice key_slice(seek_target);
-
             itr->Seek(key_slice);
+            read_single(itr);
             break;
         }   // case
 
@@ -228,18 +229,13 @@ MoveTask::operator()()
         // setup next race for the response
         m_ItrWrap->m_HandoffAtomic=0;
 
-        if(itr->Valid())
+        if(m_ItrWrap->Valid())
         {
             if (PREFETCH==action)
                 prepare_recycle();
 
             // erlang is waiting, send message
-            if(m_ItrWrap->m_KeysOnly)
-                return work_result(local_env(), ATOM_OK, slice_to_binary(local_env(), itr->key()));
-
-            return work_result(local_env(), ATOM_OK,
-                               slice_to_binary(local_env(), itr->key()),
-                               slice_to_binary(local_env(), itr->value()));
+			return work_result(local_env(), ATOM_OK, m_ItrWrap->m_CurrentData);
         }   // if
         else
         {
@@ -249,6 +245,57 @@ MoveTask::operator()()
     }   // else
 
     return(work_result());
+}
+
+void MoveTask::read_batch(leveldb::Iterator* itr)
+{
+	const bool keys_only = m_ItrWrap->m_KeysOnly;
+	std::vector<ERL_NIF_TERM> list;
+	list.reserve(batch_size);
+	for (int k = 0; k < batch_size && itr->Valid(); ++k) {
+		apply_action(itr);
+		if (!itr->Valid()) {
+			break;
+		}
+		list.push_back(extract(itr, keys_only));
+	}
+	if (list.size() != 0) {
+		m_ItrWrap->m_CurrentData = enif_make_list_from_array(local_env(), &list[0], list.size());
+	}
+	else {
+		m_ItrWrap->m_CurrentData = 0;
+	}
+}
+
+ERL_NIF_TERM MoveTask::extract(leveldb::Iterator* itr, const bool keys_only)
+{
+	ERL_NIF_TERM elem;
+	if(keys_only) {
+		elem = slice_to_binary(local_env(), itr->key());
+	}
+	else {
+		elem = enif_make_tuple2(local_env(),
+						slice_to_binary(local_env(), itr->key()),
+						slice_to_binary(local_env(), itr->value()));
+	}
+	return elem;
+}
+
+void MoveTask::read_single(leveldb::Iterator* itr)
+{
+	assert(itr->Valid());
+	const bool keys_only = m_ItrWrap->m_KeysOnly;
+	m_ItrWrap->m_CurrentData = enif_make_list1(local_env(), extract(itr, keys_only));
+}
+
+void MoveTask::apply_action(leveldb::Iterator* itr)
+{
+	switch (action) {
+	case PREFETCH:
+	case NEXT:  itr->Next(); break;
+	case PREV:  itr->Prev(); break;
+	default: break;
+	}
 }
 
 
