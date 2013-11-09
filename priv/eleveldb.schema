@@ -13,7 +13,7 @@
 %% vnodes on this server to stay within this size.  The memory size
 %% can alternately be assigned as a byte count via total_leveldb_mem instead.
 {mapping, "leveldb.total_leveldb_mem_percent", "eleveldb.total_leveldb_mem_percent", [
-  {default, "90"},
+  {default, "80"},
   {datatype, integer}
 ]}.
 
