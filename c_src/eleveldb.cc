@@ -499,6 +499,15 @@ async_open(
     if (0!=priv.m_Opts.m_TotalMem)
         use_memory=priv.m_Opts.m_TotalMem;
 
+    // 4. fail safe when no guidance given
+    if (0==priv.m_Opts.m_TotalMem && 0==priv.m_Opts.m_TotalMemPercent)
+    {
+        if (8*1024*1024*1024L < gCurrentTotalMemory)
+            use_memory=(gCurrentTotalMemory * 80)/100;  // integer percent
+        else
+            use_memory=(gCurrentTotalMemory * 25)/100;  // integer percent
+    }   // if
+
     opts->total_leveldb_mem=use_memory;
     opts->limited_developer_mem=priv.m_Opts.m_LimitedDeveloper;
 

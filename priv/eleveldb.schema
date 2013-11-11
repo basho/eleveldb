@@ -25,7 +25,6 @@
 %% can alternately be assigned as percentage of total server memory
 %% via total_leveldb_mem_percent instead.
 {mapping, "leveldb.total_leveldb_mem", "eleveldb.total_leveldb_mem", [
-  {default, "1GB"},
   {datatype, bytesize},
   {level, advanced}
 ]}.
