@@ -488,15 +488,16 @@ async_open(
     //  value would be read relative to total_leveldb_mem_percent in the option fold
     uint64_t use_memory;
 
-    // start with all memory
+    // 1. start with all memory
     use_memory=gCurrentTotalMemory;
 
-    // adjust to specific memory size
-    if (0!=priv.m_Opts.m_TotalMem)
-        use_memory=gCurrentTotalMemory;
-
+    // 2. valid percentage given
     if (0 < priv.m_Opts.m_TotalMemPercent && priv.m_Opts.m_TotalMemPercent<=100)
-        use_memory=(opts->total_leveldb_mem * use_memory)/100;  // integer math for percentate
+        use_memory=(priv.m_Opts.m_TotalMemPercent * use_memory)/100;  // integer math for percentage
+
+    // 3. adjust to specific memory size
+    if (0!=priv.m_Opts.m_TotalMem)
+        use_memory=priv.m_Opts.m_TotalMem;
 
     opts->total_leveldb_mem=use_memory;
     opts->limited_developer_mem=priv.m_Opts.m_LimitedDeveloper;
