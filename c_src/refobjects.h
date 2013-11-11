@@ -279,7 +279,7 @@ public:
     LevelIteratorWrapper(DbObject * DbPtr, LevelSnapshotWrapper * Snapshot,
                          leveldb::Iterator * Iterator, bool KeysOnly)
         : m_DbPtr(DbPtr), m_Snap(Snapshot), m_Iterator(Iterator),
-        m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false)
+        m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false), m_CurrentData(0)
     {
     };
 

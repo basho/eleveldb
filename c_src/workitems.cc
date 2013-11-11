@@ -45,6 +45,9 @@ static ERL_NIF_TERM slice_to_binary(ErlNifEnv* env, leveldb::Slice s)
 {
     ERL_NIF_TERM result;
     unsigned char* value = enif_make_new_binary(env, s.size(), &result);
+    assert(result != 0);
+    assert(value != 0);
+    assert(s.data() != 0);
     memcpy(value, s.data(), s.size());
     return result;
 }
@@ -182,12 +185,11 @@ OpenTask::operator()()
 work_result
 MoveTask::operator()()
 {
+	assert(m_ItrWrap->m_CurrentData == 0);
     leveldb::Iterator* itr = m_ItrWrap->get();
 
     if(NULL == itr)
         return work_result(local_env(), ATOM_ERROR, ATOM_ITERATOR_CLOSED);
-
-    m_ItrWrap->m_CurrentData = 0;
 
     switch(action)
     {
@@ -235,10 +237,13 @@ MoveTask::operator()()
                 prepare_recycle();
 
             // erlang is waiting, send message
-			return work_result(local_env(), ATOM_OK, m_ItrWrap->m_CurrentData);
+			work_result r(local_env(), ATOM_OK, m_ItrWrap->m_CurrentData);
+			m_ItrWrap->m_CurrentData = 0;
+			return r;
         }   // if
         else
         {
+        	assert(m_ItrWrap->m_CurrentData == 0);
             return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
         }   // else
 
@@ -253,6 +258,7 @@ void MoveTask::read_batch(leveldb::Iterator* itr)
 	std::vector<ERL_NIF_TERM> list;
 	list.reserve(batch_size);
 	for (int k = 0; k < batch_size && itr->Valid(); ++k) {
+
 		apply_action(itr);
 		if (!itr->Valid()) {
 			break;
@@ -260,15 +266,18 @@ void MoveTask::read_batch(leveldb::Iterator* itr)
 		list.push_back(extract(itr, keys_only));
 	}
 	if (list.size() != 0) {
+		assert(m_ItrWrap->m_CurrentData == 0);
 		m_ItrWrap->m_CurrentData = enif_make_list_from_array(local_env(), &list[0], list.size());
 	}
 	else {
-		m_ItrWrap->m_CurrentData = 0;
+		assert(m_ItrWrap->m_CurrentData == 0);
+		//m_ItrWrap->m_CurrentData = 0;
 	}
 }
 
 ERL_NIF_TERM MoveTask::extract(leveldb::Iterator* itr, const bool keys_only)
 {
+	assert(itr->Valid());
 	ERL_NIF_TERM elem;
 	if(keys_only) {
 		elem = slice_to_binary(local_env(), itr->key());
@@ -332,8 +341,10 @@ MoveTask::recycle()
     // test for race condition of simultaneous delete & recycle
     if (1<RefInc())
     {
-        if (NULL!=local_env_)
+        if (NULL!=local_env_) {
+        	assert(m_ItrWrap->m_CurrentData == 0);
             enif_clear_env(local_env_);
+        }
 
         terms_set=false;
         resubmit_work=false;

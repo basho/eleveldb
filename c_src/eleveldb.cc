@@ -766,8 +766,8 @@ async_iterator_move(
             ret_term=enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
         }
         else {
-        	assert(itr_ptr->m_Iter->m_CurrentData != 0);
-        	ret_term = enif_make_tuple2(env, ATOM_OK, itr_ptr->m_Iter->m_CurrentData);
+        	ret_term = enif_make_tuple2(env, ATOM_OK, enif_make_copy(env, itr_ptr->m_Iter->m_CurrentData));
+        	itr_ptr->m_Iter->m_CurrentData = 0;
         }
 
         // reset for next race
