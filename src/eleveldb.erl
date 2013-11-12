@@ -355,12 +355,15 @@ fold_loop({error, iterator_closed}, _Itr, _Fun, Acc0, _) ->
     throw({iterator_closed, Acc0});
 fold_loop({error, invalid_iterator}, _Itr, _Fun, Acc0, _) ->
     Acc0;
-fold_loop({ok, KList}, Itr, Fun, Acc0, BatchSize) when is_list(KList) ->
-    Acc = lists:foldl(Fun ,Acc0, KList),
-    fold_loop(iterator_move(Itr, prefetch, BatchSize), Itr, Fun, Acc, BatchSize);
+
 fold_loop({ok, KVList}, Itr, Fun, Acc0, BatchSize) when is_list(KVList)->
+    Ref = async_iterator_move(undefined, Itr, next, BatchSize),
     Acc = lists:foldl(Fun, Acc0, KVList),
-    fold_loop(iterator_move(Itr, prefetch, BatchSize), Itr, Fun, Acc, BatchSize).
+    NextBatch = receive 
+                    {Ref, X} ->
+                        X
+                end,
+    fold_loop(NextBatch, Itr, Fun, Acc, BatchSize).
 
 validate_type({_Key, bool}, true)                            -> true;
 validate_type({_Key, bool}, false)                           -> true;
