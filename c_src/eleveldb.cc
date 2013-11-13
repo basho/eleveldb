@@ -151,16 +151,6 @@ static ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Sta
                             enif_make_tuple2(env, error, reason));
 }
 
-/*
-static ERL_NIF_TERM slice_to_binary(ErlNifEnv* env, leveldb::Slice s)
-{
-    ERL_NIF_TERM result;
-    unsigned char* value = enif_make_new_binary(env, s.size(), &result);
-    memcpy(value, s.data(), s.size());
-    return result;
-}
-*/
-
 /** struct for grabbing eleveldb environment options via fold
  *   ... then loading said options into eleveldb_priv_data
  */
