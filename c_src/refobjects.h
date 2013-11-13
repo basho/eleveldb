@@ -274,7 +274,7 @@ public:
     volatile uint32_t m_HandoffAtomic;        //!< matthew's atomic foreground/background prefetch flag.
     bool m_KeysOnly;                          //!< only return key values
     bool m_PrefetchStarted;                   //!< true after first prefetch command
-    ERL_NIF_TERM m_CurrentData;
+    ERL_NIF_TERM m_CurrentData;               //!< list of KV or Keys gained from iterator after last (batch or not) move
 
     LevelIteratorWrapper(DbObject * DbPtr, LevelSnapshotWrapper * Snapshot,
                          leveldb::Iterator * Iterator, bool KeysOnly)

@@ -315,7 +315,7 @@ protected:
 
 public:
     action_t                                    action;
-    int											batch_size;
+    int                                         batch_size;
     std::string                                 seek_target;
 
 public:

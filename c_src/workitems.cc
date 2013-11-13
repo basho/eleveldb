@@ -237,9 +237,9 @@ MoveTask::operator()()
                 prepare_recycle();
 
             // erlang is waiting, send message
-			work_result r(local_env(), ATOM_OK, m_ItrWrap->m_CurrentData);
-			m_ItrWrap->m_CurrentData = 0;
-			return r;
+            work_result r(local_env(), ATOM_OK, m_ItrWrap->m_CurrentData);
+            m_ItrWrap->m_CurrentData = 0;
+            return r;
         }   // if
         else
         {
@@ -254,57 +254,62 @@ MoveTask::operator()()
 
 void MoveTask::read_batch(leveldb::Iterator* itr)
 {
-	const bool keys_only = m_ItrWrap->m_KeysOnly;
-	std::vector<ERL_NIF_TERM> list;
-	list.reserve(batch_size);
-	for (int k = 0; k < batch_size && itr->Valid(); ++k) {
+    const bool keys_only = m_ItrWrap->m_KeysOnly;
+    std::vector<ERL_NIF_TERM> list;
+    list.reserve(batch_size);
+    for (int k = 0; k < batch_size && itr->Valid(); ++k) {
 
-		apply_action(itr);
-		if (!itr->Valid()) {
-			break;
-		}
-		list.push_back(extract(itr, keys_only));
-	}
-	if (list.size() != 0) {
-		assert(m_ItrWrap->m_CurrentData == 0);
-		m_ItrWrap->m_CurrentData = enif_make_list_from_array(local_env(), &list[0], list.size());
-	}
-	else {
-		assert(m_ItrWrap->m_CurrentData == 0);
-		//m_ItrWrap->m_CurrentData = 0;
-	}
+        apply_action(itr);
+        if (!itr->Valid())
+        {
+            break;
+        }
+        list.push_back(extract(itr, keys_only));
+    }
+    if (list.size() != 0)
+    {
+        assert(m_ItrWrap->m_CurrentData == 0);
+        m_ItrWrap->m_CurrentData = enif_make_list_from_array(local_env(), &list[0], list.size());
+    }
+    else
+    {
+        assert(m_ItrWrap->m_CurrentData == 0);
+        //m_ItrWrap->m_CurrentData = 0;
+    }
 }
 
 ERL_NIF_TERM MoveTask::extract(leveldb::Iterator* itr, const bool keys_only)
 {
-	assert(itr->Valid());
-	ERL_NIF_TERM elem;
-	if(keys_only) {
-		elem = slice_to_binary(local_env(), itr->key());
-	}
-	else {
-		elem = enif_make_tuple2(local_env(),
-						slice_to_binary(local_env(), itr->key()),
-						slice_to_binary(local_env(), itr->value()));
-	}
-	return elem;
+    assert(itr->Valid());
+    ERL_NIF_TERM elem;
+    if(keys_only)
+    {
+        elem = slice_to_binary(local_env(), itr->key());
+    }
+    else
+    {
+        elem = enif_make_tuple2(local_env(),
+                slice_to_binary(local_env(), itr->key()),
+                slice_to_binary(local_env(), itr->value()));
+    }
+    return elem;
 }
 
 void MoveTask::read_single(leveldb::Iterator* itr)
 {
-	assert(itr->Valid());
-	const bool keys_only = m_ItrWrap->m_KeysOnly;
-	m_ItrWrap->m_CurrentData = enif_make_list1(local_env(), extract(itr, keys_only));
+    assert(itr->Valid());
+    const bool keys_only = m_ItrWrap->m_KeysOnly;
+    m_ItrWrap->m_CurrentData = enif_make_list1(local_env(), extract(itr, keys_only));
 }
 
 void MoveTask::apply_action(leveldb::Iterator* itr)
 {
-	switch (action) {
-	case PREFETCH:
-	case NEXT:  itr->Next(); break;
-	case PREV:  itr->Prev(); break;
-	default: break;
-	}
+    switch (action) {
+    case PREFETCH:
+    case NEXT:  itr->Next(); break;
+    case PREV:  itr->Prev(); break;
+    default: break;
+    }
 }
 
 
@@ -341,7 +346,8 @@ MoveTask::recycle()
     // test for race condition of simultaneous delete & recycle
     if (1<RefInc())
     {
-        if (NULL!=local_env_) {
+        if (NULL!=local_env_)
+        {
         	assert(m_ItrWrap->m_CurrentData == 0);
             enif_clear_env(local_env_);
         }

@@ -677,10 +677,11 @@ async_iterator_move(
     // const ERL_NIF_TERM& caller_ref       = argv[0];
     const ERL_NIF_TERM& itr_handle_ref   = argv[1];
     const ERL_NIF_TERM& action_or_target = argv[2];
-    const ERL_NIF_TERM& erl_batch_size       = argv[3];
+    const ERL_NIF_TERM& erl_batch_size   = argv[3];
     int batch_size;
-    if (!enif_get_int(env, erl_batch_size, &batch_size)) {
-    	batch_size = 1;
+    if (!enif_get_int(env, erl_batch_size, &batch_size))
+    {
+        batch_size = 1;
     }
     ERL_NIF_TERM ret_term;
 
@@ -762,12 +763,14 @@ async_iterator_move(
     {
         // why yes there is.  copy the key/value info into a return tuple before
         //  we launch the iterator for "next" again
-        if(!itr_ptr->m_Iter->Valid()) {
+        if(!itr_ptr->m_Iter->Valid())
+        {
             ret_term=enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
         }
-        else {
-        	ret_term = enif_make_tuple2(env, ATOM_OK, enif_make_copy(env, itr_ptr->m_Iter->m_CurrentData));
-        	itr_ptr->m_Iter->m_CurrentData = 0;
+        else
+        {
+            ret_term = enif_make_tuple2(env, ATOM_OK, enif_make_copy(env, itr_ptr->m_Iter->m_CurrentData));
+            itr_ptr->m_Iter->m_CurrentData = 0;
         }
 
         // reset for next race
