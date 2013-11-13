@@ -243,7 +243,7 @@ MoveTask::operator()()
         }   // if
         else
         {
-        	assert(m_ItrWrap->m_CurrentData == 0);
+            assert(m_ItrWrap->m_CurrentData == 0);
             return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
         }   // else
 
@@ -348,7 +348,7 @@ MoveTask::recycle()
     {
         if (NULL!=local_env_)
         {
-        	assert(m_ItrWrap->m_CurrentData == 0);
+            assert(m_ItrWrap->m_CurrentData == 0);
             enif_clear_env(local_env_);
         }
 
