@@ -718,6 +718,9 @@ async_iterator_move(
         submit_new_request=true;
         ret_term = enif_make_copy(env, itr_ptr->m_Snapshot->itr_ref);
 
+        //turn off prefetch
+        itr_ptr->m_Iter->m_PrefetchStarted=false;
+
         // force reply to be a message
         itr_ptr->m_Iter->m_HandoffAtomic=1;
     }   // if
