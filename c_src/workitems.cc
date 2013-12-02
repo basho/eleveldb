@@ -297,9 +297,16 @@ ERL_NIF_TERM MoveTask::extract(leveldb::Iterator* itr, const bool keys_only)
 
 void MoveTask::read_single(leveldb::Iterator* itr)
 {
-    assert(itr->Valid());
-    const bool keys_only = m_ItrWrap->m_KeysOnly;
-    m_ItrWrap->m_CurrentData = enif_make_list1(local_env(), extract(itr, keys_only));
+    if(itr->Valid())
+    {
+        const bool keys_only = m_ItrWrap->m_KeysOnly;
+        m_ItrWrap->m_CurrentData = enif_make_list1(local_env(), extract(itr, keys_only));
+    }
+    else
+    {
+        m_ItrWrap->m_CurrentData = 0;
+    }
+
 }
 
 void MoveTask::apply_action(leveldb::Iterator* itr)
