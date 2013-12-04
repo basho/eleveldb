@@ -95,6 +95,7 @@ init() ->
                          {verify_compactions, boolean()} |
                          {compression, boolean()} |
                          {use_bloomfilter, boolean() | pos_integer()} |
+                         {fadvise_willneed, boolean()} |
                          {write_threads, pos_integer()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |

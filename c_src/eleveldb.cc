@@ -122,6 +122,8 @@ ERL_NIF_TERM ATOM_KEYS_ONLY;
 ERL_NIF_TERM ATOM_COMPRESSION;
 ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
 ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
+ERL_NIF_TERM ATOM_WRITE_THREADS;
+ERL_NIF_TERM ATOM_FADVISE_WILLNEED;
 
 }   // namespace eleveldb
 
@@ -163,36 +165,17 @@ static ERL_NIF_TERM slice_to_binary(ErlNifEnv* env, leveldb::Slice s)
 struct EleveldbOptions
 {
     int m_EleveldbThreads;
-    int m_LeveldbImmThreads;
-    int m_LeveldbBGWriteThreads;
-    int m_LeveldbOverlapThreads;
-    int m_LeveldbGroomingThreads;
-
-    int m_TotalMemPercent;
-    int m_TotalMem;
-
-    bool m_LimitedDeveloper;
+    bool m_FadviseWillNeed;
 
     EleveldbOptions()
         : m_EleveldbThreads(71),
-          m_LeveldbImmThreads(0), m_LeveldbBGWriteThreads(0),
-          m_LeveldbOverlapThreads(0), m_LeveldbGroomingThreads(0),
-          m_TotalMemPercent(0), m_TotalMem(0),
-          m_LimitedDeveloper(false)
+          m_FadviseWillNeed(false)
         {};
 
     void Dump()
     {
         syslog(LOG_ERR, "         m_EleveldbThreads: %d\n", m_EleveldbThreads);
-        syslog(LOG_ERR, "       m_LeveldbImmThreads: %d\n", m_LeveldbImmThreads);
-        syslog(LOG_ERR, "   m_LeveldbBGWriteThreads: %d\n", m_LeveldbBGWriteThreads);
-        syslog(LOG_ERR, "   m_LeveldbOverlapThreads: %d\n", m_LeveldbOverlapThreads);
-        syslog(LOG_ERR, "  m_LeveldbGroomingThreads: %d\n", m_LeveldbGroomingThreads);
-
-        syslog(LOG_ERR, "         m_TotalMemPercent: %d\n", m_TotalMemPercent);
-        syslog(LOG_ERR, "                m_TotalMem: %d\n", m_TotalMem);
-
-        syslog(LOG_ERR, "        m_LimitedDeveloper: %s\n", (m_LimitedDeveloper ? "true" : "false"));
+        syslog(LOG_ERR, "         m_FadviseWillNeed: %s\n", (m_FadviseWillNeed ? "true" : "false"));
     }   // Dump
 };  // struct EleveldbOptions
 
@@ -224,36 +207,21 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
     const ERL_NIF_TERM* option;
     if (enif_get_tuple(env, item, &arity, &option))
     {
-        if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM)
+        if (option[0] == eleveldb::ATOM_WRITE_THREADS)
         {
-            unsigned long memory_sz;
-            if (enif_get_ulong(env, option[1], &memory_sz))
+            unsigned long temp;
+            if (enif_get_ulong(env, option[1], &temp))
             {
-                if (memory_sz != 0)
+                if (temp != 0)
                 {
-                     opts.m_TotalMem = memory_sz;
-                }
-            }
-        }
-        else if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM_PERCENT)
+                    opts.m_EleveldbThreads = temp;
+                }   // if
+            }   // if
+        }   // if
+        else if (option[0] == eleveldb::ATOM_FADVISE_WILLNEED)
         {
-            unsigned long memory_sz;
-            if (enif_get_ulong(env, option[1], &memory_sz))
-            {
-                if (0 < memory_sz && memory_sz <= 100)
-                 {
-                     // this gets noticed later and applied against gCurrentTotalMemory
-                     opts.m_TotalMemPercent = memory_sz;
-                 }
-            }
-        }
-        else if (option[0] == eleveldb::ATOM_LIMITED_DEVELOPER_MEM)
-        {
-            if (option[1] == eleveldb::ATOM_TRUE)
-                opts.m_LimitedDeveloper = true;
-            else
-                opts.m_LimitedDeveloper = false;
-        }
+            opts.m_FadviseWillNeed = (option[1] == eleveldb::ATOM_TRUE);
+        }   // else if
     }
 
     return eleveldb::ATOM_OK;
@@ -442,6 +410,7 @@ async_open(
 
     leveldb::Options *opts = new leveldb::Options;
     fold(env, argv[2], parse_open_option, *opts);
+    opts->fadvise_willneed = priv.m_Opts.m_FadviseWillNeed;
 
     eleveldb::WorkTask *work_item = new eleveldb::OpenTask(env, caller_ref,
                                                               db_name, opts);
@@ -1040,6 +1009,8 @@ try
     ATOM(eleveldb::ATOM_KEYS_ONLY, "keys_only");
     ATOM(eleveldb::ATOM_COMPRESSION, "compression");
     ATOM(eleveldb::ATOM_USE_BLOOMFILTER, "use_bloomfilter");
+    ATOM(eleveldb::ATOM_WRITE_THREADS, "write_threads");
+    ATOM(eleveldb::ATOM_FADVISE_WILLNEED, "fadvise_willneed");
 
 #undef ATOM
 
