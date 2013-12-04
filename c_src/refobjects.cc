@@ -540,6 +540,17 @@ ItrObject::ReleaseReuseMove()
 }   // ItrObject::ReleaseReuseMove()
 
 
+bool LevelIteratorWrapper::acquire()
+{
+    return compare_and_swap(&m_ItrBusy, false, true);
+}
+
+void LevelIteratorWrapper::release()
+{
+    m_ItrBusy = false;
+}
+
+
 } // namespace eleveldb
 
 

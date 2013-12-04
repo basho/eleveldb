@@ -182,10 +182,53 @@ OpenTask::operator()()
  * MoveTask functions
  */
 
+class ItrLocker
+{
+public:
+    ItrLocker(LevelIteratorWrapper* itr, bool own_iterator):
+    m_Itr(itr)
+    {
+        assert(itr != 0);
+        m_Locked = own_iterator || m_Itr->acquire();
+    }
+    bool isLocked() const
+    {
+        return m_Locked;
+    }
+    
+    void drop()
+    {
+        m_Itr = 0;
+        m_Locked = false;
+    }
+    
+    ~ItrLocker()
+    {
+        if (m_Itr && m_Locked) 
+        {
+            m_Itr->release();
+        }
+    }
+    
+private:
+    LevelIteratorWrapper* m_Itr;
+    bool m_Locked;
+        
+};
+
 work_result
 MoveTask::operator()()
 {
-	assert(m_ItrWrap->m_CurrentData == 0);
+    ItrLocker lock(m_ItrWrap.get(), owns_iterator);
+    owns_iterator = lock.isLocked();
+    if (!owns_iterator) 
+    {
+        // iterator is not locked, can't do anything for now
+        prepare_recycle();
+        return work_result();
+    }
+    
+    assert(m_ItrWrap->m_CurrentData == 0);
     leveldb::Iterator* itr = m_ItrWrap->get();
 
     if(NULL == itr)
@@ -234,7 +277,12 @@ MoveTask::operator()()
         if(m_ItrWrap->Valid())
         {
             if (PREFETCH==action)
+            {
+                //we should leave iterator locked
+                lock.drop();
+                
                 prepare_recycle();
+            }
 
             // erlang is waiting, send message
             work_result r(local_env(), ATOM_OK, m_ItrWrap->m_CurrentData);

@@ -317,6 +317,7 @@ public:
     action_t                                    action;
     int                                         batch_size;
     std::string                                 seek_target;
+    bool                                        owns_iterator;
 
 public:
 
@@ -324,7 +325,7 @@ public:
     MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
              LevelIteratorWrapper * IterWrap, action_t& _action, int _batch_size)
         : WorkTask(NULL, _caller_ref),
-        m_ItrWrap(IterWrap), action(_action), batch_size(_batch_size)
+        m_ItrWrap(IterWrap), action(_action), batch_size(_batch_size), owns_iterator(false)
     {
         // special case construction
         local_env_=NULL;
@@ -337,7 +338,8 @@ public:
              std::string& _seek_target)
         : WorkTask(NULL, _caller_ref),
         m_ItrWrap(IterWrap), action(_action),
-        seek_target(_seek_target)
+        seek_target(_seek_target),
+        owns_iterator(false)
         {
             // special case construction
             local_env_=NULL;

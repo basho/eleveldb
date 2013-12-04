@@ -275,11 +275,13 @@ public:
     bool m_KeysOnly;                          //!< only return key values
     bool m_PrefetchStarted;                   //!< true after first prefetch command
     ERL_NIF_TERM m_CurrentData;               //!< list of KV or Keys gained from iterator after last (batch or not) move
+    volatile bool m_ItrBusy;                  //!< flags that iterator is acuired by smb and cannot be used right now
 
     LevelIteratorWrapper(DbObject * DbPtr, LevelSnapshotWrapper * Snapshot,
                          leveldb::Iterator * Iterator, bool KeysOnly)
         : m_DbPtr(DbPtr), m_Snap(Snapshot), m_Iterator(Iterator),
-        m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false), m_CurrentData(0)
+        m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false), 
+        m_CurrentData(0), m_ItrBusy(false)
     {
     };
 
@@ -298,6 +300,9 @@ public:
     bool Valid() {return(m_CurrentData != 0);};
     leveldb::Slice key() {return(m_Iterator->key());};
     leveldb::Slice value() {return(m_Iterator->value());};
+    
+    bool acquire();
+    void release();
 
 private:
     LevelIteratorWrapper(const LevelIteratorWrapper &);            // no copy
