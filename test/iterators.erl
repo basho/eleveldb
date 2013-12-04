@@ -56,3 +56,45 @@ prev_test() ->
     after
       eleveldb:close(Ref)
     end.
+
+return_from_nowhere() ->
+    os:cmd("rm -rf ltest"),  % NOTE
+    {ok, Ref} = eleveldb:open("ltest", [{create_if_missing, true}]),
+    try
+        eleveldb:put(Ref, <<"a">>, <<"x">>, []),
+        eleveldb:put(Ref, <<"b">>, <<"y">>, []),
+        {ok, I} = eleveldb:iterator(Ref, []),
+        ?assertEqual({ok, [{<<"a">>, <<"x">>}]},eleveldb:iterator_move(I, <<>> , 1)),
+        ?assertEqual({ok, [{<<"b">>, <<"y">>}]}, eleveldb:iterator_move(I, next, 10)),
+        ?assertEqual({error, invalid_iterator}, eleveldb:iterator_move(I, next, 2)),
+        ?assertEqual({ok, [{<<"a">>, <<"x">>}]},eleveldb:iterator_move(I, <<>> , 1))
+    after
+        eleveldb:close(Ref)
+    end.
+
+batch_read_jump() ->
+   %% os:cmd("rm -rf ltest"),  % NOTE
+    {ok, Ref} = eleveldb:open("ltest", [{create_if_missing, true}]),
+    try
+        Data = [{<<Key:64/integer>>, <<Value:64/integer>>} || Key <- lists:seq(1,1000), Value <- lists:seq(1,1000)],
+        io:format("prepared~n"),
+        [{K1, _}|_] = lists:dropwhile(fun (_X) -> random:uniform() > 0.7 end, Data),
+        [{K2, _}|_] = lists:dropwhile(fun (_X) -> random:uniform() > 0.7 end, Data),
+
+       %% lists:foreach(fun({X,Y}) -> eleveldb:put(Ref, X, Y, []) end, Data),
+
+        lists:foreach(
+            fun(_) ->
+                {ok, I} = eleveldb:iterator(Ref, []),
+                eleveldb:iterator_move(I, K1 , 1),
+                eleveldb:iterator_move(I, prefetch, 1000),
+                eleveldb:iterator_move(I, K2 , 1),
+                eleveldb:iterator_move(I, prefetch, 1000),
+                eleveldb:iterator_close(I)
+            end,
+            lists:seq(1,1000)),
+        ok
+    after
+        ok
+        %%eleveldb:close(Ref)
+    end.

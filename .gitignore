@@ -10,3 +10,4 @@ c_src/system
 *~
 .project
 .settings
+/eleveldb_c/
