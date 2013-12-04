@@ -273,11 +273,12 @@ public:
     leveldb::Iterator * m_Iterator;
     volatile uint32_t m_HandoffAtomic;        //!< matthew's atomic foreground/background prefetch flag.
     bool m_KeysOnly;                          //!< only return key values
+    bool m_PrefetchStarted;                   //!< true after first prefetch command
 
     LevelIteratorWrapper(DbObject * DbPtr, LevelSnapshotWrapper * Snapshot,
                          leveldb::Iterator * Iterator, bool KeysOnly)
         : m_DbPtr(DbPtr), m_Snap(Snapshot), m_Iterator(Iterator),
-        m_HandoffAtomic(0), m_KeysOnly(KeysOnly)
+        m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false)
     {
     };
 

@@ -66,10 +66,10 @@
 
 -spec init() -> ok | {error, any()}.
 init() ->
-    NumWriteThreads = case os:getenv("ELEVELDB_N_WRITE_THREADS") of
-                        false -> 71;                     % must be a prime number
-                        N -> erlang:list_to_integer(N)   % exception on bad value
-                      end,
+%%    NumWriteThreads = case os:getenv("ELEVELDB_N_WRITE_THREADS") of
+%%                        false -> 71;                     % must be a prime number
+%%                        N -> erlang:list_to_integer(N)   % exception on bad value
+%%                      end,
     SoName = case code:priv_dir(?MODULE) of
                  {error, bad_name} ->
                      case code:which(?MODULE) of
@@ -81,7 +81,7 @@ init() ->
                  Dir ->
                      filename:join(Dir, "eleveldb")
              end,
-    erlang:load_nif(SoName, [{write_threads,NumWriteThreads}]).
+    erlang:load_nif(SoName, application:get_all_env(eleveldb)).
 
 -type open_options() :: [{create_if_missing, boolean()} |
                          {error_if_exists, boolean()} |
@@ -106,7 +106,7 @@ init() ->
                           {delete, Key::binary()} |
                           clear].
 
--type iterator_action() :: first | last | next | prev | binary().
+-type iterator_action() :: first | last | next | prev | prefetch | binary().
 
 -opaque db_ref() :: binary().
 
@@ -308,10 +308,10 @@ fold_loop({error, invalid_iterator}, _Itr, _Fun, Acc0) ->
     Acc0;
 fold_loop({ok, K}, Itr, Fun, Acc0) ->
     Acc = Fun(K, Acc0),
-    fold_loop(iterator_move(Itr, next), Itr, Fun, Acc);
+    fold_loop(iterator_move(Itr, prefetch), Itr, Fun, Acc);
 fold_loop({ok, K, V}, Itr, Fun, Acc0) ->
     Acc = Fun({K, V}, Acc0),
-    fold_loop(iterator_move(Itr, next), Itr, Fun, Acc).
+    fold_loop(iterator_move(Itr, prefetch), Itr, Fun, Acc).
 
 validate_type({_Key, bool}, true)                            -> true;
 validate_type({_Key, bool}, false)                           -> true;

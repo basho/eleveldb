@@ -20,6 +20,8 @@
 //
 // -------------------------------------------------------------------
 
+#include <syslog.h>
+
 #include <new>
 #include <set>
 #include <stack>
@@ -34,6 +36,7 @@
 
 #include "leveldb/db.h"
 #include "leveldb/comparator.h"
+#include "leveldb/env.h"
 #include "leveldb/write_batch.h"
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
@@ -109,6 +112,7 @@ ERL_NIF_TERM ATOM_FIRST;
 ERL_NIF_TERM ATOM_LAST;
 ERL_NIF_TERM ATOM_NEXT;
 ERL_NIF_TERM ATOM_PREV;
+ERL_NIF_TERM ATOM_PREFETCH;
 ERL_NIF_TERM ATOM_INVALID_ITERATOR;
 ERL_NIF_TERM ATOM_CACHE_SIZE;
 ERL_NIF_TERM ATOM_PARANOID_CHECKS;
@@ -120,9 +124,6 @@ ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
 ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 
 }   // namespace eleveldb
-
-
-
 
 
 using std::nothrow;
@@ -156,22 +157,107 @@ static ERL_NIF_TERM slice_to_binary(ErlNifEnv* env, leveldb::Slice s)
     return result;
 }
 
+/** struct for grabbing eleveldb environment options via fold
+ *   ... then loading said options into eleveldb_priv_data
+ */
+struct EleveldbOptions
+{
+    int m_EleveldbThreads;
+    int m_LeveldbImmThreads;
+    int m_LeveldbBGWriteThreads;
+    int m_LeveldbOverlapThreads;
+    int m_LeveldbGroomingThreads;
+
+    int m_TotalMemPercent;
+    int m_TotalMem;
+
+    bool m_LimitedDeveloper;
+
+    EleveldbOptions()
+        : m_EleveldbThreads(71),
+          m_LeveldbImmThreads(0), m_LeveldbBGWriteThreads(0),
+          m_LeveldbOverlapThreads(0), m_LeveldbGroomingThreads(0),
+          m_TotalMemPercent(0), m_TotalMem(0),
+          m_LimitedDeveloper(false)
+        {};
+
+    void Dump()
+    {
+        syslog(LOG_ERR, "         m_EleveldbThreads: %d\n", m_EleveldbThreads);
+        syslog(LOG_ERR, "       m_LeveldbImmThreads: %d\n", m_LeveldbImmThreads);
+        syslog(LOG_ERR, "   m_LeveldbBGWriteThreads: %d\n", m_LeveldbBGWriteThreads);
+        syslog(LOG_ERR, "   m_LeveldbOverlapThreads: %d\n", m_LeveldbOverlapThreads);
+        syslog(LOG_ERR, "  m_LeveldbGroomingThreads: %d\n", m_LeveldbGroomingThreads);
+
+        syslog(LOG_ERR, "         m_TotalMemPercent: %d\n", m_TotalMemPercent);
+        syslog(LOG_ERR, "                m_TotalMem: %d\n", m_TotalMem);
+
+        syslog(LOG_ERR, "        m_LimitedDeveloper: %s\n", (m_LimitedDeveloper ? "true" : "false"));
+    }   // Dump
+};  // struct EleveldbOptions
 
 
-/* Module-level private data: */
+/** Module-level private data:
+ *    singleton instance held by erlang and passed on API calls
+ */
 class eleveldb_priv_data
 {
- eleveldb_priv_data(const eleveldb_priv_data&);             // nocopy
- eleveldb_priv_data& operator=(const eleveldb_priv_data&);  // nocopyassign
+public:
+    EleveldbOptions m_Opts;
+    eleveldb::eleveldb_thread_pool thread_pool;
 
- public:
-  eleveldb::eleveldb_thread_pool thread_pool;
+    explicit eleveldb_priv_data(EleveldbOptions & Options)
+    : m_Opts(Options), thread_pool(Options.m_EleveldbThreads)
+        {}
 
- eleveldb_priv_data(const size_t n_write_threads)
-  : thread_pool(n_write_threads)
- {}
+private:
+    eleveldb_priv_data();                                      // no default constructor
+    eleveldb_priv_data(const eleveldb_priv_data&);             // nocopy
+    eleveldb_priv_data& operator=(const eleveldb_priv_data&);  // nocopyassign
+
 };
 
+
+ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOptions& opts)
+{
+    int arity;
+    const ERL_NIF_TERM* option;
+    if (enif_get_tuple(env, item, &arity, &option))
+    {
+        if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM)
+        {
+            unsigned long memory_sz;
+            if (enif_get_ulong(env, option[1], &memory_sz))
+            {
+                if (memory_sz != 0)
+                {
+                     opts.m_TotalMem = memory_sz;
+                }
+            }
+        }
+        else if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM_PERCENT)
+        {
+            unsigned long memory_sz;
+            if (enif_get_ulong(env, option[1], &memory_sz))
+            {
+                if (0 < memory_sz && memory_sz <= 100)
+                 {
+                     // this gets noticed later and applied against gCurrentTotalMemory
+                     opts.m_TotalMemPercent = memory_sz;
+                 }
+            }
+        }
+        else if (option[0] == eleveldb::ATOM_LIMITED_DEVELOPER_MEM)
+        {
+            if (option[1] == eleveldb::ATOM_TRUE)
+                opts.m_LimitedDeveloper = true;
+            else
+                opts.m_LimitedDeveloper = false;
+        }
+    }
+
+    return eleveldb::ATOM_OK;
+}
 
 ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Options& opts)
 {
@@ -539,9 +625,7 @@ async_iterator_move(
 
     itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_handle_ref));
 
-    // prefetch logic broke PREV and not fixing for Riak
-    if(NULL==itr_ptr.get()
-       || (enif_is_atom(env, action_or_target) && ATOM_PREV==action_or_target))
+    if(NULL==itr_ptr.get())
         return enif_make_badarg(env);
 
     // Reuse ref from iterator creation
@@ -558,26 +642,22 @@ async_iterator_move(
         if(ATOM_LAST == action_or_target)   action = eleveldb::MoveTask::LAST;
         if(ATOM_NEXT == action_or_target)   action = eleveldb::MoveTask::NEXT;
         if(ATOM_PREV == action_or_target)   action = eleveldb::MoveTask::PREV;
+        if(ATOM_PREFETCH == action_or_target)   action = eleveldb::MoveTask::PREFETCH;
     }   // if
 
 
     //
     // Three situations:
-    //  - not a NEXT call
-    //  - NEXT call and no prefetch waiting
-    //  - NEXT call and prefetch is waiting
-    if (eleveldb::MoveTask::NEXT != action)
-    {
-        // is a prefetch potentially in play (cut it loose and its Iterator)
-        if (itr_ptr->ReleaseReuseMove())
-        {
-            leveldb::Iterator * iterator;
+    //  #1 not a PREFETCH next call
+    //  #2 PREFETCH call and no prefetch waiting
+    //  #3 PREFETCH call and prefetch is waiting
 
-            // NewIterator is fast, background not needed
-            iterator = itr_ptr->m_DbPtr->m_Db->NewIterator(*itr_ptr->m_ReadOptions);
-            itr_ptr->m_Iter.assign(new LevelIteratorWrapper(itr_ptr->m_DbPtr.get(), itr_ptr->m_Snapshot.get(),
-                                                        iterator, itr_ptr->keys_only));
-        }   // if
+    // case #1
+    if (eleveldb::MoveTask::PREFETCH != action)
+    {
+        // current move object could still be in later stages of
+        //  worker thread completion ... race condition ...don't reuse
+        itr_ptr->ReleaseReuseMove();
 
         submit_new_request=true;
         ret_term = enif_make_copy(env, itr_ptr->m_Snapshot->itr_ref);
@@ -586,6 +666,7 @@ async_iterator_move(
         itr_ptr->m_Iter->m_HandoffAtomic=1;
     }   // if
 
+    // case #2
     // before we launch a background job for "next iteration", see if there is a
     //  prefetch waiting for us
     else if (eleveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
@@ -593,8 +674,25 @@ async_iterator_move(
         // nope, no prefetch ... await a message to erlang queue
         ret_term = enif_make_copy(env, itr_ptr->m_Snapshot->itr_ref);
 
-        submit_new_request=false;
+        // is this truly a wait for prefetch ... or actually the first prefetch request
+        if (!itr_ptr->m_Iter->m_PrefetchStarted)
+        {
+            submit_new_request=true;
+            itr_ptr->m_Iter->m_PrefetchStarted=true;
+            itr_ptr->ReleaseReuseMove();
+
+            // first must return via message
+            itr_ptr->m_Iter->m_HandoffAtomic=1;
+        }   // if
+
+        else
+        {
+            // await message that is already in the making
+            submit_new_request=false;
+        }   // else
     }   // else if
+
+    // case #3
     else
     {
         // why yes there is.  copy the key/value info into a return tuple before
@@ -717,6 +815,8 @@ eleveldb_iterator_close(
 
     if (NULL!=itr_ptr)
     {
+        itr_ptr->ReleaseReuseMove();
+
         // set closing flag ... atomic likely unnecessary (but safer)
         eleveldb::ErlRefObject::InitiateCloseRequest(itr_ptr);
 
@@ -888,67 +988,16 @@ static void on_unload(ErlNifEnv *env, void *priv_data)
 static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 try
 {
-    *priv_data = 0;
+    int ret_val;
+
+    ret_val=0;
+    *priv_data = NULL;
 
     // inform erlang of our two resource types
     eleveldb::DbObject::CreateDbObjectType(env);
     eleveldb::ItrObject::CreateItrObjectType(env);
 
-    /* Gather local initialization data: */
-    struct _local
-    {
-        int n_threads;
-
-        _local()
-         : n_threads(0)
-        {}
-    } local;
-
-    /* Seed our private data with appropriate values: */
-    if(!enif_is_list(env, load_info))
-        throw std::invalid_argument("on_load::load_info");
-
-    ERL_NIF_TERM load_info_head;
-
-    while(0 != enif_get_list_cell(env, load_info, &load_info_head, &load_info))
-     {
-        int arity = 0;
-        ERL_NIF_TERM *tuple_data;
-
-        // Pick out "{write_threads, N}":
-        if(enif_get_tuple(env, load_info_head, &arity, const_cast<const ERL_NIF_TERM **>(&tuple_data)))
-         {
-            if(2 != arity)
-             continue;
-
-            unsigned int atom_len;
-            if(0 == enif_get_atom_length(env, tuple_data[0], &atom_len, ERL_NIF_LATIN1))
-             continue;
-
-            const unsigned int atom_max = 128;
-            char atom[atom_max];
-            if((atom_len + 1) != static_cast<unsigned int>(enif_get_atom(env, tuple_data[0], atom, atom_max, ERL_NIF_LATIN1)))
-             continue;
-
-            if(0 != strncmp(atom, "write_threads", atom_max))
-             continue;
-
-            // We have a setting, now peek at the parameter:
-            if(0 == enif_get_int(env, tuple_data[1], &local.n_threads))
-             throw std::invalid_argument("on_load::n_threads");
-
-            if(0 >= local.n_threads || eleveldb::N_THREADS_MAX < static_cast<size_t>(local.n_threads))
-             throw std::range_error("on_load::n_threads");
-         }
-     }
-
-    /* Spin up the thread pool, set up all private data: */
-    eleveldb_priv_data *priv = new eleveldb_priv_data(local.n_threads);
-
-    *priv_data = priv;
-
-    // Initialize common atoms
-
+// must initialize atoms before processing options
 #define ATOM(Id, Value) { Id = enif_make_atom(env, Value); }
     ATOM(eleveldb::ATOM_OK, "ok");
     ATOM(eleveldb::ATOM_ERROR, "error");
@@ -981,6 +1030,7 @@ try
     ATOM(eleveldb::ATOM_LAST, "last");
     ATOM(eleveldb::ATOM_NEXT, "next");
     ATOM(eleveldb::ATOM_PREV, "prev");
+    ATOM(eleveldb::ATOM_PREFETCH, "prefetch");
     ATOM(eleveldb::ATOM_INVALID_ITERATOR, "invalid_iterator");
     ATOM(eleveldb::ATOM_CACHE_SIZE, "cache_size");
     ATOM(eleveldb::ATOM_PARANOID_CHECKS, "paranoid_checks");
@@ -993,7 +1043,29 @@ try
 
 #undef ATOM
 
-    return 0;
+
+    // read options that apply to global eleveldb environment
+    if(enif_is_list(env, load_info))
+    {
+        EleveldbOptions load_options;
+
+        fold(env, load_info, parse_init_option, load_options);
+
+        /* Spin up the thread pool, set up all private data: */
+        eleveldb_priv_data *priv = new eleveldb_priv_data(load_options);
+
+        *priv_data = priv;
+
+    }   // if
+
+    else
+    {
+        // anything non-zero is "fail"
+        ret_val=1;
+    }   // else
+    // Initialize common atoms
+
+    return ret_val;
 }
 
 
