@@ -123,7 +123,7 @@ async_open(_CallerRef, _Name, _Opts) ->
 open(Name, Opts) ->
     CallerRef = make_ref(),
     Opts2 = add_open_defaults(Opts),
-    async_open(CallerRef, Name, Opts2),
+    _ = async_open(CallerRef, Name, Opts2),
     ?WAIT_FOR_REPLY(CallerRef).
 
 -spec close(db_ref()) -> ok | {error, any()}.
@@ -153,7 +153,7 @@ delete(Ref, Key, Opts) -> write(Ref, [{delete, Key}], Opts).
 -spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
 write(Ref, Updates, Opts) ->
     CallerRef = make_ref(),
-    async_write(CallerRef, Ref, Updates, Opts),
+    _ = async_write(CallerRef, Ref, Updates, Opts),
     ?WAIT_FOR_REPLY(CallerRef).
 
 -spec async_write(reference(), db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
@@ -171,13 +171,13 @@ async_iterator(_CallerRef, _Ref, _Opts, keys_only) ->
 -spec iterator(db_ref(), read_options()) -> {ok, itr_ref()}.
 iterator(Ref, Opts) ->
     CallerRef = make_ref(),
-    async_iterator(CallerRef, Ref, Opts),
+    _ = async_iterator(CallerRef, Ref, Opts),
     ?WAIT_FOR_REPLY(CallerRef).
 
 -spec iterator(db_ref(), read_options(), keys_only) -> {ok, itr_ref()}.
 iterator(Ref, Opts, keys_only) ->
     CallerRef = make_ref(),
-    async_iterator(CallerRef, Ref, Opts, keys_only),
+    _ = async_iterator(CallerRef, Ref, Opts, keys_only),
     ?WAIT_FOR_REPLY(CallerRef).
 
 -spec async_iterator_move(reference()|undefined, itr_ref(), iterator_action()) -> reference() |
