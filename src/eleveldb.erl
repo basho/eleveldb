@@ -180,10 +180,11 @@ iterator(Ref, Opts, keys_only) ->
     async_iterator(CallerRef, Ref, Opts, keys_only),
     ?WAIT_FOR_REPLY(CallerRef).
 
--spec async_iterator_move(reference(), itr_ref(), iterator_action()) -> {reference(), {ok, Key::binary(), Value::binary()}} |
-                                                                        {reference(), {ok, Key::binary()}} |
-                                                                        {reference(), {error, invalid_iterator}} |
-                                                                        {reference(), {error, iterator_closed}}.
+-spec async_iterator_move(reference()|undefined, itr_ref(), iterator_action()) -> reference() |
+                                                                        {ok, Key::binary(), Value::binary()} |
+                                                                        {ok, Key::binary()} |
+                                                                        {error, invalid_iterator} |
+                                                                        {error, iterator_closed}.
 async_iterator_move(_CallerRef, _IterRef, _IterAction) ->
     erlang:nif_error({error, not_loaded}).
 
