@@ -205,7 +205,7 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
 {
     int arity;
     const ERL_NIF_TERM* option;
-    if (enif_get_tuple(env, item, &arity, &option))
+    if (enif_get_tuple(env, item, &arity, &option) && 2==arity)
     {
         if (option[0] == eleveldb::ATOM_WRITE_THREADS)
         {
@@ -231,7 +231,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
 {
     int arity;
     const ERL_NIF_TERM* option;
-    if (enif_get_tuple(env, item, &arity, &option))
+    if (enif_get_tuple(env, item, &arity, &option) && 2==arity)
     {
         if (option[0] == eleveldb::ATOM_CREATE_IF_MISSING)
             opts.create_if_missing = (option[1] == eleveldb::ATOM_TRUE);
@@ -311,7 +311,7 @@ ERL_NIF_TERM parse_read_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::ReadO
 {
     int arity;
     const ERL_NIF_TERM* option;
-    if (enif_get_tuple(env, item, &arity, &option))
+    if (enif_get_tuple(env, item, &arity, &option) && 2==arity)
     {
         if (option[0] == eleveldb::ATOM_VERIFY_CHECKSUMS)
             opts.verify_checksums = (option[1] == eleveldb::ATOM_TRUE);
@@ -326,7 +326,7 @@ ERL_NIF_TERM parse_write_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Writ
 {
     int arity;
     const ERL_NIF_TERM* option;
-    if (enif_get_tuple(env, item, &arity, &option))
+    if (enif_get_tuple(env, item, &arity, &option) && 2==arity)
     {
         if (option[0] == eleveldb::ATOM_SYNC)
             opts.sync = (option[1] == eleveldb::ATOM_TRUE);
