@@ -91,6 +91,7 @@ ERL_NIF_TERM ATOM_CREATE_IF_MISSING;
 ERL_NIF_TERM ATOM_ERROR_IF_EXISTS;
 ERL_NIF_TERM ATOM_WRITE_BUFFER_SIZE;
 ERL_NIF_TERM ATOM_SST_BLOCK_SIZE;
+ERL_NIF_TERM ATOM_BLOCK_SIZE_STEPS;
 ERL_NIF_TERM ATOM_BLOCK_RESTART_INTERVAL;
 ERL_NIF_TERM ATOM_ERROR_DB_OPEN;
 ERL_NIF_TERM ATOM_ERROR_DB_PUT;
@@ -124,6 +125,9 @@ ERL_NIF_TERM ATOM_TOTAL_LEVELDB_MEM;
 ERL_NIF_TERM ATOM_TOTAL_LEVELDB_MEM_PERCENT;
 ERL_NIF_TERM ATOM_IS_INTERNAL_DB;
 ERL_NIF_TERM ATOM_LIMITED_DEVELOPER_MEM;
+ERL_NIF_TERM ATOM_ELEVELDB_THREADS;
+ERL_NIF_TERM ATOM_FADVISE_WILLNEED;
+ERL_NIF_TERM ATOM_DELETE_THRESHOLD;
 
 }   // namespace eleveldb
 
@@ -174,13 +178,14 @@ struct EleveldbOptions
     int m_TotalMem;
 
     bool m_LimitedDeveloper;
+    bool m_FadviseWillNeed;
 
     EleveldbOptions()
         : m_EleveldbThreads(71),
           m_LeveldbImmThreads(0), m_LeveldbBGWriteThreads(0),
           m_LeveldbOverlapThreads(0), m_LeveldbGroomingThreads(0),
           m_TotalMemPercent(0), m_TotalMem(0),
-          m_LimitedDeveloper(false)
+          m_LimitedDeveloper(false), m_FadviseWillNeed(false)
         {};
 
     void Dump()
@@ -195,6 +200,7 @@ struct EleveldbOptions
         syslog(LOG_ERR, "                m_TotalMem: %d\n", m_TotalMem);
 
         syslog(LOG_ERR, "        m_LimitedDeveloper: %s\n", (m_LimitedDeveloper ? "true" : "false"));
+        syslog(LOG_ERR, "         m_FadviseWillNeed: %s\n", (m_FadviseWillNeed ? "true" : "false"));
     }   // Dump
 };  // struct EleveldbOptions
 
@@ -224,7 +230,8 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
 {
     int arity;
     const ERL_NIF_TERM* option;
-    if (enif_get_tuple(env, item, &arity, &option))
+
+    if (enif_get_tuple(env, item, &arity, &option) && 2==arity)
     {
         if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM)
         {
@@ -256,6 +263,21 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
             else
                 opts.m_LimitedDeveloper = false;
         }
+        else if (option[0] == eleveldb::ATOM_ELEVELDB_THREADS)
+        {
+            unsigned long temp;
+            if (enif_get_ulong(env, option[1], &temp))
+            {
+                if (temp != 0)
+                {
+                    opts.m_EleveldbThreads = temp;
+                }   // if
+            }   // if
+        }   // if
+        else if (option[0] == eleveldb::ATOM_FADVISE_WILLNEED)
+        {
+            opts.m_FadviseWillNeed = (option[1] == eleveldb::ATOM_TRUE);
+        }   // else if
     }
 
     return eleveldb::ATOM_OK;
@@ -265,7 +287,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
 {
     int arity;
     const ERL_NIF_TERM* option;
-    if (enif_get_tuple(env, item, &arity, &option))
+    if (enif_get_tuple(env, item, &arity, &option) && 2==arity)
     {
         if (option[0] == eleveldb::ATOM_CREATE_IF_MISSING)
             opts.create_if_missing = (option[1] == eleveldb::ATOM_TRUE);
@@ -292,6 +314,18 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             int block_restart_interval;
             if (enif_get_int(env, option[1], &block_restart_interval))
                 opts.block_restart_interval = block_restart_interval;
+        }
+        else if (option[0] == eleveldb::ATOM_BLOCK_SIZE_STEPS)
+        {
+            unsigned long block_steps(0);
+            if (enif_get_ulong(env, option[1], &block_steps))
+             opts.block_size_steps = block_steps;
+        }
+        else if (option[0] == eleveldb::ATOM_DELETE_THRESHOLD)
+        {
+            unsigned long threshold(0);
+            if (enif_get_ulong(env, option[1], &threshold))
+             opts.delete_threshold = threshold;
         }
         else if (option[0] == eleveldb::ATOM_COMPRESSION)
         {
@@ -383,7 +417,7 @@ ERL_NIF_TERM parse_read_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::ReadO
 {
     int arity;
     const ERL_NIF_TERM* option;
-    if (enif_get_tuple(env, item, &arity, &option))
+    if (enif_get_tuple(env, item, &arity, &option) && 2==arity)
     {
         if (option[0] == eleveldb::ATOM_VERIFY_CHECKSUMS)
             opts.verify_checksums = (option[1] == eleveldb::ATOM_TRUE);
@@ -398,7 +432,7 @@ ERL_NIF_TERM parse_write_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Writ
 {
     int arity;
     const ERL_NIF_TERM* option;
-    if (enif_get_tuple(env, item, &arity, &option))
+    if (enif_get_tuple(env, item, &arity, &option) && 2==arity)
     {
         if (option[0] == eleveldb::ATOM_SYNC)
             opts.sync = (option[1] == eleveldb::ATOM_TRUE);
@@ -482,6 +516,7 @@ async_open(
 
     leveldb::Options *opts = new leveldb::Options;
     fold(env, argv[2], parse_open_option, *opts);
+    opts->fadvise_willneed = priv.m_Opts.m_FadviseWillNeed;
 
     // convert total_leveldb_mem to byte count if it arrived as percent
     //  This happens now because there is no guarantee as to when the total_memory
@@ -1080,6 +1115,7 @@ try
     ATOM(eleveldb::ATOM_WRITE_BUFFER_SIZE, "write_buffer_size");
     ATOM(eleveldb::ATOM_SST_BLOCK_SIZE, "sst_block_size");
     ATOM(eleveldb::ATOM_BLOCK_RESTART_INTERVAL, "block_restart_interval");
+    ATOM(eleveldb::ATOM_BLOCK_SIZE_STEPS, "block_size_steps");
     ATOM(eleveldb::ATOM_ERROR_DB_OPEN,"db_open");
     ATOM(eleveldb::ATOM_ERROR_DB_PUT, "db_put");
     ATOM(eleveldb::ATOM_NOT_FOUND, "not_found");
@@ -1112,6 +1148,9 @@ try
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM_PERCENT, "total_leveldb_mem_percent");
     ATOM(eleveldb::ATOM_IS_INTERNAL_DB, "is_internal_db");
     ATOM(eleveldb::ATOM_LIMITED_DEVELOPER_MEM, "limited_developer_mem");
+    ATOM(eleveldb::ATOM_ELEVELDB_THREADS, "eleveldb_threads");
+    ATOM(eleveldb::ATOM_FADVISE_WILLNEED, "fadvise_willneed");
+    ATOM(eleveldb::ATOM_DELETE_THRESHOLD, "delete_threshold");
 
 #undef ATOM
 

@@ -66,10 +66,6 @@
 
 -spec init() -> ok | {error, any()}.
 init() ->
-%%    NumWriteThreads = case os:getenv("ELEVELDB_N_WRITE_THREADS") of
-%%                        false -> 71;                     % must be a prime number
-%%                        N -> erlang:list_to_integer(N)   % exception on bad value
-%%                      end,
     SoName = case code:priv_dir(?MODULE) of
                  {error, bad_name} ->
                      case code:which(?MODULE) of
@@ -89,16 +85,19 @@ init() ->
                          {block_size, pos_integer()} |                  %% DEPRECATED
                          {sst_block_size, pos_integer()} |
                          {block_restart_interval, pos_integer()} |
+                         {block_size_steps, pos_integer()} |
                          {paranoid_checks, boolean()} |
                          {verify_compactions, boolean()} |
                          {compression, boolean()} |
                          {use_bloomfilter, boolean() | pos_integer()} |
-                         {write_threads, pos_integer()} |
                          {total_memory, pos_integer()} |
                          {total_leveldb_mem, pos_integer()} |
                          {total_leveldb_mem_percent, pos_integer()} |
                          {is_internal_db, boolean()} |
-                         {limited_developer_mem, boolean()}].
+                         {limited_developer_mem, boolean()} |
+                         {eleveldb_threads, pos_integer()} |
+                         {fadvise_willneed, boolean()} |
+                         {delete_threshold, pos_integer()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()}].
@@ -268,16 +267,20 @@ option_types(open) ->
      {block_size, integer},                            %% DEPRECATED
      {sst_block_size, integer},
      {block_restart_interval, integer},
+     {block_size_steps, integer},
      {paranoid_checks, bool},
      {verify_compactions, bool},
      {compression, bool},
      {use_bloomfilter, any},
-     {write_threads, integer},
      {total_memory, integer},
      {total_leveldb_mem, integer},
      {total_leveldb_mem_percent, integer},
      {is_internal_db, bool},
-     {limited_developer_mem, bool}];
+     {limited_developer_mem, bool},
+     {eleveldb_threads, integer},
+     {fadvise_willneed, bool},
+     {delete_threshold, integer}];
+
 option_types(read) ->
     [{verify_checksums, bool},
      {fill_cache, bool}];
