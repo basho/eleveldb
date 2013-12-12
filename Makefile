@@ -1,8 +1,15 @@
+REBAR_BIN := $(shell which rebar)
+ifeq ($(REBAR_BIN),)
+REBAR_BIN = ./rebar
+endif
 
 all: compile
 
 get-deps:
 	./c_src/build_deps.sh get-deps
+
+deps:
+	$(REBAR_BIN) get-deps
 
 rm-deps:
 	./c_src/build_deps.sh rm-deps
@@ -11,7 +18,7 @@ compile:
 	./rebar compile
 
 test: compile
-	./rebar eunit
+	./rebar skip_deps=true eunit
 
 clean:
 	./rebar clean
