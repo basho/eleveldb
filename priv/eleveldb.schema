@@ -115,6 +115,15 @@
 ]}.
 
 
+%% @doc Defines the number of incremental adjustments to attempt between
+%% the block_size value and the maximum block_size for an .sst table file.
+%% Value of zero disables the underlying dynamic block_size feature.
+{mapping, "leveldb.block_size_steps", "eleveldb.block_size_steps", [
+  {default, 16},
+  {datatype, integer}
+]}.
+
+
 %% @doc verify_checksums controls whether or not validation occurs when Riak
 %% requests data from the leveldb database on behalf of the user.
 {mapping, "leveldb.verify_checksums", "eleveldb.verify_checksums", [
@@ -131,6 +140,36 @@
   {datatype, {enum, [true, false]}},
   {level, advanced}
 ]}.
+
+
+%% @doc This parameter the number of hot threads in the Erlang
+%% to leveldb translation layer.  Highly recommended that the 
+%% value exceed the number of vnodes AND be a prime number.
+{mapping, "leveldb.eleveldb_threads", "eleveldb.eleveldb_threads", [
+  {default, "71"},
+  {datatype, integer},
+  {level, advanced}
+]}.
+
+
+%% @doc Option to override leveldb's aggressive use of fadvise(DONTNEED) with
+%% fadvise(WILLNEED) instead.  WILLNEED can reduce disk activity on systems
+%% where physical memory exceeds the database size.
+{mapping, "leveldb.fadvise_willneed", "eleveldb.fadvise_willneed", [
+  {default, false},
+  {datatype, {enum, [true, false]}},
+  {level, advanced}
+]}.
+
+
+%% @doc Controls when a background compaction initiates solely
+%% due to the number of delete tombstones within an individual
+%% .sst table file.  Value of zero disables the feature.
+{mapping, "leveldb.delete_threshold", "eleveldb.delete_threshold", [
+  {default, "1000"},
+  {datatype, integer}
+]}.
+
 
 
 %%%% This is the multi-backend leveldb section
@@ -243,6 +282,15 @@
 ]}.
 
 
+%% @doc Defines the number of incremental adjustments to attempt between
+%% the block_size value and the maximum block_size for an .sst table file.
+%% Value of zero disables the underlying dynamic block_size feature.
+{mapping, "multi_backend.$name.leveldb.block_size_steps", "riak_kv.multi_backend", [
+  {default, 16},
+  {datatype, integer}
+]}.
+
+
 %% @doc verify_checksums controls whether or not validation occurs when Riak
 %% requests data from the leveldb database on behalf of the user.
 {mapping, "multi_backend.$name.leveldb.verify_checksums", "riak_kv.multi_backend", [
@@ -259,4 +307,34 @@
   {datatype, {enum, [true, false]}},
   {level, advanced}
 ]}.
+
+
+%% @doc This parameter the number of hot threads in the Erlang
+%% to leveldb translation layer.  Highly recommended that the 
+%% value exceed the number of vnodes AND be a prime number.
+{mapping, "multi_backend.$name.leveldb.eleveldb_threads", "riak_kv.multi_backend", [
+  {default, "71"},
+  {datatype, integer},
+  {level, advanced}
+]}.
+
+
+%% @doc Option to override leveldb's aggressive use of fadvise(DONTNEED) with
+%% fadvise(WILLNEED) instead.  WILLNEED can reduce disk activity on systems
+%% where physical memory exceeds the database size.
+{mapping, "multi_backend.$name.leveldb.fadvise_willneed", "riak_kv.multi_backend", [
+  {default, false},
+  {datatype, {enum, [true, false]}},
+  {level, advanced}
+]}.
+
+
+%% @doc Controls when a background compaction initiates solely
+%% due to the number of delete tombstones within an individual
+%% .sst table file.  Value of zero disables the feature.
+{mapping, "multi_backend.$name.leveldb.delete_threshold", "riak_kv.multi_backend", [
+  {default, "1000"},
+  {datatype, integer}
+]}.
+
 
