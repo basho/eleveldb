@@ -1,4 +1,4 @@
-
+%%-*- mode: erlang -*-
 %%%% This is the leveldb section
 
 %% @doc leveldb data_root
@@ -11,43 +11,45 @@
 %% server memory to assign to leveldb.  leveldb will dynamically
 %% adjust it internal cache sizes as Riak activates / inactivates
 %% vnodes on this server to stay within this size.  The memory size
-%% can alternately be assigned as a byte count via total_leveldb_mem instead.
-{mapping, "leveldb.total_leveldb_mem_percent", "eleveldb.total_leveldb_mem_percent", [
+%% can alternately be assigned as a byte count via total_leveldb_mem
+%% instead.
+{mapping, "leveldb.total_mem_percent", "eleveldb.total_leveldb_mem_percent", [
   {default, "80"},
   {datatype, integer}
 ]}.
 
 
-%% @doc This parameter defines the number of bytes of
-%% server memory to assign to leveldb.  leveldb will dynamically
-%% adjust it internal cache sizes as Riak activates / inactivates
-%% vnodes on this server to stay within this size.  The memory size
-%% can alternately be assigned as percentage of total server memory
-%% via total_leveldb_mem_percent instead.
-{mapping, "leveldb.total_leveldb_mem", "eleveldb.total_leveldb_mem", [
+%% @doc This parameter defines the number of bytes of server memory to
+%% assign to leveldb.  leveldb will dynamically adjust it internal
+%% cache sizes as Riak activates / inactivates vnodes on this server
+%% to stay within this size.  The memory size can alternately be
+%% assigned as percentage of total server memory via
+%% total_leveldb_mem_percent instead.
+{mapping, "leveldb.total_mem", "eleveldb.total_leveldb_mem", [
   {datatype, bytesize},
   {level, advanced}
 ]}.
 
 
-%% @doc The 'sync' parameter defines how new key/value data is placed in the
-%% recovery log. The recovery log is only used if the Riak program crashes or
-%% the server loses power unexpectedly. The parameter's original intent was
-%% to guarantee that each new key / value was written to the physical disk
-%% before leveldb responded with “write good”. The reality in modern servers
-%% is that many layers of data caching exist between the database program and
-%% the physical disks. This flag influences only one of the layers.
+%% @doc The 'sync' parameter defines how new key/value data is placed
+%% in the recovery log. The recovery log is only used if the Riak
+%% program crashes or the server loses power unexpectedly. The
+%% parameter's original intent was to guarantee that each new key /
+%% value was written to the physical disk before leveldb responded
+%% with “write good”. The reality in modern servers is that many
+%% layers of data caching exist between the database program and the
+%% physical disks. This flag influences only one of the layers.
 {mapping, "leveldb.sync", "eleveldb.sync", [
   {default, false},
   {datatype, {enum, [true, false]}},
   {level, advanced}
 ]}.
 
-%% @doc limited_developer_mem is a Riak specific option that is used when
-%% a developer is testing a high number of vnodes and/or several VMs
-%% on a machine with limited physical memory.  Do NOT use this option
-%% if making performance measurements.  This option overwrites values
-%% given to write_buffer_size_min and write_buffer_size_max.
+%% @doc limited_developer_mem is a Riak specific option that is used
+%% when a developer is testing a high number of vnodes and/or several
+%% VMs on a machine with limited physical memory.  Do NOT use this
+%% option if making performance measurements.  This option overwrites
+%% values given to write_buffer_size_min and write_buffer_size_max.
 {mapping, "leveldb.limited_developer_mem", "eleveldb.limited_developer_mem", [
   {default, false},
   {datatype, {enum, [true, false]}},
@@ -55,11 +57,12 @@
 ]}.
 
 
-%% @doc Each vnode first stores new key/value data in a memory based write
-%% buffer. This write buffer is in parallel to the recovery log mentioned
-%% in the “sync” parameter. Riak creates each vnode with a randomly sized
-%% write buffer for performance reasons. The random size is somewhere
-%% between write_buffer_size_min and write_buffer_size_max.
+%% @doc Each vnode first stores new key/value data in a memory based
+%% write buffer. This write buffer is in parallel to the recovery log
+%% mentioned in the “sync” parameter. Riak creates each vnode with a
+%% randomly sized write buffer for performance reasons. The random
+%% size is somewhere between write_buffer_size_min and
+%% write_buffer_size_max.
 {mapping, "leveldb.write_buffer_size_min", "eleveldb.write_buffer_size_min", [
   {default, "30MB"},
   {datatype, bytesize},
@@ -73,11 +76,12 @@
 ]}.
 
 
-%% @doc Each database .sst table file can include an optional "bloom filter"
-%% that is highly effective in shortcutting data queries that are destined
-%% to not find the requested key. The bloom_filter typically increases the
-%% size of an .sst table file by about 2%. This option must be set to true
-%% in the riak.conf to take effect.
+%% @doc Each database .sst table file can include an optional "bloom
+%% filter" that is highly effective in shortcutting data queries that
+%% are destined to not find the requested key. The bloom_filter
+%% typically increases the size of an .sst table file by about
+%% 2%. This option must be set to true in the riak.conf to take
+%% effect.
 {mapping, "leveldb.bloomfilter", "eleveldb.use_bloomfilter", [
   {default, on},
   {datatype, {enum, [on, off]}}
@@ -86,7 +90,7 @@
 { translation,
   "eleveldb.use_bloomfilter",
   fun(Conf) ->
-    case cuttlefish_util:conf_get_value("leveldb.bloomfilter", Conf) of
+    case cuttlefish:conf_get("leveldb.bloomfilter", Conf) of
         on -> true;
         off -> false;
         _ -> true
@@ -95,9 +99,9 @@
 }.
 
 
-%% @doc sst_block_size defines the size threshold for a block / chunk of data
-%% within one .sst table file. Each new block gets an index entry in the .sst
-%% table file's master index.
+%% @doc sst_block_size defines the size threshold for a block / chunk
+%% of data within one .sst table file. Each new block gets an index
+%% entry in the .sst table file's master index.
 {mapping, "leveldb.block_size", "eleveldb.sst_block_size", [
   {default, "4KB"},
   {datatype, bytesize},
@@ -105,9 +109,9 @@
 ]}.
 
 
-%% @doc block_restart_interval defines the key count threshold for a new key
-%% entry in the key index for a block.
-%% Most clients should leave this parameter alone.
+%% @doc block_restart_interval defines the key count threshold for a
+%% new key entry in the key index for a block.  Most clients should
+%% leave this parameter alone.
 {mapping, "leveldb.block_restart_interval", "eleveldb.block_restart_interval", [
   {default, 16},
   {datatype, integer},
@@ -124,8 +128,9 @@
 ]}.
 
 
-%% @doc verify_checksums controls whether or not validation occurs when Riak
-%% requests data from the leveldb database on behalf of the user.
+%% @doc verify_checksums controls whether or not validation occurs
+%% when Riak requests data from the leveldb database on behalf of the
+%% user.
 {mapping, "leveldb.verify_checksums", "eleveldb.verify_checksums", [
   {default, true},
   {datatype, {enum, [true, false]}},
@@ -133,8 +138,9 @@
 ]}.
 
 
-%% @doc verify_compaction controls whether or not validation occurs when
-%% leveldb reads data as part of its background compaction operations.
+%% @doc verify_compaction controls whether or not validation occurs
+%% when leveldb reads data as part of its background compaction
+%% operations.
 {mapping, "leveldb.verify_compaction", "eleveldb.verify_compaction", [
   {default, true},
   {datatype, {enum, [true, false]}},
@@ -176,7 +182,6 @@
 
 %% @doc leveldb data_root
 {mapping, "multi_backend.$name.leveldb.data_root", "riak_kv.multi_backend", [
-  {default, "{{platform_data_dir}}/multleveldb"},
   {level, advanced}
 ]}.
 
@@ -185,32 +190,33 @@
 %% server memory to assign to leveldb.  leveldb will dynamically
 %% adjust it internal cache sizes as Riak activates / inactivates
 %% vnodes on this server to stay within this size.  The memory size
-%% can alternately be assigned as a byte count via total_leveldb_mem instead.
-{mapping, "multi_backend.$name.leveldb.total_leveldb_mem_percent", "riak_kv.multi_backend", [
+%% can alternately be assigned as a byte count via total_leveldb_mem
+%% instead.
+{mapping, "multi_backend.$name.leveldb.total_mem_percent", "riak_kv.multi_backend", [
   {default, "45"},
   {datatype, integer},
   {level, advanced}
 ]}.
 
 
-%% @doc This parameter defines the number of bytes of
-%% server memory to assign to leveldb.  leveldb will dynamically
-%% adjust it internal cache sizes as Riak activates / inactivates
-%% vnodes on this server to stay within this size.  The memory size
-%% can alternately be assigned as percentage of total server memory
-%% via total_leveldb_mem_percent instead.
-{mapping, "multi_backend.$name.leveldb.total_leveldb_mem", "riak_kv.multi_backend", [
+%% @doc This parameter defines the number of bytes of server memory to
+%% assign to leveldb.  leveldb will dynamically adjust it internal
+%% cache sizes as Riak activates / inactivates vnodes on this server
+%% to stay within this size.  The memory size can alternately be
+%% assigned as percentage of total server memory via
+%% total_leveldb_mem_percent instead.
+{mapping, "multi_backend.$name.leveldb.total__mem", "riak_kv.multi_backend", [
   {default, "512MB"},
   {datatype, bytesize},
   {level, advanced}
 ]}.
 
 
-%% @doc limited_developer_mem is a Riak specific option that is used when
-%% a developer is testing a high number of vnodes and/or several VMs
-%% on a machine with limited physical memory.  Do NOT use this option
-%% if making performance measurements.  This option overwrites values
-%% given to write_buffer_size_min and write_buffer_size_max.
+%% @doc limited_developer_mem is a Riak specific option that is used
+%% when a developer is testing a high number of vnodes and/or several
+%% VMs on a machine with limited physical memory.  Do NOT use this
+%% option if making performance measurements.  This option overwrites
+%% values given to write_buffer_size_min and write_buffer_size_max.
 {mapping, "multi_backend.$name.leveldb.limited_developer_mem", "riak_kv.multi_backend", [
   {default, false},
   {datatype, {enum, [true, false]}},
@@ -218,13 +224,14 @@
 ]}.
 
 
-%% @doc The 'sync' parameter defines how new key/value data is placed in the
-%% recovery log. The recovery log is only used if the Riak program crashes or
-%% the server loses power unexpectedly. The parameter's original intent was
-%% to guarantee that each new key / value was written to the physical disk
-%% before leveldb responded with “write good”. The reality in modern servers
-%% is that many layers of data caching exist between the database program and
-%% the physical disks. This flag influences only one of the layers.
+%% @doc The 'sync' parameter defines how new key/value data is placed
+%% in the recovery log. The recovery log is only used if the Riak
+%% program crashes or the server loses power unexpectedly. The
+%% parameter's original intent was to guarantee that each new key /
+%% value was written to the physical disk before leveldb responded
+%% with “write good”. The reality in modern servers is that many
+%% layers of data caching exist between the database program and the
+%% physical disks. This flag influences only one of the layers.
 {mapping, "multi_backend.$name.leveldb.sync", "riak_kv.multi_backend", [
   {default, false},
   {datatype, {enum, [true, false]}},
@@ -232,11 +239,12 @@
 ]}.
 
 
-%% @doc Each vnode first stores new key/value data in a memory based write
-%% buffer. This write buffer is in parallel to the recovery log mentioned
-%% in the “sync” parameter. Riak creates each vnode with a randomly sized
-%% write buffer for performance reasons. The random size is somewhere
-%% between write_buffer_size_min and write_buffer_size_max.
+%% @doc Each vnode first stores new key/value data in a memory based
+%% write buffer. This write buffer is in parallel to the recovery log
+%% mentioned in the “sync” parameter. Riak creates each vnode with a
+%% randomly sized write buffer for performance reasons. The random
+%% size is somewhere between write_buffer_size_min and
+%% write_buffer_size_max.
 {mapping, "multi_backend.$name.leveldb.write_buffer_size_min", "riak_kv.multi_backend", [
   {default, "15MB"},
   {datatype, bytesize},
@@ -250,11 +258,12 @@
 ]}.
 
 
-%% @doc Each database .sst table file can include an optional "bloom filter"
-%% that is highly effective in shortcutting data queries that are destined
-%% to not find the requested key. The bloom_filter typically increases the
-%% size of an .sst table file by about 2%. This option must be set to true
-%% in the riak.conf to take effect.
+%% @doc Each database .sst table file can include an optional "bloom
+%% filter" that is highly effective in shortcutting data queries that
+%% are destined to not find the requested key. The bloom_filter
+%% typically increases the size of an .sst table file by about
+%% 2%. This option must be set to true in the riak.conf to take
+%% effect.
 {mapping, "multi_backend.$name.leveldb.bloomfilter", "riak_kv.multi_backend", [
   {default, on},
   {datatype, {enum, [on, off]}},
@@ -262,9 +271,9 @@
 ]}.
 
 
-%% @doc sst_block_size defines the size threshold for a block / chunk of data
-%% within one .sst table file. Each new block gets an index entry in the .sst
-%% table file's master index.
+%% @doc sst_block_size defines the size threshold for a block / chunk
+%% of data within one .sst table file. Each new block gets an index
+%% entry in the .sst table file's master index.
 {mapping, "multi_backend.$name.leveldb.block_size", "riak_kv.multi_backend", [
   {default, "4KB"},
   {datatype, bytesize},
@@ -272,9 +281,9 @@
 ]}.
 
 
-%% @doc block_restart_interval defines the key count threshold for a new key
-%% entry in the key index for a block.
-%% Most clients should leave this parameter alone.
+%% @doc block_restart_interval defines the key count threshold for a
+%% new key entry in the key index for a block.  Most clients should
+%% leave this parameter alone.
 {mapping, "multi_backend.$name.leveldb.block_restart_interval", "riak_kv.multi_backend", [
   {default, 16},
   {datatype, integer},
@@ -291,8 +300,9 @@
 ]}.
 
 
-%% @doc verify_checksums controls whether or not validation occurs when Riak
-%% requests data from the leveldb database on behalf of the user.
+%% @doc verify_checksums controls whether or not validation occurs
+%% when Riak requests data from the leveldb database on behalf of the
+%% user.
 {mapping, "multi_backend.$name.leveldb.verify_checksums", "riak_kv.multi_backend", [
   {default, true},
   {datatype, {enum, [true, false]}},
@@ -300,8 +310,9 @@
 ]}.
 
 
-%% @doc verify_compaction controls whether or not validation occurs when
-%% leveldb reads data as part of its background compaction operations.
+%% @doc verify_compaction controls whether or not validation occurs
+%% when leveldb reads data as part of its background compaction
+%% operations.
 {mapping, "multi_backend.$name.leveldb.verify_compaction", "riak_kv.multi_backend", [
   {default, true},
   {datatype, {enum, [true, false]}},
