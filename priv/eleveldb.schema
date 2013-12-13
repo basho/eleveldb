@@ -296,7 +296,8 @@
 %% Value of zero disables the underlying dynamic block_size feature.
 {mapping, "multi_backend.$name.leveldb.block_size_steps", "riak_kv.multi_backend", [
   {default, 16},
-  {datatype, integer}
+  {datatype, integer},
+  {level, advanced}
 ]}.
 
 
@@ -345,7 +346,8 @@
 %% .sst table file.  Value of zero disables the feature.
 {mapping, "multi_backend.$name.leveldb.delete_threshold", "riak_kv.multi_backend", [
   {default, "1000"},
-  {datatype, integer}
+  {datatype, integer},
+  {level, advanced}
 ]}.
 
 
