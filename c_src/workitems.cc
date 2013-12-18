@@ -182,8 +182,40 @@ OpenTask::operator()()
 work_result
 MoveTask::operator()()
 {
-    leveldb::Iterator* itr = m_ItrWrap->get();
+    leveldb::Iterator* itr;
 
+    itr=m_ItrWrap->get();
+
+    // iterator_refresh operation
+    if (m_ItrWrap->m_Options->iterator_refresh && m_ItrWrap->m_StillUse)
+    {
+        struct timeval tv;
+
+        gettimeofday(&tv, NULL);
+
+        if (tv.tv_sec < m_ItrWrap->m_IteratorStale || NULL==itr)
+        {
+            m_ItrWrap->RebuildIterator();
+            itr=m_ItrWrap->get();
+
+            // recover position
+            if (NULL!=itr)
+            {
+                leveldb::Slice key_slice(m_ItrWrap->m_RecentKey);
+
+                itr->Seek(key_slice);
+                m_ItrWrap->m_StillUse=itr->Valid();
+                if (!m_ItrWrap->m_StillUse)
+                {
+                    itr=NULL;
+                    m_ItrWrap->PurgeIterator();
+                }   // if
+            }   // if
+        }   // if
+    }   // if
+
+
+    // back to normal operation
     if(NULL == itr)
         return work_result(local_env(), ATOM_ERROR, ATOM_ITERATOR_CLOSED);
 
@@ -215,6 +247,21 @@ MoveTask::operator()()
 
     }   // switch
 
+    // Post processing before telling the world the results
+    //  (while only one thread might be looking at objects)
+    if (m_ItrWrap->m_Options->iterator_refresh)
+    {
+        if (itr->Valid())
+        {
+            m_ItrWrap->m_RecentKey.assign(itr->key().data(), itr->key().size());
+        }   // if
+        else
+        {
+            // release iterator now, not later
+            m_ItrWrap->m_StillUse=false;
+            m_ItrWrap->PurgeIterator();
+        }   // else
+    }   // if
 
     // who got back first, us or the erlang loop
     if (compare_and_swap(&m_ItrWrap->m_HandoffAtomic, 0, 1))
@@ -260,7 +307,7 @@ MoveTask::local_env()
 
     if (!terms_set)
     {
-        caller_ref_term = enif_make_copy(local_env_, m_ItrWrap->m_Snap->itr_ref);
+        caller_ref_term = enif_make_copy(local_env_, m_ItrWrap->itr_ref);
         caller_pid_term = enif_make_pid(local_env_, &local_pid);
         terms_set=true;
     }   // if

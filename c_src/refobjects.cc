@@ -496,6 +496,9 @@ ItrObject::~ItrObject()
 
     delete m_ReadOptions;
 
+    if (NULL!=itr_ref_env)
+        enif_free_env(itr_ref_env);
+
     if (NULL!=m_DbPtr.get())
         m_DbPtr->RemoveReference(this);
 

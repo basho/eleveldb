@@ -98,6 +98,7 @@ ERL_NIF_TERM ATOM_ERROR_DB_PUT;
 ERL_NIF_TERM ATOM_NOT_FOUND;
 ERL_NIF_TERM ATOM_VERIFY_CHECKSUMS;
 ERL_NIF_TERM ATOM_FILL_CACHE;
+ERL_NIF_TERM ATOM_ITERATOR_REFRESH;
 ERL_NIF_TERM ATOM_SYNC;
 ERL_NIF_TERM ATOM_ERROR_DB_DELETE;
 ERL_NIF_TERM ATOM_CLEAR;
@@ -423,6 +424,8 @@ ERL_NIF_TERM parse_read_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::ReadO
             opts.verify_checksums = (option[1] == eleveldb::ATOM_TRUE);
         else if (option[0] == eleveldb::ATOM_FILL_CACHE)
             opts.fill_cache = (option[1] == eleveldb::ATOM_TRUE);
+        else if (option[0] == eleveldb::ATOM_ITERATOR_REFRESH)
+            opts.iterator_refresh = (option[1] == eleveldb::ATOM_TRUE);
     }
 
     return eleveldb::ATOM_OK;
@@ -732,7 +735,7 @@ async_iterator_move(
         return enif_make_badarg(env);
 
     // Reuse ref from iterator creation
-    const ERL_NIF_TERM& caller_ref = itr_ptr->m_Snapshot->itr_ref;
+    const ERL_NIF_TERM& caller_ref = itr_ptr->itr_ref;
 
     /* We can be invoked with two different arities from Erlang. If our "action_atom" parameter is not
        in fact an atom, then it is actually a seek target. Let's find out which we are: */
@@ -748,7 +751,6 @@ async_iterator_move(
         if(ATOM_PREFETCH == action_or_target)   action = eleveldb::MoveTask::PREFETCH;
     }   // if
 
-
     //
     // Three situations:
     //  #1 not a PREFETCH next call
@@ -763,7 +765,7 @@ async_iterator_move(
         itr_ptr->ReleaseReuseMove();
 
         submit_new_request=true;
-        ret_term = enif_make_copy(env, itr_ptr->m_Snapshot->itr_ref);
+        ret_term = enif_make_copy(env, itr_ptr->itr_ref);
 
         // force reply to be a message
         itr_ptr->m_Iter->m_HandoffAtomic=1;
@@ -775,7 +777,7 @@ async_iterator_move(
     else if (eleveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
     {
         // nope, no prefetch ... await a message to erlang queue
-        ret_term = enif_make_copy(env, itr_ptr->m_Snapshot->itr_ref);
+        ret_term = enif_make_copy(env, itr_ptr->itr_ref);
 
         // is this truly a wait for prefetch ... or actually the first prefetch request
         if (!itr_ptr->m_Iter->m_PrefetchStarted)
@@ -1121,6 +1123,7 @@ try
     ATOM(eleveldb::ATOM_NOT_FOUND, "not_found");
     ATOM(eleveldb::ATOM_VERIFY_CHECKSUMS, "verify_checksums");
     ATOM(eleveldb::ATOM_FILL_CACHE,"fill_cache");
+    ATOM(eleveldb::ATOM_ITERATOR_REFRESH,"iterator_refresh");
     ATOM(eleveldb::ATOM_SYNC, "sync");
     ATOM(eleveldb::ATOM_ERROR_DB_DELETE, "db_delete");
     ATOM(eleveldb::ATOM_CLEAR, "clear");

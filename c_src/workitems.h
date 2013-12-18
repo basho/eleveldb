@@ -274,24 +274,16 @@ public:
     virtual work_result operator()()
     {
         ItrObject * itr_ptr;
-        const leveldb::Snapshot * snapshot;
-        leveldb::Iterator * iterator;
 
         // NOTE: transfering ownership of options to ItrObject
         itr_ptr=ItrObject::CreateItrObject(m_DbPtr.get(), keys_only, options);
 
-        snapshot = m_DbPtr->m_Db->GetSnapshot();
-        itr_ptr->m_Snapshot.assign(new LevelSnapshotWrapper(m_DbPtr.get(), snapshot));
-        options->snapshot = snapshot;
-
         // Copy caller_ref to reuse in future iterator_move calls
-        itr_ptr->m_Snapshot->itr_ref_env = enif_alloc_env();
-        itr_ptr->m_Snapshot->itr_ref = enif_make_copy(itr_ptr->m_Snapshot->itr_ref_env,
-                                                      caller_ref());
+        itr_ptr->itr_ref_env = enif_alloc_env();
+        itr_ptr->itr_ref = enif_make_copy(itr_ptr->itr_ref_env, caller_ref());
 
-        iterator = m_DbPtr->m_Db->NewIterator(*options);
-        itr_ptr->m_Iter.assign(new LevelIteratorWrapper(m_DbPtr.get(), itr_ptr->m_Snapshot.get(),
-                                                        iterator, keys_only));
+        itr_ptr->m_Iter.assign(new LevelIteratorWrapper(m_DbPtr.get(), keys_only,
+                                                        options, itr_ptr->itr_ref));
 
         ERL_NIF_TERM result = enif_make_resource(local_env(), itr_ptr);
 
