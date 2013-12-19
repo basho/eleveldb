@@ -186,6 +186,12 @@ MoveTask::operator()()
 
     itr=m_ItrWrap->get();
 
+
+//
+// race condition of prefetch clearing db iterator while
+//  async_iterator_move looking at it.
+//
+
     // iterator_refresh operation
     if (m_ItrWrap->m_Options->iterator_refresh && m_ItrWrap->m_StillUse)
     {
@@ -193,13 +199,13 @@ MoveTask::operator()()
 
         gettimeofday(&tv, NULL);
 
-        if (tv.tv_sec < m_ItrWrap->m_IteratorStale || NULL==itr)
+        if (m_ItrWrap->m_IteratorStale < tv.tv_sec || NULL==itr)
         {
             m_ItrWrap->RebuildIterator();
             itr=m_ItrWrap->get();
 
             // recover position
-            if (NULL!=itr)
+            if (NULL!=itr && 0!=m_ItrWrap->m_RecentKey.size())
             {
                 leveldb::Slice key_slice(m_ItrWrap->m_RecentKey);
 
@@ -208,12 +214,11 @@ MoveTask::operator()()
                 if (!m_ItrWrap->m_StillUse)
                 {
                     itr=NULL;
-                    m_ItrWrap->PurgeIterator();
+//                    m_ItrWrap->PurgeIterator();
                 }   // if
             }   // if
         }   // if
     }   // if
-
 
     // back to normal operation
     if(NULL == itr)
@@ -259,7 +264,7 @@ MoveTask::operator()()
         {
             // release iterator now, not later
             m_ItrWrap->m_StillUse=false;
-            m_ItrWrap->PurgeIterator();
+// segfault            m_ItrWrap->PurgeIterator();
         }   // else
     }   // if
 

@@ -697,6 +697,7 @@ async_iterator(
     leveldb::ReadOptions *opts = new leveldb::ReadOptions;
     fold(env, options_ref, parse_read_option, *opts);
 
+    opts->iterator_refresh=true;
     eleveldb::WorkTask *work_item = new eleveldb::IterTask(env, caller_ref,
                                                            db_ptr.get(), keys_only, opts);
 
@@ -768,13 +769,14 @@ async_iterator_move(
         ret_term = enif_make_copy(env, itr_ptr->itr_ref);
 
         // force reply to be a message
-        itr_ptr->m_Iter->m_HandoffAtomic=1;
+        if (NULL!=itr_ptr->m_Iter.get())
+            itr_ptr->m_Iter->m_HandoffAtomic=1;
     }   // if
 
     // case #2
     // before we launch a background job for "next iteration", see if there is a
     //  prefetch waiting for us
-    else if (eleveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
+    else if (NULL!=itr_ptr->m_Iter.get() && eleveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
     {
         // nope, no prefetch ... await a message to erlang queue
         ret_term = enif_make_copy(env, itr_ptr->itr_ref);
@@ -802,7 +804,7 @@ async_iterator_move(
     {
         // why yes there is.  copy the key/value info into a return tuple before
         //  we launch the iterator for "next" again
-        if(!itr_ptr->m_Iter->Valid())
+        if(NULL==itr_ptr->m_Iter.get() || !itr_ptr->m_Iter->Valid())
             ret_term=enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
         else if (itr_ptr->m_Iter->m_KeysOnly)
@@ -813,7 +815,8 @@ async_iterator_move(
                                       slice_to_binary(env, itr_ptr->m_Iter->value()));
 
         // reset for next race
-        itr_ptr->m_Iter->m_HandoffAtomic=0;
+        if (NULL!=itr_ptr->m_Iter.get())
+            itr_ptr->m_Iter->m_HandoffAtomic=0;
 
         // old MoveItem could still be active on its thread, cannot
         //  reuse ... but the current Iterator is good

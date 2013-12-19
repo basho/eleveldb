@@ -321,7 +321,6 @@ DbObject::~DbObject()
 void
 DbObject::Shutdown()
 {
-#if 1
     bool again;
     ItrObject * itr_ptr;
 
@@ -348,7 +347,6 @@ DbObject::Shutdown()
             ItrObject::InitiateCloseRequest(itr_ptr);
 
     } while(again);
-#endif
 
     RefDec();
 
