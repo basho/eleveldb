@@ -213,59 +213,6 @@ private:
 };  // class DbObject
 
 
-
-/****
- ** Note Dec 18, 2013, matthewv:  LevelSnapshotWrapper and LevelIteratorWrapper
- **  are left over from a design that did not perform as well as hoped.  There
- **  so no reason why they could not be rolled into ItrObject.
- ***/
-
-/**
- * A self deleting wrapper to contain leveldb snapshot pointer.
- *   Needed because multiple LevelIteratorWrappers could be using
- *   it ... and finishing at different times.
- */
-#if 0
-class LevelSnapshotWrapper : public RefObject
-{
-public:
-    ReferencePtr<DbObject> m_DbPtr;  //!< need to keep db open for delete of this object
-    const leveldb::Snapshot * m_Snapshot;
-
-    // this is an odd place to put this info, but it
-    //  happens to have the exact same lifespan
-    ERL_NIF_TERM itr_ref;
-    ErlNifEnv *itr_ref_env;
-
-    LevelSnapshotWrapper(DbObject * DbPtr, const leveldb::Snapshot * Snapshot)
-        : m_DbPtr(DbPtr), m_Snapshot(Snapshot), itr_ref_env(NULL)
-    {
-    };
-
-    virtual ~LevelSnapshotWrapper()
-    {
-        if (NULL!=itr_ref_env)
-            enif_free_env(itr_ref_env);
-
-        if (NULL!=m_Snapshot)
-        {
-            // leveldb performs actual "delete" call on m_Shapshot's pointer
-            m_DbPtr->m_Db->ReleaseSnapshot(m_Snapshot);
-            m_Snapshot=NULL;
-        }   // if
-    }   // ~LevelSnapshotWrapper
-
-    const leveldb::Snapshot * get() {return(m_Snapshot);};
-    const leveldb::Snapshot * operator->() {return(m_Snapshot);};
-
-private:
-    LevelSnapshotWrapper(const LevelSnapshotWrapper &);            // no copy
-    LevelSnapshotWrapper& operator=(const LevelSnapshotWrapper &); // no assignment
-
-};  // LevelSnapshotWrapper
-#endif
-
-
 /**
  * A self deleting wrapper to contain leveldb iterator.
  *   Used when an ItrObject needs to skip around and might
@@ -308,7 +255,7 @@ public:
     leveldb::Iterator * get() {return(m_Iterator);};
     leveldb::Iterator * operator->() {return(m_Iterator);};
 
-    bool Valid() {return(m_Iterator->Valid());};
+    bool Valid() {return(NULL!=m_Iterator && m_Iterator->Valid());};
     leveldb::Slice key() {return(m_Iterator->key());};
     leveldb::Slice value() {return(m_Iterator->value());};
 
@@ -345,7 +292,6 @@ public:
 private:
     LevelIteratorWrapper(const LevelIteratorWrapper &);            // no copy
     LevelIteratorWrapper& operator=(const LevelIteratorWrapper &); // no assignment
-
 
 };  // LevelIteratorWrapper
 
@@ -396,6 +342,7 @@ private:
     ItrObject();
     ItrObject(const ItrObject &);            // no copy
     ItrObject & operator=(const ItrObject &); // no assignment
+
 };  // class ItrObject
 
 } // namespace eleveldb

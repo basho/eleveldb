@@ -214,7 +214,7 @@ MoveTask::operator()()
                 if (!m_ItrWrap->m_StillUse)
                 {
                     itr=NULL;
-//                    m_ItrWrap->PurgeIterator();
+                    m_ItrWrap->PurgeIterator();
                 }   // if
             }   // if
         }   // if
@@ -264,7 +264,8 @@ MoveTask::operator()()
         {
             // release iterator now, not later
             m_ItrWrap->m_StillUse=false;
-// segfault            m_ItrWrap->PurgeIterator();
+            m_ItrWrap->PurgeIterator();
+            itr=NULL;
         }   // else
     }   // if
 
@@ -280,7 +281,7 @@ MoveTask::operator()()
         // setup next race for the response
         m_ItrWrap->m_HandoffAtomic=0;
 
-        if(itr->Valid())
+        if(NULL!=itr && itr->Valid())
         {
             if (PREFETCH==action)
                 prepare_recycle();
