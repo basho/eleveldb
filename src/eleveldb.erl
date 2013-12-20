@@ -2,7 +2,7 @@
 %%
 %%  eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 %%
-%% Copyright (c) 2010 Basho Technologies, Inc. All Rights Reserved.
+%% Copyright (c) 2010-2012 Basho Technologies, Inc. All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -77,7 +77,8 @@ init() ->
                          {cache_size, pos_integer()} |
                          {paranoid_checks, boolean()} |
                          {compression, boolean()} |
-                         {use_bloomfilter, boolean() | pos_integer()}].
+                         {use_bloomfilter, boolean() | pos_integer()} |
+                         {fadvise_willneed, boolean()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()}].
@@ -183,6 +184,7 @@ option_types(open) ->
      {cache_size, integer},
      {paranoid_checks, bool},
      {compression, bool},
+     {fadvise_willneed, bool},
      {use_bloomfilter, any}];
 option_types(read) ->
     [{verify_checksums, bool},

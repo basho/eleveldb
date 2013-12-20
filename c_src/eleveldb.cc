@@ -91,6 +91,7 @@ static ERL_NIF_TERM ATOM_KEYS_ONLY;
 static ERL_NIF_TERM ATOM_COMPRESSION;
 static ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
 static ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
+static ERL_NIF_TERM ATOM_FADVISE_WILLNEED;
 
 static ErlNifFunc nif_funcs[] =
 {
@@ -118,22 +119,22 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             opts.create_if_missing = (option[1] == ATOM_TRUE);
         else if (option[0] == ATOM_ERROR_IF_EXISTS)
             opts.error_if_exists = (option[1] == ATOM_TRUE);
-        else if (option[0] == ATOM_PARANOID_CHECKS) 
+        else if (option[0] == ATOM_PARANOID_CHECKS)
             opts.paranoid_checks = (option[1] == ATOM_TRUE);
-        else if (option[0] == ATOM_MAX_OPEN_FILES) 
+        else if (option[0] == ATOM_MAX_OPEN_FILES)
         {
             int max_open_files;
             if (enif_get_int(env, option[1], &max_open_files))
                 opts.max_open_files = max_open_files;
         }
-        else if (option[0] == ATOM_WRITE_BUFFER_SIZE) 
-        { 
+        else if (option[0] == ATOM_WRITE_BUFFER_SIZE)
+        {
             unsigned long write_buffer_sz;
             if (enif_get_ulong(env, option[1], &write_buffer_sz))
                 opts.write_buffer_size = write_buffer_sz;
         }
-        else if (option[0] == ATOM_BLOCK_SIZE) 
-        { 
+        else if (option[0] == ATOM_BLOCK_SIZE)
+        {
             /* DEPRECATED: the old block_size atom was actually ignored. */
             unsigned long block_sz;
             enif_get_ulong(env, option[1], &block_sz); // ignore
@@ -142,19 +143,19 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         {
             unsigned long sst_block_sz(0);
             if (enif_get_ulong(env, option[1], &sst_block_sz))
-             opts.block_size = sst_block_sz; // Note: We just set the "old" block_size option. 
+             opts.block_size = sst_block_sz; // Note: We just set the "old" block_size option.
         }
-        else if (option[0] == ATOM_BLOCK_RESTART_INTERVAL) 
-        { 
+        else if (option[0] == ATOM_BLOCK_RESTART_INTERVAL)
+        {
             int block_restart_interval;
             if (enif_get_int(env, option[1], &block_restart_interval))
                 opts.block_restart_interval = block_restart_interval;
         }
-        else if (option[0] == ATOM_CACHE_SIZE) 
+        else if (option[0] == ATOM_CACHE_SIZE)
         {
             unsigned long cache_sz;
-            if (enif_get_ulong(env, option[1], &cache_sz)) 
-                if (cache_sz != 0) 
+            if (enif_get_ulong(env, option[1], &cache_sz))
+                if (cache_sz != 0)
                     opts.block_cache = leveldb::NewLRUCache(cache_sz);
         }
         else if (option[0] == ATOM_COMPRESSION)
@@ -179,6 +180,10 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                 opts.filter_policy = leveldb::NewBloomFilterPolicy(bfsize);
             }
         }
+        else if (option[0] == ATOM_FADVISE_WILLNEED)
+        {
+            opts.fadvise_willneed = (option[1] == ATOM_TRUE);
+        }   // else if
     }
 
     return ATOM_OK;
@@ -296,10 +301,10 @@ static void free_db(eleveldb_db_handle* db_handle)
             enif_mutex_unlock(itr_handle->itr_lock);
         }
 
-        // close the db 
+        // close the db
         delete db_handle->db;
         db_handle->db = NULL;
-        
+
         // delete the iters
         delete db_handle->iters;
         db_handle->iters = NULL;
@@ -309,7 +314,7 @@ static void free_db(eleveldb_db_handle* db_handle)
         {
             delete db_handle->options.block_cache;
         }
-        
+
         // Clean up any filter policies
         if (db_handle->options.filter_policy)
         {
@@ -855,6 +860,7 @@ static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
     ATOM(ATOM_KEYS_ONLY, "keys_only");
     ATOM(ATOM_COMPRESSION, "compression");
     ATOM(ATOM_USE_BLOOMFILTER, "use_bloomfilter");
+    ATOM(ATOM_FADVISE_WILLNEED, "fadvise_willneed");
     return 0;
 }
 
