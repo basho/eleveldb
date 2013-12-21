@@ -24,6 +24,7 @@
 #define INCL_REFOBJECTS_H
 
 #include <stdint.h>
+#include <sys/time.h>
 #include <list>
 
 #include "leveldb/db.h"
@@ -213,52 +214,6 @@ private:
 
 
 /**
- * A self deleting wrapper to contain leveldb snapshot pointer.
- *   Needed because multiple LevelIteratorWrappers could be using
- *   it ... and finishing at different times.
- */
-
-class LevelSnapshotWrapper : public RefObject
-{
-public:
-    ReferencePtr<DbObject> m_DbPtr;  //!< need to keep db open for delete of this object
-    const leveldb::Snapshot * m_Snapshot;
-
-    // this is an odd place to put this info, but it
-    //  happens to have the exact same lifespan
-    ERL_NIF_TERM itr_ref;
-    ErlNifEnv *itr_ref_env;
-
-    LevelSnapshotWrapper(DbObject * DbPtr, const leveldb::Snapshot * Snapshot)
-        : m_DbPtr(DbPtr), m_Snapshot(Snapshot), itr_ref_env(NULL)
-    {
-    };
-
-    virtual ~LevelSnapshotWrapper()
-    {
-        if (NULL!=itr_ref_env)
-            enif_free_env(itr_ref_env);
-
-        if (NULL!=m_Snapshot)
-        {
-            // leveldb performs actual "delete" call on m_Shapshot's pointer
-            m_DbPtr->m_Db->ReleaseSnapshot(m_Snapshot);
-            m_Snapshot=NULL;
-        }   // if
-    }   // ~LevelSnapshotWrapper
-
-    const leveldb::Snapshot * get() {return(m_Snapshot);};
-    const leveldb::Snapshot * operator->() {return(m_Snapshot);};
-
-private:
-    LevelSnapshotWrapper(const LevelSnapshotWrapper &);            // no copy
-    LevelSnapshotWrapper& operator=(const LevelSnapshotWrapper &); // no assignment
-
-};  // LevelSnapshotWrapper
-
-
-
-/**
  * A self deleting wrapper to contain leveldb iterator.
  *   Used when an ItrObject needs to skip around and might
  *   have a background MoveItem performing a prefetch on existing
@@ -269,39 +224,74 @@ class LevelIteratorWrapper : public RefObject
 {
 public:
     ReferencePtr<DbObject> m_DbPtr;           //!< need to keep db open for delete of this object
-    ReferencePtr<LevelSnapshotWrapper> m_Snap;//!< keep snapshot active while this object is
+    const leveldb::Snapshot * m_Snapshot;
     leveldb::Iterator * m_Iterator;
     volatile uint32_t m_HandoffAtomic;        //!< matthew's atomic foreground/background prefetch flag.
     bool m_KeysOnly;                          //!< only return key values
     bool m_PrefetchStarted;                   //!< true after first prefetch command
+    leveldb::ReadOptions * m_Options;           //!< shared copy of ItrObject::options
+    ERL_NIF_TERM itr_ref;                     //!< shared copy of ItrObject::itr_ref
 
-    LevelIteratorWrapper(DbObject * DbPtr, LevelSnapshotWrapper * Snapshot,
-                         leveldb::Iterator * Iterator, bool KeysOnly)
-        : m_DbPtr(DbPtr), m_Snap(Snapshot), m_Iterator(Iterator),
-        m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false)
+    // only used if m_Options.iterator_refresh == true
+    std::string m_RecentKey;                  //!< Most recent key returned
+    time_t m_IteratorStale;                   //!< time iterator should refresh
+    bool m_StillUse;                          //!< true if no error or key end seen
+
+    LevelIteratorWrapper(DbObject * DbPtr, bool KeysOnly,
+                         leveldb::ReadOptions * Options, ERL_NIF_TERM itr_ref)
+        : m_DbPtr(DbPtr), m_Snapshot(NULL), m_Iterator(NULL),
+        m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false),
+        m_Options(Options), itr_ref(itr_ref),
+        m_IteratorStale(0), m_StillUse(true)
     {
+        RebuildIterator();
     };
 
     virtual ~LevelIteratorWrapper()
     {
-        if (NULL!=m_Iterator)
-        {
-            delete m_Iterator;
-            m_Iterator=NULL;
-        }   // if
+        PurgeIterator();
     }   // ~LevelIteratorWrapper
 
     leveldb::Iterator * get() {return(m_Iterator);};
     leveldb::Iterator * operator->() {return(m_Iterator);};
 
-    bool Valid() {return(m_Iterator->Valid());};
+    bool Valid() {return(NULL!=m_Iterator && m_Iterator->Valid());};
     leveldb::Slice key() {return(m_Iterator->key());};
     leveldb::Slice value() {return(m_Iterator->value());};
+
+    // iterator_refresh related routines
+    void PurgeIterator()
+    {
+        if (NULL!=m_Snapshot)
+        {
+            // leveldb performs actual "delete" call on m_Shapshot's pointer
+            m_DbPtr->m_Db->ReleaseSnapshot(m_Snapshot);
+            m_Snapshot=NULL;
+        }   // if
+
+        if (NULL!=m_Iterator)
+        {
+            delete m_Iterator;
+            m_Iterator=NULL;
+        }   // if
+    }   // PurgeIterator
+
+    void RebuildIterator()
+    {
+        struct timeval tv;
+
+        gettimeofday(&tv, NULL);
+        m_IteratorStale=tv.tv_sec + 300; // +5min
+
+        PurgeIterator();
+        m_Snapshot = m_DbPtr->m_Db->GetSnapshot();
+        m_Options->snapshot = m_Snapshot;
+        m_Iterator = m_DbPtr->m_Db->NewIterator(*m_Options);
+    }   // RebuildIterator
 
 private:
     LevelIteratorWrapper(const LevelIteratorWrapper &);            // no copy
     LevelIteratorWrapper& operator=(const LevelIteratorWrapper &); // no assignment
-
 
 };  // LevelIteratorWrapper
 
@@ -314,14 +304,18 @@ class ItrObject : public ErlRefObject
 {
 public:
     ReferencePtr<LevelIteratorWrapper> m_Iter;
-    ReferencePtr<LevelSnapshotWrapper> m_Snapshot;
+//    ReferencePtr<LevelSnapshotWrapper> m_Snapshot;
 
     bool keys_only;
-    leveldb::ReadOptions * m_ReadOptions;
+    leveldb::ReadOptions * m_ReadOptions;  //!< Owned by this object, must delete
 
-    volatile class MoveTask * reuse_move;//!< iterator work object that is reused instead of lots malloc/free
+    volatile class MoveTask * reuse_move;  //!< iterator work object that is reused instead of lots malloc/free
 
     ReferencePtr<DbObject> m_DbPtr;
+
+    ERL_NIF_TERM itr_ref;                  //!< what was caller ref to async_iterator
+    ErlNifEnv *itr_ref_env;                //!< Erlang Env to hold itr_ref
+
 
 protected:
     static ErlNifResourceType* m_Itr_RESOURCE;
@@ -348,6 +342,7 @@ private:
     ItrObject();
     ItrObject(const ItrObject &);            // no copy
     ItrObject & operator=(const ItrObject &); // no assignment
+
 };  // class ItrObject
 
 } // namespace eleveldb

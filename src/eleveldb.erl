@@ -100,7 +100,8 @@ init() ->
                          {delete_threshold, pos_integer()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
-                         {fill_cache, boolean()}].
+                         {fill_cache, boolean()} |
+                         {iterator_refresh, boolean()}].
 
 -type write_options() :: [{sync, boolean()}].
 
@@ -283,7 +284,8 @@ option_types(open) ->
 
 option_types(read) ->
     [{verify_checksums, bool},
-     {fill_cache, bool}];
+     {fill_cache, bool},
+     {iterator_refresh, bool}];
 option_types(write) ->
      [{sync, bool}].
 

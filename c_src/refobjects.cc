@@ -321,7 +321,6 @@ DbObject::~DbObject()
 void
 DbObject::Shutdown()
 {
-#if 1
     bool again;
     ItrObject * itr_ptr;
 
@@ -348,7 +347,6 @@ DbObject::Shutdown()
             ItrObject::InitiateCloseRequest(itr_ptr);
 
     } while(again);
-#endif
 
     RefDec();
 
@@ -495,6 +493,9 @@ ItrObject::~ItrObject()
     ReleaseReuseMove();
 
     delete m_ReadOptions;
+
+    if (NULL!=itr_ref_env)
+        enif_free_env(itr_ref_env);
 
     if (NULL!=m_DbPtr.get())
         m_DbPtr->RemoveReference(this);
