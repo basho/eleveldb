@@ -6,6 +6,10 @@
   {default, "{{platform_data_dir}}/leveldb"}
 ]}.
 
+%% @see leveldb.data_root
+{mapping, "multi_backend.$name.leveldb.data_root", "riak_kv.multi_backend", [
+  {level, advanced}
+]}.
 
 %% @doc This parameter defines the percentage of total server memory
 %% to assign to LevelDB. LevelDB will dynamically adjust its internal
@@ -18,6 +22,12 @@
   {datatype, integer}
 ]}.
 
+%% @see leveldb.maximum_memory.percent
+{mapping, "multi_backend.$name.leveldb.maximum_memory.percent", "riak_kv.multi_backend", [
+  {default, "45"},
+  {datatype, integer},
+  {level, advanced}
+]}.
 
 %% @doc This parameter defines the number of bytes of server memory to
 %% assign to LevelDB. LevelDB will dynamically adjust it internal
@@ -30,9 +40,22 @@
   {level, advanced}
 ]}.
 
+%% @see leveldb.maximum_memory
+{mapping, "multi_backend.$name.leveldb.maximum_memory", "riak_kv.multi_backend", [
+  {default, "512MB"},
+  {datatype, bytesize},
+  {level, advanced}
+]}.
 
 %% @doc Whether LevelDB will flush after every write.
 {mapping, "leveldb.sync", "eleveldb.sync", [
+  {default, false},
+  {datatype, {enum, [true, false]}},
+  {level, advanced}
+]}.
+
+%% @see leveldb.sync
+{mapping, "multi_backend.$name.leveldb.sync", "riak_kv.multi_backend", [
   {default, false},
   {datatype, {enum, [true, false]}},
   {level, advanced}
@@ -44,6 +67,13 @@
 %% option if making performance measurements.  This option overwrites
 %% values given to write_buffer_size_min and write_buffer_size_max.
 {mapping, "leveldb.limited_developer_mem", "eleveldb.limited_developer_mem", [
+  {default, false},
+  {datatype, {enum, [true, false]}},
+  {level, advanced}
+]}.
+
+%% @see leveldb.limited_developer_mem
+{mapping, "multi_backend.$name.leveldb.limited_developer_mem", "riak_kv.multi_backend", [
   {default, false},
   {datatype, {enum, [true, false]}},
   {level, advanced}
@@ -63,8 +93,22 @@
 ]}.
 
 %% @see leveldb.write_buffer_size_min
+{mapping, "multi_backend.$name.leveldb.write_buffer_size_min", "riak_kv.multi_backend", [
+  {default, "15MB"},
+  {datatype, bytesize},
+  {level, advanced}
+]}.
+
+%% @see leveldb.write_buffer_size_min
 {mapping, "leveldb.write_buffer_size_max", "eleveldb.write_buffer_size_max", [
   {default, "60MB"},
+  {datatype, bytesize},
+  {level, advanced}
+]}.
+
+%% @see leveldb.write_buffer_size_min
+{mapping, "multi_backend.$name.leveldb.write_buffer_size_max", "riak_kv.multi_backend", [
+  {default, "30MB"},
   {datatype, bytesize},
   {level, advanced}
 ]}.
@@ -91,6 +135,13 @@
   end
 }.
 
+%% @see leveldb.bloomfilter
+{mapping, "multi_backend.$name.leveldb.bloomfilter", "riak_kv.multi_backend", [
+  {default, on},
+  {datatype, {enum, [on, off]}},
+  {level, advanced}
+]}.
+
 %% @doc Defines the size threshold for a block / chunk of data within
 %% one .sst table file. Each new block gets an index entry in the .sst
 %% table file's master index.
@@ -100,10 +151,24 @@
   {level, advanced}
 ]}.
 
+%% @see leveldb.block.size
+{mapping, "multi_backend.$name.leveldb.block.size", "riak_kv.multi_backend", [
+  {default, "4KB"},
+  {datatype, bytesize},
+  {level, advanced}
+]}.
+
 %% @doc Defines the key count threshold for a new key entry in the key
 %% index for a block. Most deployments should leave this parameter
 %% alone.
 {mapping, "leveldb.block.restart_interval", "eleveldb.block_restart_interval", [
+  {default, 16},
+  {datatype, integer},
+  {level, advanced}
+]}.
+
+%% @see leveldb.block.restart_interval
+{mapping, "multi_backend.$name.leveldb.block.restart_interval", "riak_kv.multi_backend", [
   {default, 16},
   {datatype, integer},
   {level, advanced}
@@ -120,10 +185,24 @@
   {level, advanced}
 ]}.
 
+%% @see leveldb.block.size_steps
+{mapping, "multi_backend.$name.leveldb.block.size_steps", "riak_kv.multi_backend", [
+  {default, 16},
+  {datatype, integer},
+  {level, advanced}
+]}.
+
 %% @doc Enables or disables the verification of the data fetched from
 %% LevelDB against internal checksums.
 {mapping, "leveldb.verify_checksums", "eleveldb.verify_checksums", [
   %% TODO: on/off
+  {default, true},
+  {datatype, {enum, [true, false]}},
+  {level, advanced}
+]}.
+
+%% @see leveldb.verify_checksums
+{mapping, "multi_backend.$name.leveldb.verify_checksums", "riak_kv.multi_backend", [
   {default, true},
   {datatype, {enum, [true, false]}},
   {level, advanced}
@@ -138,8 +217,22 @@
   {level, advanced}
 ]}.
 
+%% @see leveldb.verify_compaction
+{mapping, "multi_backend.$name.leveldb.verify_compaction", "riak_kv.multi_backend", [
+  {default, true},
+  {datatype, {enum, [true, false]}},
+  {level, advanced}
+]}.
+
 %% @doc The number of worker threads performing LevelDB operations.
 {mapping, "leveldb.threads", "eleveldb.eleveldb_threads", [
+  {default, 71},
+  {datatype, integer},
+  {level, advanced}
+]}.
+
+%% @see leveldb.threads
+{mapping, "multi_backend.$name.leveldb.eleveldb_threads", "riak_kv.multi_backend", [
   {default, 71},
   {datatype, integer},
   {level, advanced}
@@ -154,155 +247,7 @@
   {level, advanced}
 ]}.
 
-%% @doc Controls when a background compaction initiates solely
-%% due to the number of delete tombstones within an individual
-%% .sst table file.  Value of zero disables the feature.
-{mapping, "leveldb.delete_threshold", "eleveldb.delete_threshold", [
-  {default, "1000"},
-  {datatype, integer}
-]}.
-
-%%%% This is the multi-backend leveldb section
-
-%% @doc leveldb data_root
-{mapping, "multi_backend.$name.leveldb.data_root", "riak_kv.multi_backend", [
-  {level, advanced}
-]}.
-
-%% @doc This parameter defines the percentage, 1 to 100, of total
-%% server memory to assign to leveldb.  leveldb will dynamically
-%% adjust it internal cache sizes as Riak activates / inactivates
-%% vnodes on this server to stay within this size.  The memory size
-%% can alternately be assigned as a byte count via total_leveldb_mem
-%% instead.
-{mapping, "multi_backend.$name.leveldb.total_mem_percent", "riak_kv.multi_backend", [
-  {default, "45"},
-  {datatype, integer},
-  {level, advanced}
-]}.
-
-%% @doc This parameter defines the number of bytes of server memory to
-%% assign to leveldb.  leveldb will dynamically adjust it internal
-%% cache sizes as Riak activates / inactivates vnodes on this server
-%% to stay within this size.  The memory size can alternately be
-%% assigned as percentage of total server memory via
-%% total_leveldb_mem_percent instead.
-{mapping, "multi_backend.$name.leveldb.total__mem", "riak_kv.multi_backend", [
-  {default, "512MB"},
-  {datatype, bytesize},
-  {level, advanced}
-]}.
-
-%% @doc limited_developer_mem is a Riak specific option that is used
-%% when a developer is testing a high number of vnodes and/or several
-%% VMs on a machine with limited physical memory.  Do NOT use this
-%% option if making performance measurements.  This option overwrites
-%% values given to write_buffer_size_min and write_buffer_size_max.
-{mapping, "multi_backend.$name.leveldb.limited_developer_mem", "riak_kv.multi_backend", [
-  {default, false},
-  {datatype, {enum, [true, false]}},
-  {level, advanced}
-]}.
-
-%% @doc The 'sync' parameter defines how new key/value data is placed
-%% in the recovery log. The recovery log is only used if the Riak
-%% program crashes or the server loses power unexpectedly. The
-%% parameter's original intent was to guarantee that each new key /
-%% value was written to the physical disk before leveldb responded
-%% with “write good”. The reality in modern servers is that many
-%% layers of data caching exist between the database program and the
-%% physical disks. This flag influences only one of the layers.
-{mapping, "multi_backend.$name.leveldb.sync", "riak_kv.multi_backend", [
-  {default, false},
-  {datatype, {enum, [true, false]}},
-  {level, advanced}
-]}.
-
-%% @doc Each vnode first stores new key/value data in a memory based
-%% write buffer. This write buffer is in parallel to the recovery log
-%% mentioned in the “sync” parameter. Riak creates each vnode with a
-%% randomly sized write buffer for performance reasons. The random
-%% size is somewhere between write_buffer_size_min and
-%% write_buffer_size_max.
-{mapping, "multi_backend.$name.leveldb.write_buffer_size_min", "riak_kv.multi_backend", [
-  {default, "15MB"},
-  {datatype, bytesize},
-  {level, advanced}
-]}.
-
-{mapping, "multi_backend.$name.leveldb.write_buffer_size_max", "riak_kv.multi_backend", [
-  {default, "30MB"},
-  {datatype, bytesize},
-  {level, advanced}
-]}.
-
-%% @doc Each database .sst table file can include an optional "bloom
-%% filter" that is highly effective in shortcutting data queries that
-%% are destined to not find the requested key. The bloom_filter
-%% typically increases the size of an .sst table file by about
-%% 2%. This option must be set to true in the riak.conf to take
-%% effect.
-{mapping, "multi_backend.$name.leveldb.bloomfilter", "riak_kv.multi_backend", [
-  {default, on},
-  {datatype, {enum, [on, off]}},
-  {level, advanced}
-]}.
-
-%% @doc sst_block_size defines the size threshold for a block / chunk
-%% of data within one .sst table file. Each new block gets an index
-%% entry in the .sst table file's master index.
-{mapping, "multi_backend.$name.leveldb.block_size", "riak_kv.multi_backend", [
-  {default, "4KB"},
-  {datatype, bytesize},
-  {level, advanced}
-]}.
-
-%% @doc block_restart_interval defines the key count threshold for a
-%% new key entry in the key index for a block.  Most clients should
-%% leave this parameter alone.
-{mapping, "multi_backend.$name.leveldb.block_restart_interval", "riak_kv.multi_backend", [
-  {default, 16},
-  {datatype, integer},
-  {level, advanced}
-]}.
-
-%% @doc Defines the number of incremental adjustments to attempt between
-%% the block_size value and the maximum block_size for an .sst table file.
-%% Value of zero disables the underlying dynamic block_size feature.
-{mapping, "multi_backend.$name.leveldb.block_size_steps", "riak_kv.multi_backend", [
-  {default, 16},
-  {datatype, integer},
-  {level, advanced}
-]}.
-
-%% @doc verify_checksums controls whether or not validation occurs
-%% when Riak requests data from the leveldb database on behalf of the
-%% user.
-{mapping, "multi_backend.$name.leveldb.verify_checksums", "riak_kv.multi_backend", [
-  {default, true},
-  {datatype, {enum, [true, false]}},
-  {level, advanced}
-]}.
-
-%% @doc verify_compaction controls whether or not validation occurs
-%% when leveldb reads data as part of its background compaction
-%% operations.
-{mapping, "multi_backend.$name.leveldb.verify_compaction", "riak_kv.multi_backend", [
-  {default, true},
-  {datatype, {enum, [true, false]}},
-  {level, advanced}
-]}.
-
-%% @doc The number of worker threads performing LevelDB operations.
-{mapping, "multi_backend.$name.leveldb.eleveldb_threads", "riak_kv.multi_backend", [
-  {default, 71},
-  {datatype, integer},
-  {level, advanced}
-]}.
-
-%% @doc Option to override leveldb's aggressive use of fadvise(DONTNEED) with
-%% fadvise(WILLNEED) instead.  WILLNEED can reduce disk activity on systems
-%% where physical memory exceeds the database size.
+%% @see leveldb.fadvise_willneed
 {mapping, "multi_backend.$name.leveldb.fadvise_willneed", "riak_kv.multi_backend", [
   {default, false},
   {datatype, {enum, [true, false]}},
@@ -312,6 +257,12 @@
 %% @doc Controls when a background compaction initiates solely
 %% due to the number of delete tombstones within an individual
 %% .sst table file.  Value of zero disables the feature.
+{mapping, "leveldb.delete_threshold", "eleveldb.delete_threshold", [
+  {default, "1000"},
+  {datatype, integer}
+]}.
+
+%% @see leveldb.delete_threshold
 {mapping, "multi_backend.$name.leveldb.delete_threshold", "riak_kv.multi_backend", [
   {default, "1000"},
   {datatype, integer},
