@@ -41,18 +41,18 @@ override_schema_test() ->
             {["leveldb", "data_root"], "/some/crazy/dir"},
             {["leveldb", "maximum_memory", "percent"], 50},
             {["leveldb", "maximum_memory"], "1KB"},
-            {["leveldb", "sync"], true},
-            {["leveldb", "limited_developer_mem"], true},
+            {["leveldb", "sync_on_write"], on},
+            {["leveldb", "limited_developer_mem"], on},
             {["leveldb", "write_buffer_size_min"], "10MB"},
             {["leveldb", "write_buffer_size_max"], "20MB"},
             {["leveldb", "bloomfilter"], off},
             {["leveldb", "block", "size"], "8KB"},
             {["leveldb", "block", "restart_interval"], 8},
-            {["leveldb", "verify_checksums"], false},
-            {["leveldb", "verify_compaction"], false},
+            {["leveldb", "verify_checksums"], off},
+            {["leveldb", "verify_compaction"], off},
             {["leveldb", "threads"], 7},
             {["leveldb", "fadvise_willneed"], true},
-            {["leveldb", "delete_threshold"], 2000}
+            {["leveldb", "compaction", "trigger", "tombstone_count"], off}
            ],
 
     %% The defaults are defined in ../priv/eleveldb.schema.
@@ -74,7 +74,7 @@ override_schema_test() ->
     cuttlefish_unit:assert_config(Config, "eleveldb.verify_compaction", false),
     cuttlefish_unit:assert_config(Config, "eleveldb.eleveldb_threads", 7),
     cuttlefish_unit:assert_config(Config, "eleveldb.fadvise_willneed", true),
-    cuttlefish_unit:assert_config(Config, "eleveldb.delete_threshold", 2000),
+    cuttlefish_unit:assert_config(Config, "eleveldb.delete_threshold", 0),
 
     %% Make sure no multi_backend
     %% Warning: The following line passes by coincidence. It's because the

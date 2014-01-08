@@ -31,7 +31,7 @@
 ]}.
 
 %% @doc This parameter defines the number of bytes of server memory to
-%% assign to LevelDB. LevelDB will dynamically adjust it internal
+%% assign to LevelDB. LevelDB will dynamically adjust its internal
 %% cache sizes to stay within this size. The memory size can
 %% alternately be assigned as percentage of total server memory via
 %% leveldb.maximum_memory.percent.
@@ -48,17 +48,19 @@
   {level, advanced}
 ]}.
 
-%% @doc Whether LevelDB will flush after every write.
-{mapping, "leveldb.sync", "eleveldb.sync", [
-  {default, false},
-  {datatype, {enum, [true, false]}},
+%% @doc Whether LevelDB will flush after every write. Note: If you are
+%% familiar with fsync, this is analagous to calling fsync after every
+%% write.
+{mapping, "leveldb.sync_on_write", "eleveldb.sync", [
+  {default, off},
+  {datatype, flag},
   {level, advanced}
 ]}.
 
 %% @see leveldb.sync
-{mapping, "multi_backend.$name.leveldb.sync", "riak_kv.multi_backend", [
-  {default, false},
-  {datatype, {enum, [true, false]}},
+{mapping, "multi_backend.$name.leveldb.sync_on_write", "riak_kv.multi_backend", [
+  {default, off},
+  {datatype, flag},
   {level, advanced}
 ]}.
 
@@ -68,15 +70,15 @@
 %% option if making performance measurements.  This option overwrites
 %% values given to write_buffer_size_min and write_buffer_size_max.
 {mapping, "leveldb.limited_developer_mem", "eleveldb.limited_developer_mem", [
-  {default, false},
-  {datatype, {enum, [true, false]}},
+  {default, off},
+  {datatype, flag},
   {level, advanced}
 ]}.
 
 %% @see leveldb.limited_developer_mem
 {mapping, "multi_backend.$name.leveldb.limited_developer_mem", "riak_kv.multi_backend", [
-  {default, false},
-  {datatype, {enum, [true, false]}},
+  {default, off},
+  {datatype, flag},
   {level, advanced}
 ]}.
 
@@ -185,32 +187,30 @@
 %% @doc Enables or disables the verification of the data fetched from
 %% LevelDB against internal checksums.
 {mapping, "leveldb.verify_checksums", "eleveldb.verify_checksums", [
-  %% TODO: on/off
-  {default, true},
-  {datatype, {enum, [true, false]}},
+  {default, on},
+  {datatype, flag},
   {level, advanced}
 ]}.
 
 %% @see leveldb.verify_checksums
 {mapping, "multi_backend.$name.leveldb.verify_checksums", "riak_kv.multi_backend", [
-  {default, true},
-  {datatype, {enum, [true, false]}},
+  {default, on},
+  {datatype, flag},
   {level, advanced}
 ]}.
 
 %% @doc Enables or disables the verification of LevelDB data during
 %% compaction.
 {mapping, "leveldb.verify_compaction", "eleveldb.verify_compaction", [
-  %% TODO: on/off
-  {default, true},
-  {datatype, {enum, [true, false]}},
+  {default, on},
+  {datatype, flag},
   {level, advanced}
 ]}.
 
 %% @see leveldb.verify_compaction
 {mapping, "multi_backend.$name.leveldb.verify_compaction", "riak_kv.multi_backend", [
-  {default, true},
-  {datatype, {enum, [true, false]}},
+  {default, on},
+  {datatype, flag},
   {level, advanced}
 ]}.
 
@@ -222,15 +222,15 @@
 ]}.
 
 %% @see leveldb.threads
-{mapping, "multi_backend.$name.leveldb.eleveldb_threads", "riak_kv.multi_backend", [
+{mapping, "multi_backend.$name.leveldb.threads", "riak_kv.multi_backend", [
   {default, 71},
   {datatype, integer},
   {level, advanced}
 ]}.
 
-%% @doc Option to override leveldb's aggressive use of fadvise(DONTNEED) with
-%% fadvise(WILLNEED) instead.  WILLNEED can reduce disk activity on systems
-%% where physical memory exceeds the database size.
+%% @doc Option to override LevelDB's use of fadvise(DONTNEED) with
+%% fadvise(WILLNEED) instead.  WILLNEED can reduce disk activity on
+%% systems where physical memory exceeds the database size.
 {mapping, "leveldb.fadvise_willneed", "eleveldb.fadvise_willneed", [
   {default, false},
   {datatype, {enum, [true, false]}},
@@ -246,14 +246,23 @@
 
 %% @doc Controls when a background compaction initiates solely
 %% due to the number of delete tombstones within an individual
-%% .sst table file.  Value of zero disables the feature.
-{mapping, "leveldb.delete_threshold", "eleveldb.delete_threshold", [
+%% .sst table file.  Value of 'off' disables the feature.
+{mapping, "leveldb.compaction.trigger.tombstone_count", "eleveldb.delete_threshold", [
   {default, 1000},
-  {datatype, integer}
+  {datatype, [integer, {atom, off}]}
 ]}.
+
+{translation,
+ "eleveldb.delete_threshold",
+ fun(Conf) ->
+   case cuttlefish:conf_get("leveldb.compaction.trigger.tombstone_count", Conf) of
+       off -> 0;
+       Int -> Int
+   end
+ end}.
 
 %% @see leveldb.delete_threshold
 {mapping, "multi_backend.$name.leveldb.delete_threshold", "riak_kv.multi_backend", [
-  {datatype, integer},
+  {datatype, [integer, {atom, off}]},
   {level, advanced}
 ]}.
