@@ -118,7 +118,7 @@
 
 %% @doc Each database .sst table file can include an optional "bloom
 %% filter" that is highly effective in shortcutting data queries that
-%% are destined to not find the requested key. The bloom filter
+%% are destined to not find the requested key. The Bloom filter
 %% typically increases the size of an .sst table file by about
 %% 2%.
 {mapping, "leveldb.bloomfilter", "eleveldb.use_bloomfilter", [
