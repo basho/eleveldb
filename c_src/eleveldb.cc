@@ -122,6 +122,7 @@ ERL_NIF_TERM ATOM_KEYS_ONLY;
 ERL_NIF_TERM ATOM_COMPRESSION;
 ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
 ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
+ERL_NIF_TERM ATOM_IS_INTERNAL_DB;
 ERL_NIF_TERM ATOM_WRITE_THREADS;
 ERL_NIF_TERM ATOM_FADVISE_WILLNEED;
 
@@ -301,6 +302,13 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             {
                 opts.filter_policy = leveldb::NewBloomFilterPolicy2(bfsize);
             }
+        }
+        else if (option[0] == eleveldb::ATOM_IS_INTERNAL_DB)
+        {
+            if (option[1] == eleveldb::ATOM_TRUE)
+                opts.is_internal_db = true;
+            else
+                opts.is_internal_db = false;
         }
     }
 
@@ -1009,6 +1017,7 @@ try
     ATOM(eleveldb::ATOM_KEYS_ONLY, "keys_only");
     ATOM(eleveldb::ATOM_COMPRESSION, "compression");
     ATOM(eleveldb::ATOM_USE_BLOOMFILTER, "use_bloomfilter");
+    ATOM(eleveldb::ATOM_IS_INTERNAL_DB, "is_internal_db");
     ATOM(eleveldb::ATOM_WRITE_THREADS, "write_threads");
     ATOM(eleveldb::ATOM_FADVISE_WILLNEED, "fadvise_willneed");
 
