@@ -95,6 +95,7 @@ init() ->
                          {verify_compactions, boolean()} |
                          {compression, boolean()} |
                          {use_bloomfilter, boolean() | pos_integer()} |
+                         {is_internal_db, boolean()} |
                          {fadvise_willneed, boolean()} |
                          {write_threads, pos_integer()}].
 
@@ -270,6 +271,7 @@ option_types(open) ->
      {verify_compactions, bool},
      {compression, bool},
      {use_bloomfilter, any},
+     {is_internal_db, bool},
      {write_threads, integer}];
 option_types(read) ->
     [{verify_checksums, bool},
