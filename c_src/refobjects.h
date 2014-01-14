@@ -229,7 +229,7 @@ public:
     volatile uint32_t m_HandoffAtomic;        //!< matthew's atomic foreground/background prefetch flag.
     bool m_KeysOnly;                          //!< only return key values
     bool m_PrefetchStarted;                   //!< true after first prefetch command
-    leveldb::ReadOptions * m_Options;           //!< shared copy of ItrObject::options
+    leveldb::ReadOptions m_Options;           //!< local copy of ItrObject::options
     ERL_NIF_TERM itr_ref;                     //!< shared copy of ItrObject::itr_ref
 
     // only used if m_Options.iterator_refresh == true
@@ -241,7 +241,7 @@ public:
                          leveldb::ReadOptions * Options, ERL_NIF_TERM itr_ref)
         : m_DbPtr(DbPtr), m_Snapshot(NULL), m_Iterator(NULL),
         m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false),
-        m_Options(Options), itr_ref(itr_ref),
+        m_Options(*Options), itr_ref(itr_ref),
         m_IteratorStale(0), m_StillUse(true)
     {
         RebuildIterator();
@@ -285,8 +285,8 @@ public:
 
         PurgeIterator();
         m_Snapshot = m_DbPtr->m_Db->GetSnapshot();
-        m_Options->snapshot = m_Snapshot;
-        m_Iterator = m_DbPtr->m_Db->NewIterator(*m_Options);
+        m_Options.snapshot = m_Snapshot;
+        m_Iterator = m_DbPtr->m_Db->NewIterator(m_Options);
     }   // RebuildIterator
 
 private:

@@ -193,7 +193,7 @@ MoveTask::operator()()
 //
 
     // iterator_refresh operation
-    if (m_ItrWrap->m_Options->iterator_refresh && m_ItrWrap->m_StillUse)
+    if (m_ItrWrap->m_Options.iterator_refresh && m_ItrWrap->m_StillUse)
     {
         struct timeval tv;
 
@@ -254,7 +254,7 @@ MoveTask::operator()()
 
     // Post processing before telling the world the results
     //  (while only one thread might be looking at objects)
-    if (m_ItrWrap->m_Options->iterator_refresh)
+    if (m_ItrWrap->m_Options.iterator_refresh)
     {
         if (itr->Valid())
         {
