@@ -113,6 +113,7 @@ ERL_NIF_TERM ATOM_LAST;
 ERL_NIF_TERM ATOM_NEXT;
 ERL_NIF_TERM ATOM_PREV;
 ERL_NIF_TERM ATOM_PREFETCH;
+ERL_NIF_TERM ATOM_PREFETCH_STOP;
 ERL_NIF_TERM ATOM_INVALID_ITERATOR;
 ERL_NIF_TERM ATOM_PARANOID_CHECKS;
 ERL_NIF_TERM ATOM_VERIFY_COMPACTIONS;
@@ -749,6 +750,7 @@ async_iterator_move(
         if(ATOM_NEXT == action_or_target)   action = eleveldb::MoveTask::NEXT;
         if(ATOM_PREV == action_or_target)   action = eleveldb::MoveTask::PREV;
         if(ATOM_PREFETCH == action_or_target)   action = eleveldb::MoveTask::PREFETCH;
+        if(ATOM_PREFETCH_STOP == action_or_target)   action = eleveldb::MoveTask::PREFETCH_STOP;
     }   // if
 
     //
@@ -756,9 +758,11 @@ async_iterator_move(
     //  #1 not a PREFETCH next call
     //  #2 PREFETCH call and no prefetch waiting
     //  #3 PREFETCH call and prefetch is waiting
+    //     (PREFETCH_STOP is basically a PREFETCH that turns off prefetch state)
 
     // case #1
-    if (eleveldb::MoveTask::PREFETCH != action)
+    if (eleveldb::MoveTask::PREFETCH != action
+        && eleveldb::MoveTask::PREFETCH_STOP != action )
     {
         // current move object could still be in later stages of
         //  worker thread completion ... race condition ...don't reuse
@@ -769,6 +773,7 @@ async_iterator_move(
 
         // force reply to be a message
         itr_ptr->m_Iter->m_HandoffAtomic=1;
+        itr_ptr->m_Iter->m_PrefetchStarted=false;
     }   // if
 
     // case #2
@@ -780,7 +785,8 @@ async_iterator_move(
         ret_term = enif_make_copy(env, itr_ptr->itr_ref);
 
         // is this truly a wait for prefetch ... or actually the first prefetch request
-        if (!itr_ptr->m_Iter->m_PrefetchStarted)
+        if (!itr_ptr->m_Iter->m_PrefetchStarted
+            && eleveldb::MoveTask::PREFETCH_STOP != action )
         {
             submit_new_request=true;
             itr_ptr->m_Iter->m_PrefetchStarted=true;
@@ -819,7 +825,8 @@ async_iterator_move(
         //  reuse ... but the current Iterator is good
         itr_ptr->ReleaseReuseMove();
 
-        submit_new_request=true;
+        submit_new_request=(eleveldb::MoveTask::PREFETCH_STOP != action );
+
     }   // else
 
 
@@ -1138,6 +1145,7 @@ try
     ATOM(eleveldb::ATOM_NEXT, "next");
     ATOM(eleveldb::ATOM_PREV, "prev");
     ATOM(eleveldb::ATOM_PREFETCH, "prefetch");
+    ATOM(eleveldb::ATOM_PREFETCH_STOP, "prefetch_stop");
     ATOM(eleveldb::ATOM_INVALID_ITERATOR, "invalid_iterator");
     ATOM(eleveldb::ATOM_PARANOID_CHECKS, "paranoid_checks");
     ATOM(eleveldb::ATOM_VERIFY_COMPACTIONS, "verify_compactions");

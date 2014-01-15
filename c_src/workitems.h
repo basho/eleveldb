@@ -300,7 +300,7 @@ public:
 class MoveTask : public WorkTask
 {
 public:
-    typedef enum { FIRST, LAST, NEXT, PREV, SEEK, PREFETCH } action_t;
+    typedef enum { FIRST, LAST, NEXT, PREV, SEEK, PREFETCH, PREFETCH_STOP } action_t;
 
 protected:
     ReferencePtr<LevelIteratorWrapper> m_ItrWrap;             //!< access to database, and holds reference

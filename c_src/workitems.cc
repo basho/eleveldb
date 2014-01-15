@@ -231,6 +231,7 @@ MoveTask::operator()()
         case LAST:  itr->SeekToLast();  break;
 
         case PREFETCH:
+        case PREFETCH_STOP:
         case NEXT:  if(itr->Valid()) itr->Next(); break;
 
         case PREV:  if(itr->Valid()) itr->Prev(); break;
@@ -260,7 +261,7 @@ MoveTask::operator()()
         {
             m_ItrWrap->m_RecentKey.assign(itr->key().data(), itr->key().size());
         }   // if
-        else
+        else if (PREFETCH_STOP!=action)
         {
             // release iterator now, not later
             m_ItrWrap->m_StillUse=false;
