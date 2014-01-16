@@ -17,8 +17,7 @@ rm-deps:
 compile: deps
 	./rebar compile
 
-test: compile
-	./rebar skip_deps=true eunit
-
 clean:
 	./rebar clean
+
+include tools.mk
