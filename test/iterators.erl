@@ -89,7 +89,11 @@ seek_and_prefetch_test_case(Ref) ->
             ?assertEqual({ok, <<"d">>, <<"z">>},eleveldb:iterator_move(I, prefetch_stop)),
             ?assertEqual({ok, <<"a">>, <<"w">>},eleveldb:iterator_move(I, <<"a">>)),
             ?assertEqual({ok, <<"b">>, <<"x">>},eleveldb:iterator_move(I, prefetch)),
-            ?assertEqual({ok, <<"c">>, <<"y">>},eleveldb:iterator_move(I, prefetch))
+            ?assertEqual({ok, <<"c">>, <<"y">>},eleveldb:iterator_move(I, prefetch_stop)),
+            ?assertEqual({ok, <<"a">>, <<"w">>},eleveldb:iterator_move(I, <<"a">>)),
+            ?assertEqual({ok, <<"b">>, <<"x">>},eleveldb:iterator_move(I, prefetch)),
+            ?assertEqual({ok, <<"c">>, <<"y">>},eleveldb:iterator_move(I, prefetch_stop)),
+            ?assertEqual({ok, <<"d">>, <<"z">>},eleveldb:iterator_move(I, prefetch))
     end.
 
 -endif.
