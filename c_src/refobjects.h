@@ -228,7 +228,7 @@ public:
     leveldb::Iterator * m_Iterator;
     volatile uint32_t m_HandoffAtomic;        //!< matthew's atomic foreground/background prefetch flag.
     bool m_KeysOnly;                          //!< only return key values
-    bool m_PrefetchStarted;                   //!< true after first prefetch command
+    volatile bool m_PrefetchStarted;          //!< true after first prefetch command
     leveldb::ReadOptions m_Options;           //!< local copy of ItrObject::options
     ERL_NIF_TERM itr_ref;                     //!< shared copy of ItrObject::itr_ref
 
@@ -306,7 +306,7 @@ public:
     ReferencePtr<LevelIteratorWrapper> m_Iter;
 
     bool keys_only;
-    leveldb::ReadOptions m_ReadOptions;  //!< Owned by this object, must delete
+    leveldb::ReadOptions m_ReadOptions; //!< local copy, pass to LevelIteratorWrapper only
 
     volatile class MoveTask * reuse_move;  //!< iterator work object that is reused instead of lots malloc/free
 

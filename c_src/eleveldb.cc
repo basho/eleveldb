@@ -753,6 +753,9 @@ async_iterator_move(
         if(ATOM_PREFETCH_STOP == action_or_target)   action = eleveldb::MoveTask::PREFETCH_STOP;
     }   // if
 
+    // debug syslog(LOG_ERR, "move state: %d, %d, %d",
+    //              action, itr_ptr->m_Iter->m_PrefetchStarted, itr_ptr->m_Iter->m_HandoffAtomic);
+
     //
     // Three situations:
     //  #1 not a PREFETCH next call
@@ -784,16 +787,13 @@ async_iterator_move(
         // nope, no prefetch ... await a message to erlang queue
         ret_term = enif_make_copy(env, itr_ptr->itr_ref);
 
+        // leave m_HandoffAtomic as 1 so first response is via message
+
         // is this truly a wait for prefetch ... or actually the first prefetch request
-        if (!itr_ptr->m_Iter->m_PrefetchStarted
-            && eleveldb::MoveTask::PREFETCH_STOP != action )
+        if (!itr_ptr->m_Iter->m_PrefetchStarted)
         {
             submit_new_request=true;
-            itr_ptr->m_Iter->m_PrefetchStarted=true;
             itr_ptr->ReleaseReuseMove();
-
-            // first must return via message
-            itr_ptr->m_Iter->m_HandoffAtomic=1;
         }   // if
 
         else
@@ -801,6 +801,8 @@ async_iterator_move(
             // await message that is already in the making
             submit_new_request=false;
         }   // else
+
+        itr_ptr->m_Iter->m_PrefetchStarted=(eleveldb::MoveTask::PREFETCH_STOP != action );
     }   // else if
 
     // case #3
@@ -818,6 +820,7 @@ async_iterator_move(
                                       slice_to_binary(env, itr_ptr->m_Iter->key()),
                                       slice_to_binary(env, itr_ptr->m_Iter->value()));
 
+
         // reset for next race
         itr_ptr->m_Iter->m_HandoffAtomic=0;
 
@@ -825,7 +828,17 @@ async_iterator_move(
         //  reuse ... but the current Iterator is good
         itr_ptr->ReleaseReuseMove();
 
-        submit_new_request=(eleveldb::MoveTask::PREFETCH_STOP != action );
+        if (eleveldb::MoveTask::PREFETCH_STOP != action )
+        {
+            submit_new_request=true;
+        }   // if
+        else
+        {
+            submit_new_request=false;
+            itr_ptr->m_Iter->m_HandoffAtomic=0;
+            itr_ptr->m_Iter->m_PrefetchStarted=false;
+        }   // else
+
 
     }   // else
 

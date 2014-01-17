@@ -19,6 +19,9 @@
 // under the License.
 //
 // -------------------------------------------------------------------
+
+#include <syslog.h>
+
 #ifndef __ELEVELDB_DETAIL_HPP
     #include "detail.hpp"
 #endif
@@ -270,6 +273,9 @@ MoveTask::operator()()
         }   // else
     }   // if
 
+    // debug syslog(LOG_ERR, "                     MoveItem::operator() %d, %d, %d",
+    //              action, m_ItrWrap->m_StillUse, m_ItrWrap->m_HandoffAtomic);
+
     // who got back first, us or the erlang loop
     if (compare_and_swap(&m_ItrWrap->m_HandoffAtomic, 0, 1))
     {
@@ -284,7 +290,7 @@ MoveTask::operator()()
 
         if(NULL!=itr && itr->Valid())
         {
-            if (PREFETCH==action)
+            if (PREFETCH==action && m_ItrWrap->m_PrefetchStarted)
                 prepare_recycle();
 
             // erlang is waiting, send message
