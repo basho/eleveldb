@@ -695,8 +695,8 @@ async_iterator(
         return send_reply(env, caller_ref, error_einval(env));
 
     // Parse out the read options
-    leveldb::ReadOptions *opts = new leveldb::ReadOptions;
-    fold(env, options_ref, parse_read_option, *opts);
+    leveldb::ReadOptions opts;
+    fold(env, options_ref, parse_read_option, opts);
 
     eleveldb::WorkTask *work_item = new eleveldb::IterTask(env, caller_ref,
                                                            db_ptr.get(), keys_only, opts);
