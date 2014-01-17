@@ -407,7 +407,7 @@ ItrObject *
 ItrObject::CreateItrObject(
     DbObject * DbPtr,
     bool KeysOnly,
-    leveldb::ReadOptions * Options)
+    leveldb::ReadOptions & Options)
 {
     ItrObject * ret_ptr;
     void * alloc_ptr;
@@ -477,7 +477,7 @@ ItrObject::ItrObjectResourceCleanup(
 ItrObject::ItrObject(
     DbObject * DbPtr,
     bool KeysOnly,
-    leveldb::ReadOptions * Options)
+    leveldb::ReadOptions & Options)
     : keys_only(KeysOnly), m_ReadOptions(Options), reuse_move(NULL), m_DbPtr(DbPtr)
 {
     if (NULL!=DbPtr)
@@ -491,8 +491,6 @@ ItrObject::~ItrObject()
     // not likely to have active reuse item since it would
     //  block destruction
     ReleaseReuseMove();
-
-    delete m_ReadOptions;
 
     if (NULL!=itr_ref_env)
         enif_free_env(itr_ref_env);

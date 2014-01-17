@@ -253,22 +253,20 @@ class IterTask : public WorkTask
 protected:
 
     const bool keys_only;
-    leveldb::ReadOptions *options;
+    leveldb::ReadOptions options;
 
 public:
     IterTask(ErlNifEnv *_caller_env,
              ERL_NIF_TERM _caller_ref,
              DbObject *_db_handle,
              const bool _keys_only,
-             leveldb::ReadOptions *_options)
+             leveldb::ReadOptions &_options)
         : WorkTask(_caller_env, _caller_ref, _db_handle),
         keys_only(_keys_only), options(_options)
     {}
 
     virtual ~IterTask()
     {
-        // options should be NULL at this point
-        delete options;
     }
 
     virtual work_result operator()()
@@ -289,7 +287,6 @@ public:
 
         // release reference created during CreateItrObject()
         enif_release_resource(itr_ptr);
-        options=NULL;  // ptr ownership given to ItrObject
 
         return work_result(local_env(), ATOM_OK, result);
     }   // operator()

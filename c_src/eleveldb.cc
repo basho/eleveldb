@@ -648,8 +648,8 @@ async_get(
     if(NULL == db_ptr->m_Db)
         return send_reply(env, caller_ref, error_einval(env));
 
-    leveldb::ReadOptions *opts = new leveldb::ReadOptions();
-    fold(env, opts_ref, parse_read_option, *opts);
+    leveldb::ReadOptions opts;
+    fold(env, opts_ref, parse_read_option, opts);
 
     eleveldb::WorkTask *work_item = new eleveldb::GetTask(env, caller_ref,
                                                           db_ptr.get(), key_ref, opts);

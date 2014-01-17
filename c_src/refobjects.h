@@ -238,10 +238,10 @@ public:
     bool m_StillUse;                          //!< true if no error or key end seen
 
     LevelIteratorWrapper(DbObject * DbPtr, bool KeysOnly,
-                         leveldb::ReadOptions * Options, ERL_NIF_TERM itr_ref)
+                         leveldb::ReadOptions & Options, ERL_NIF_TERM itr_ref)
         : m_DbPtr(DbPtr), m_Snapshot(NULL), m_Iterator(NULL),
         m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false),
-        m_Options(*Options), itr_ref(itr_ref),
+        m_Options(Options), itr_ref(itr_ref),
         m_IteratorStale(0), m_StillUse(true)
     {
         RebuildIterator();
@@ -304,10 +304,9 @@ class ItrObject : public ErlRefObject
 {
 public:
     ReferencePtr<LevelIteratorWrapper> m_Iter;
-//    ReferencePtr<LevelSnapshotWrapper> m_Snapshot;
 
     bool keys_only;
-    leveldb::ReadOptions * m_ReadOptions;  //!< Owned by this object, must delete
+    leveldb::ReadOptions m_ReadOptions;  //!< Owned by this object, must delete
 
     volatile class MoveTask * reuse_move;  //!< iterator work object that is reused instead of lots malloc/free
 
@@ -321,7 +320,7 @@ protected:
     static ErlNifResourceType* m_Itr_RESOURCE;
 
 public:
-    ItrObject(DbObject *, bool, leveldb::ReadOptions *);
+    ItrObject(DbObject *, bool, leveldb::ReadOptions &);
 
     virtual ~ItrObject(); // needs to perform free_itr
 
@@ -329,7 +328,7 @@ public:
 
     static void CreateItrObjectType(ErlNifEnv * Env);
 
-    static ItrObject * CreateItrObject(DbObject * Db, bool KeysOnly, leveldb::ReadOptions * Options);
+    static ItrObject * CreateItrObject(DbObject * Db, bool KeysOnly, leveldb::ReadOptions & Options);
 
     static ItrObject * RetrieveItrObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm,
                                          bool ItrClosing=false);
