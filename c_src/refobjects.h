@@ -228,8 +228,8 @@ public:
     leveldb::Iterator * m_Iterator;
     volatile uint32_t m_HandoffAtomic;        //!< matthew's atomic foreground/background prefetch flag.
     bool m_KeysOnly;                          //!< only return key values
-    bool m_PrefetchStarted;                   //!< true after first prefetch command
-    leveldb::ReadOptions * m_Options;           //!< shared copy of ItrObject::options
+    volatile bool m_PrefetchStarted;          //!< true after first prefetch command
+    leveldb::ReadOptions m_Options;           //!< local copy of ItrObject::options
     ERL_NIF_TERM itr_ref;                     //!< shared copy of ItrObject::itr_ref
 
     // only used if m_Options.iterator_refresh == true
@@ -238,7 +238,7 @@ public:
     bool m_StillUse;                          //!< true if no error or key end seen
 
     LevelIteratorWrapper(DbObject * DbPtr, bool KeysOnly,
-                         leveldb::ReadOptions * Options, ERL_NIF_TERM itr_ref)
+                         leveldb::ReadOptions & Options, ERL_NIF_TERM itr_ref)
         : m_DbPtr(DbPtr), m_Snapshot(NULL), m_Iterator(NULL),
         m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false),
         m_Options(Options), itr_ref(itr_ref),
@@ -285,8 +285,8 @@ public:
 
         PurgeIterator();
         m_Snapshot = m_DbPtr->m_Db->GetSnapshot();
-        m_Options->snapshot = m_Snapshot;
-        m_Iterator = m_DbPtr->m_Db->NewIterator(*m_Options);
+        m_Options.snapshot = m_Snapshot;
+        m_Iterator = m_DbPtr->m_Db->NewIterator(m_Options);
     }   // RebuildIterator
 
 private:
@@ -304,10 +304,9 @@ class ItrObject : public ErlRefObject
 {
 public:
     ReferencePtr<LevelIteratorWrapper> m_Iter;
-//    ReferencePtr<LevelSnapshotWrapper> m_Snapshot;
 
     bool keys_only;
-    leveldb::ReadOptions * m_ReadOptions;  //!< Owned by this object, must delete
+    leveldb::ReadOptions m_ReadOptions; //!< local copy, pass to LevelIteratorWrapper only
 
     volatile class MoveTask * reuse_move;  //!< iterator work object that is reused instead of lots malloc/free
 
@@ -321,7 +320,7 @@ protected:
     static ErlNifResourceType* m_Itr_RESOURCE;
 
 public:
-    ItrObject(DbObject *, bool, leveldb::ReadOptions *);
+    ItrObject(DbObject *, bool, leveldb::ReadOptions &);
 
     virtual ~ItrObject(); // needs to perform free_itr
 
@@ -329,7 +328,7 @@ public:
 
     static void CreateItrObjectType(ErlNifEnv * Env);
 
-    static ItrObject * CreateItrObject(DbObject * Db, bool KeysOnly, leveldb::ReadOptions * Options);
+    static ItrObject * CreateItrObject(DbObject * Db, bool KeysOnly, leveldb::ReadOptions & Options);
 
     static ItrObject * RetrieveItrObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm,
                                          bool ItrClosing=false);

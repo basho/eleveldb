@@ -113,6 +113,7 @@ ERL_NIF_TERM ATOM_LAST;
 ERL_NIF_TERM ATOM_NEXT;
 ERL_NIF_TERM ATOM_PREV;
 ERL_NIF_TERM ATOM_PREFETCH;
+ERL_NIF_TERM ATOM_PREFETCH_STOP;
 ERL_NIF_TERM ATOM_INVALID_ITERATOR;
 ERL_NIF_TERM ATOM_PARANOID_CHECKS;
 ERL_NIF_TERM ATOM_VERIFY_COMPACTIONS;
@@ -647,8 +648,8 @@ async_get(
     if(NULL == db_ptr->m_Db)
         return send_reply(env, caller_ref, error_einval(env));
 
-    leveldb::ReadOptions *opts = new leveldb::ReadOptions();
-    fold(env, opts_ref, parse_read_option, *opts);
+    leveldb::ReadOptions opts;
+    fold(env, opts_ref, parse_read_option, opts);
 
     eleveldb::WorkTask *work_item = new eleveldb::GetTask(env, caller_ref,
                                                           db_ptr.get(), key_ref, opts);
@@ -694,8 +695,8 @@ async_iterator(
         return send_reply(env, caller_ref, error_einval(env));
 
     // Parse out the read options
-    leveldb::ReadOptions *opts = new leveldb::ReadOptions;
-    fold(env, options_ref, parse_read_option, *opts);
+    leveldb::ReadOptions opts;
+    fold(env, options_ref, parse_read_option, opts);
 
     eleveldb::WorkTask *work_item = new eleveldb::IterTask(env, caller_ref,
                                                            db_ptr.get(), keys_only, opts);
@@ -749,16 +750,22 @@ async_iterator_move(
         if(ATOM_NEXT == action_or_target)   action = eleveldb::MoveTask::NEXT;
         if(ATOM_PREV == action_or_target)   action = eleveldb::MoveTask::PREV;
         if(ATOM_PREFETCH == action_or_target)   action = eleveldb::MoveTask::PREFETCH;
+        if(ATOM_PREFETCH_STOP == action_or_target)   action = eleveldb::MoveTask::PREFETCH_STOP;
     }   // if
+
+    // debug syslog(LOG_ERR, "move state: %d, %d, %d",
+    //              action, itr_ptr->m_Iter->m_PrefetchStarted, itr_ptr->m_Iter->m_HandoffAtomic);
 
     //
     // Three situations:
     //  #1 not a PREFETCH next call
     //  #2 PREFETCH call and no prefetch waiting
     //  #3 PREFETCH call and prefetch is waiting
+    //     (PREFETCH_STOP is basically a PREFETCH that turns off prefetch state)
 
     // case #1
-    if (eleveldb::MoveTask::PREFETCH != action)
+    if (eleveldb::MoveTask::PREFETCH != action
+        && eleveldb::MoveTask::PREFETCH_STOP != action )
     {
         // current move object could still be in later stages of
         //  worker thread completion ... race condition ...don't reuse
@@ -769,6 +776,7 @@ async_iterator_move(
 
         // force reply to be a message
         itr_ptr->m_Iter->m_HandoffAtomic=1;
+        itr_ptr->m_Iter->m_PrefetchStarted=false;
     }   // if
 
     // case #2
@@ -779,15 +787,13 @@ async_iterator_move(
         // nope, no prefetch ... await a message to erlang queue
         ret_term = enif_make_copy(env, itr_ptr->itr_ref);
 
+        // leave m_HandoffAtomic as 1 so first response is via message
+
         // is this truly a wait for prefetch ... or actually the first prefetch request
         if (!itr_ptr->m_Iter->m_PrefetchStarted)
         {
             submit_new_request=true;
-            itr_ptr->m_Iter->m_PrefetchStarted=true;
             itr_ptr->ReleaseReuseMove();
-
-            // first must return via message
-            itr_ptr->m_Iter->m_HandoffAtomic=1;
         }   // if
 
         else
@@ -795,6 +801,8 @@ async_iterator_move(
             // await message that is already in the making
             submit_new_request=false;
         }   // else
+
+        itr_ptr->m_Iter->m_PrefetchStarted=(eleveldb::MoveTask::PREFETCH_STOP != action );
     }   // else if
 
     // case #3
@@ -812,6 +820,7 @@ async_iterator_move(
                                       slice_to_binary(env, itr_ptr->m_Iter->key()),
                                       slice_to_binary(env, itr_ptr->m_Iter->value()));
 
+
         // reset for next race
         itr_ptr->m_Iter->m_HandoffAtomic=0;
 
@@ -819,7 +828,18 @@ async_iterator_move(
         //  reuse ... but the current Iterator is good
         itr_ptr->ReleaseReuseMove();
 
-        submit_new_request=true;
+        if (eleveldb::MoveTask::PREFETCH_STOP != action )
+        {
+            submit_new_request=true;
+        }   // if
+        else
+        {
+            submit_new_request=false;
+            itr_ptr->m_Iter->m_HandoffAtomic=0;
+            itr_ptr->m_Iter->m_PrefetchStarted=false;
+        }   // else
+
+
     }   // else
 
 
@@ -1138,6 +1158,7 @@ try
     ATOM(eleveldb::ATOM_NEXT, "next");
     ATOM(eleveldb::ATOM_PREV, "prev");
     ATOM(eleveldb::ATOM_PREFETCH, "prefetch");
+    ATOM(eleveldb::ATOM_PREFETCH_STOP, "prefetch_stop");
     ATOM(eleveldb::ATOM_INVALID_ITERATOR, "invalid_iterator");
     ATOM(eleveldb::ATOM_PARANOID_CHECKS, "paranoid_checks");
     ATOM(eleveldb::ATOM_VERIFY_COMPACTIONS, "verify_compactions");

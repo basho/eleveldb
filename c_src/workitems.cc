@@ -19,6 +19,9 @@
 // under the License.
 //
 // -------------------------------------------------------------------
+
+#include <syslog.h>
+
 #ifndef __ELEVELDB_DETAIL_HPP
     #include "detail.hpp"
 #endif
@@ -193,7 +196,7 @@ MoveTask::operator()()
 //
 
     // iterator_refresh operation
-    if (m_ItrWrap->m_Options->iterator_refresh && m_ItrWrap->m_StillUse)
+    if (m_ItrWrap->m_Options.iterator_refresh && m_ItrWrap->m_StillUse)
     {
         struct timeval tv;
 
@@ -231,6 +234,7 @@ MoveTask::operator()()
         case LAST:  itr->SeekToLast();  break;
 
         case PREFETCH:
+        case PREFETCH_STOP:
         case NEXT:  if(itr->Valid()) itr->Next(); break;
 
         case PREV:  if(itr->Valid()) itr->Prev(); break;
@@ -254,13 +258,13 @@ MoveTask::operator()()
 
     // Post processing before telling the world the results
     //  (while only one thread might be looking at objects)
-    if (m_ItrWrap->m_Options->iterator_refresh)
+    if (m_ItrWrap->m_Options.iterator_refresh)
     {
         if (itr->Valid())
         {
             m_ItrWrap->m_RecentKey.assign(itr->key().data(), itr->key().size());
         }   // if
-        else
+        else if (PREFETCH_STOP!=action)
         {
             // release iterator now, not later
             m_ItrWrap->m_StillUse=false;
@@ -268,6 +272,9 @@ MoveTask::operator()()
             itr=NULL;
         }   // else
     }   // if
+
+    // debug syslog(LOG_ERR, "                     MoveItem::operator() %d, %d, %d",
+    //              action, m_ItrWrap->m_StillUse, m_ItrWrap->m_HandoffAtomic);
 
     // who got back first, us or the erlang loop
     if (compare_and_swap(&m_ItrWrap->m_HandoffAtomic, 0, 1))
@@ -283,7 +290,7 @@ MoveTask::operator()()
 
         if(NULL!=itr && itr->Valid())
         {
-            if (PREFETCH==action)
+            if (PREFETCH==action && m_ItrWrap->m_PrefetchStarted)
                 prepare_recycle();
 
             // erlang is waiting, send message

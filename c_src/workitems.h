@@ -204,14 +204,14 @@ class GetTask : public WorkTask
 {
 protected:
     std::string                        m_Key;
-    leveldb::ReadOptions*              options;
+    leveldb::ReadOptions              options;
 
 public:
     GetTask(ErlNifEnv *_caller_env,
             ERL_NIF_TERM _caller_ref,
             DbObject *_db_handle,
             ERL_NIF_TERM _key_term,
-            leveldb::ReadOptions *_options)
+            leveldb::ReadOptions &_options)
         : WorkTask(_caller_env, _caller_ref, _db_handle),
         options(_options)
         {
@@ -223,7 +223,6 @@ public:
 
     virtual ~GetTask()
     {
-        delete options;
     }
 
     virtual work_result operator()()
@@ -232,7 +231,7 @@ public:
         BinaryValue value(local_env(), value_bin);
         leveldb::Slice key_slice(m_Key);
 
-        leveldb::Status status = m_DbPtr->m_Db->Get(*options, key_slice, &value);
+        leveldb::Status status = m_DbPtr->m_Db->Get(options, key_slice, &value);
 
         if(!status.ok())
             return work_result(ATOM_NOT_FOUND);
@@ -253,22 +252,20 @@ class IterTask : public WorkTask
 protected:
 
     const bool keys_only;
-    leveldb::ReadOptions *options;
+    leveldb::ReadOptions options;
 
 public:
     IterTask(ErlNifEnv *_caller_env,
              ERL_NIF_TERM _caller_ref,
              DbObject *_db_handle,
              const bool _keys_only,
-             leveldb::ReadOptions *_options)
+             leveldb::ReadOptions &_options)
         : WorkTask(_caller_env, _caller_ref, _db_handle),
         keys_only(_keys_only), options(_options)
     {}
 
     virtual ~IterTask()
     {
-        // options should be NULL at this point
-        delete options;
     }
 
     virtual work_result operator()()
@@ -289,7 +286,6 @@ public:
 
         // release reference created during CreateItrObject()
         enif_release_resource(itr_ptr);
-        options=NULL;  // ptr ownership given to ItrObject
 
         return work_result(local_env(), ATOM_OK, result);
     }   // operator()
@@ -300,7 +296,7 @@ public:
 class MoveTask : public WorkTask
 {
 public:
-    typedef enum { FIRST, LAST, NEXT, PREV, SEEK, PREFETCH } action_t;
+    typedef enum { FIRST, LAST, NEXT, PREV, SEEK, PREFETCH, PREFETCH_STOP } action_t;
 
 protected:
     ReferencePtr<LevelIteratorWrapper> m_ItrWrap;             //!< access to database, and holds reference
