@@ -1,3 +1,4 @@
+REBAR := ./rebar
 
 all: compile
 
@@ -8,10 +9,10 @@ rm-deps:
 	./c_src/build_deps.sh rm-deps
 
 compile:
-	./rebar compile
+	$(REBAR) compile
 
 test: compile
-	./rebar eunit
+	$(REBAR) eunit
 
 clean:
-	./rebar clean
+	$(REBAR) clean
