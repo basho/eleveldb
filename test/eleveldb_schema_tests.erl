@@ -10,7 +10,7 @@ basic_schema_test() ->
     %% The defaults are defined in ../priv/eleveldb.schema.
     %% it is the file under test.
     Config = cuttlefish_unit:generate_templated_config(
-        ["../priv/eleveldb.schema"], [], context()),
+        ["../priv/eleveldb.schema"], [], context(), predefined_schema()),
 
     cuttlefish_unit:assert_config(Config, "eleveldb.data_root", "./data/leveldb"),
     cuttlefish_unit:assert_config(Config, "eleveldb.total_leveldb_mem_percent", 80),
@@ -58,7 +58,7 @@ override_schema_test() ->
     %% The defaults are defined in ../priv/eleveldb.schema.
     %% it is the file under test.
     Config = cuttlefish_unit:generate_templated_config(
-        ["../priv/eleveldb.schema"], Conf, context()),
+        ["../priv/eleveldb.schema"], Conf, context(), predefined_schema()),
 
     cuttlefish_unit:assert_config(Config, "eleveldb.data_root", "/some/crazy/dir"),
     cuttlefish_unit:assert_config(Config, "eleveldb.total_leveldb_mem_percent", 50),
@@ -89,7 +89,15 @@ override_schema_test() ->
 %% packaging cuttlefish doesn't have a great time parsing those, so we
 %% perform the substitutions first, because that's how it would work
 %% in real life.
-context() ->
-    [
-        {platform_data_dir, "./data"}
-    ].
+context() -> [].
+
+%% This predefined schema covers riak_kv's dependency on
+%% platform_data_dir
+predefined_schema() ->
+    Mapping = cuttlefish_mapping:parse({mapping,
+                                        "platform_data_dir",
+                                        "riak_core.platform_data_dir", [
+                                            {default, "./data"},
+                                            {datatype, directory}
+                                       ]}),
+    {[], [Mapping], []}.
