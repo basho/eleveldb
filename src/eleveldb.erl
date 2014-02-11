@@ -97,6 +97,7 @@ init() ->
                          {limited_developer_mem, boolean()} |
                          {eleveldb_threads, pos_integer()} |
                          {fadvise_willneed, boolean()} |
+                         {block_cache_threshold, pos_integer()} |
                          {delete_threshold, pos_integer()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
@@ -280,6 +281,7 @@ option_types(open) ->
      {limited_developer_mem, bool},
      {eleveldb_threads, integer},
      {fadvise_willneed, bool},
+     {block_cache_threshold, integer},
      {delete_threshold, integer}];
 
 option_types(read) ->

@@ -134,6 +134,23 @@
   {level, advanced}
 ]}.
 
+%% @doc Defines the limit where block cache memory can no longer be
+%% released in favor of the page cache.  This has no impact with
+%% regard to release in favor of file cache.  The value is per
+%% vnode.
+{mapping, "leveldb.block_cache_threshold", "eleveldb.block_cache_threshold", [
+  {default, "16MB"},
+  {datatype, bytesize},
+  {level, advanced}
+]}.
+
+%% @see leveldb.block_cache_threshold
+{mapping, "multi_backend.$name.leveldb.block_cache_threshold", "riak_kv.multi_backend", [
+  {default, "16MB"},
+  {datatype, bytesize},
+  {level, advanced}
+]}.
+
 %% @doc Defines the size threshold for a block / chunk of data within
 %% one .sst table file. Each new block gets an index entry in the .sst
 %% table file's master index.
