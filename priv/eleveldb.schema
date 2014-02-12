@@ -9,7 +9,7 @@
 %% @see leveldb.data_root
 {mapping, "multi_backend.$name.leveldb.data_root", "riak_kv.multi_backend", [
   {datatype, directory},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc This parameter defines the percentage of total server memory
@@ -27,7 +27,7 @@
 {mapping, "multi_backend.$name.leveldb.maximum_memory.percent", "riak_kv.multi_backend", [
   {default, "45"},
   {datatype, integer},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc This parameter defines the number of bytes of server memory to
@@ -38,14 +38,14 @@
 %% @see leveldb.maximum_memory.percent
 {mapping, "leveldb.maximum_memory", "eleveldb.total_leveldb_mem", [
   {datatype, bytesize},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.maximum_memory
 {mapping, "multi_backend.$name.leveldb.maximum_memory", "riak_kv.multi_backend", [
   {default, "512MB"},
   {datatype, bytesize},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc Whether LevelDB will flush after every write. Note: If you are
@@ -54,14 +54,14 @@
 {mapping, "leveldb.sync_on_write", "eleveldb.sync", [
   {default, off},
   {datatype, flag},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.sync
 {mapping, "multi_backend.$name.leveldb.sync_on_write", "riak_kv.multi_backend", [
   {default, off},
   {datatype, flag},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc limited_developer_mem is a Riak specific option that is used
@@ -72,14 +72,14 @@
 {mapping, "leveldb.limited_developer_mem", "eleveldb.limited_developer_mem", [
   {default, off},
   {datatype, flag},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.limited_developer_mem
 {mapping, "multi_backend.$name.leveldb.limited_developer_mem", "riak_kv.multi_backend", [
   {default, off},
   {datatype, flag},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc Each vnode first stores new key/value data in a memory based
@@ -92,28 +92,28 @@
 {mapping, "leveldb.write_buffer_size_min", "eleveldb.write_buffer_size_min", [
   {default, "30MB"},
   {datatype, bytesize},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.write_buffer_size_min
 {mapping, "multi_backend.$name.leveldb.write_buffer_size_min", "riak_kv.multi_backend", [
   {default, "15MB"},
   {datatype, bytesize},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.write_buffer_size_min
 {mapping, "leveldb.write_buffer_size_max", "eleveldb.write_buffer_size_max", [
   {default, "60MB"},
   {datatype, bytesize},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.write_buffer_size_min
 {mapping, "multi_backend.$name.leveldb.write_buffer_size_max", "riak_kv.multi_backend", [
   {default, "30MB"},
   {datatype, bytesize},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc Each database .sst table file can include an optional "bloom
@@ -124,14 +124,14 @@
 {mapping, "leveldb.bloomfilter", "eleveldb.use_bloomfilter", [
   {default, on},
   {datatype, flag},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.bloomfilter
 {mapping, "multi_backend.$name.leveldb.bloomfilter", "riak_kv.multi_backend", [
   {default, on},
   {datatype, flag},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc Defines the size threshold for a block / chunk of data within
@@ -140,14 +140,14 @@
 {mapping, "leveldb.block.size", "eleveldb.sst_block_size", [
   {default, "4KB"},
   {datatype, bytesize},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.block.size
 {mapping, "multi_backend.$name.leveldb.block.size", "riak_kv.multi_backend", [
   {default, "4KB"},
   {datatype, bytesize},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc Defines the key count threshold for a new key entry in the key
@@ -156,14 +156,14 @@
 {mapping, "leveldb.block.restart_interval", "eleveldb.block_restart_interval", [
   {default, 16},
   {datatype, integer},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.block.restart_interval
 {mapping, "multi_backend.$name.leveldb.block.restart_interval", "riak_kv.multi_backend", [
   {default, 16},
   {datatype, integer},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc Defines the number of incremental adjustments to attempt
@@ -174,14 +174,14 @@
 {mapping, "leveldb.block.size_steps", "eleveldb.block_size_steps", [
   {default, 16},
   {datatype, integer},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.block.size_steps
 {mapping, "multi_backend.$name.leveldb.block.size_steps", "riak_kv.multi_backend", [
   {default, 16},
   {datatype, integer},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc Enables or disables the verification of the data fetched from
@@ -189,14 +189,14 @@
 {mapping, "leveldb.verify_checksums", "eleveldb.verify_checksums", [
   {default, on},
   {datatype, flag},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.verify_checksums
 {mapping, "multi_backend.$name.leveldb.verify_checksums", "riak_kv.multi_backend", [
   {default, on},
   {datatype, flag},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc Enables or disables the verification of LevelDB data during
@@ -204,28 +204,28 @@
 {mapping, "leveldb.verify_compaction", "eleveldb.verify_compaction", [
   {default, on},
   {datatype, flag},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.verify_compaction
 {mapping, "multi_backend.$name.leveldb.verify_compaction", "riak_kv.multi_backend", [
   {default, on},
   {datatype, flag},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc The number of worker threads performing LevelDB operations.
 {mapping, "leveldb.threads", "eleveldb.eleveldb_threads", [
   {default, 71},
   {datatype, integer},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.threads
 {mapping, "multi_backend.$name.leveldb.threads", "riak_kv.multi_backend", [
   {default, 71},
   {datatype, integer},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc Option to override LevelDB's use of fadvise(DONTNEED) with
@@ -234,14 +234,14 @@
 {mapping, "leveldb.fadvise_willneed", "eleveldb.fadvise_willneed", [
   {default, false},
   {datatype, {enum, [true, false]}},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.fadvise_willneed
 {mapping, "multi_backend.$name.leveldb.fadvise_willneed", "riak_kv.multi_backend", [
   {default, false},
   {datatype, {enum, [true, false]}},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc Controls when a background compaction initiates solely
@@ -264,5 +264,5 @@
 %% @see leveldb.delete_threshold
 {mapping, "multi_backend.$name.leveldb.delete_threshold", "riak_kv.multi_backend", [
   {datatype, [integer, {atom, off}]},
-  {level, advanced}
+  hidden
 ]}.
