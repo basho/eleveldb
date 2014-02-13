@@ -141,14 +141,14 @@
 {mapping, "leveldb.block_cache_threshold", "eleveldb.block_cache_threshold", [
   {default, "16MB"},
   {datatype, bytesize},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @see leveldb.block_cache_threshold
 {mapping, "multi_backend.$name.leveldb.block_cache_threshold", "riak_kv.multi_backend", [
   {default, "16MB"},
   {datatype, bytesize},
-  {level, advanced}
+  hidden
 ]}.
 
 %% @doc Defines the size threshold for a block / chunk of data within
