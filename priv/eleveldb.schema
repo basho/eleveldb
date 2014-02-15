@@ -19,13 +19,13 @@
 %% instead.
 %% @see leveldb.maximum_memory
 {mapping, "leveldb.maximum_memory.percent", "eleveldb.total_leveldb_mem_percent", [
-  {default, "80"},
+  {default, "70"},
   {datatype, integer}
 ]}.
 
 %% @see leveldb.maximum_memory.percent
 {mapping, "multi_backend.$name.leveldb.maximum_memory.percent", "riak_kv.multi_backend", [
-  {default, "45"},
+  {default, "35"},
   {datatype, integer},
   {level, advanced}
 ]}.
@@ -139,14 +139,14 @@
 %% regard to release in favor of file cache.  The value is per
 %% vnode.
 {mapping, "leveldb.block_cache_threshold", "eleveldb.block_cache_threshold", [
-  {default, "16MB"},
+  {default, "32MB"},
   {datatype, bytesize},
   hidden
 ]}.
 
 %% @see leveldb.block_cache_threshold
 {mapping, "multi_backend.$name.leveldb.block_cache_threshold", "riak_kv.multi_backend", [
-  {default, "16MB"},
+  {default, "32MB"},
   {datatype, bytesize},
   hidden
 ]}.
