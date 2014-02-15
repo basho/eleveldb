@@ -125,6 +125,7 @@ ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 ERL_NIF_TERM ATOM_TOTAL_MEMORY;
 ERL_NIF_TERM ATOM_TOTAL_LEVELDB_MEM;
 ERL_NIF_TERM ATOM_TOTAL_LEVELDB_MEM_PERCENT;
+ERL_NIF_TERM ATOM_BLOCK_CACHE_THRESHOLD;
 ERL_NIF_TERM ATOM_IS_INTERNAL_DB;
 ERL_NIF_TERM ATOM_LIMITED_DEVELOPER_MEM;
 ERL_NIF_TERM ATOM_ELEVELDB_THREADS;
@@ -177,7 +178,7 @@ struct EleveldbOptions
     int m_LeveldbGroomingThreads;
 
     int m_TotalMemPercent;
-    int m_TotalMem;
+    size_t m_TotalMem;
 
     bool m_LimitedDeveloper;
     bool m_FadviseWillNeed;
@@ -199,7 +200,7 @@ struct EleveldbOptions
         syslog(LOG_ERR, "  m_LeveldbGroomingThreads: %d\n", m_LeveldbGroomingThreads);
 
         syslog(LOG_ERR, "         m_TotalMemPercent: %d\n", m_TotalMemPercent);
-        syslog(LOG_ERR, "                m_TotalMem: %d\n", m_TotalMem);
+        syslog(LOG_ERR, "                m_TotalMem: %zd\n", m_TotalMem);
 
         syslog(LOG_ERR, "        m_LimitedDeveloper: %s\n", (m_LimitedDeveloper ? "true" : "false"));
         syslog(LOG_ERR, "         m_FadviseWillNeed: %s\n", (m_FadviseWillNeed ? "true" : "false"));
@@ -237,12 +238,12 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
     {
         if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM)
         {
-            unsigned long memory_sz;
+            size_t memory_sz;
             if (enif_get_ulong(env, option[1], &memory_sz))
             {
                 if (memory_sz != 0)
                 {
-                     opts.m_TotalMem = memory_sz;
+                    opts.m_TotalMem = memory_sz;
                 }
             }
         }
@@ -322,6 +323,17 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             unsigned long block_steps(0);
             if (enif_get_ulong(env, option[1], &block_steps))
              opts.block_size_steps = block_steps;
+        }
+        else if (option[0] == eleveldb::ATOM_BLOCK_CACHE_THRESHOLD)
+        {
+            size_t memory_sz;
+            if (enif_get_ulong(env, option[1], &memory_sz))
+            {
+                if (memory_sz != 0)
+                {
+                    opts.block_cache_threshold = memory_sz;
+                }
+            }
         }
         else if (option[0] == eleveldb::ATOM_DELETE_THRESHOLD)
         {
@@ -1170,6 +1182,7 @@ try
     ATOM(eleveldb::ATOM_TOTAL_MEMORY, "total_memory");
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_leveldb_mem");
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM_PERCENT, "total_leveldb_mem_percent");
+    ATOM(eleveldb::ATOM_BLOCK_CACHE_THRESHOLD, "block_cache_threshold");
     ATOM(eleveldb::ATOM_IS_INTERNAL_DB, "is_internal_db");
     ATOM(eleveldb::ATOM_LIMITED_DEVELOPER_MEM, "limited_developer_mem");
     ATOM(eleveldb::ATOM_ELEVELDB_THREADS, "eleveldb_threads");
