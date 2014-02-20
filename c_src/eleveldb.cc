@@ -123,6 +123,7 @@ ERL_NIF_TERM ATOM_COMPRESSION;
 ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
 ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 ERL_NIF_TERM ATOM_TOTAL_MEMORY;
+ERL_NIF_TERM ATOM_MMAP_SIZE;
 ERL_NIF_TERM ATOM_TOTAL_LEVELDB_MEM;
 ERL_NIF_TERM ATOM_TOTAL_LEVELDB_MEM_PERCENT;
 ERL_NIF_TERM ATOM_BLOCK_CACHE_THRESHOLD;
@@ -383,6 +384,17 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                 {
                     gCurrentTotalMemory = 0;
                 }   // else if
+            }
+        }
+        else if (option[0] == eleveldb::ATOM_MMAP_SIZE)
+        {
+            unsigned long mmap_sz;
+            if (enif_get_ulong(env, option[1], &mmap_sz))
+            {
+                if (mmap_sz != 0)
+                 {
+                     opts.mmap_size = mmap_sz;
+                 }
             }
         }
         else if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM)
@@ -1180,6 +1192,7 @@ try
     ATOM(eleveldb::ATOM_COMPRESSION, "compression");
     ATOM(eleveldb::ATOM_USE_BLOOMFILTER, "use_bloomfilter");
     ATOM(eleveldb::ATOM_TOTAL_MEMORY, "total_memory");
+    ATOM(eleveldb::ATOM_MMAP_SIZE, "total_memory");
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_leveldb_mem");
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM_PERCENT, "total_leveldb_mem_percent");
     ATOM(eleveldb::ATOM_BLOCK_CACHE_THRESHOLD, "block_cache_threshold");

@@ -90,6 +90,7 @@ init() ->
                          {verify_compactions, boolean()} |
                          {compression, boolean()} |
                          {use_bloomfilter, boolean() | pos_integer()} |
+                         {mmap_size, pos_integer()} |
                          {total_memory, pos_integer()} |
                          {total_leveldb_mem, pos_integer()} |
                          {total_leveldb_mem_percent, pos_integer()} |
@@ -274,6 +275,7 @@ option_types(open) ->
      {verify_compactions, bool},
      {compression, bool},
      {use_bloomfilter, any},
+     {mmap_size, integer},
      {total_memory, integer},
      {total_leveldb_mem, integer},
      {total_leveldb_mem_percent, integer},
