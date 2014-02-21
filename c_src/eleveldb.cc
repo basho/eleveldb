@@ -260,13 +260,6 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
                  }
             }
         }
-        // Deprecated use mmap_size to emulate developer mem since it allows
-        // A more finegrained control.
-        else if (option[0] == eleveldb::ATOM_LIMITED_DEVELOPER_MEM)
-        {
-          if (option[1] == eleveldb::ATOM_TRUE)
-            opts.mmap_size = 1024*1024*2;
-        }
         else if (option[0] == eleveldb::ATOM_ELEVELDB_THREADS)
         {
             unsigned long temp;
@@ -385,6 +378,13 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                     gCurrentTotalMemory = 0;
                 }   // else if
             }
+        }
+        // Deprecated! use mmap_size instead to emulate developer mem it allows
+        // a more finegrained control.
+        else if (option[0] == eleveldb::ATOM_LIMITED_DEVELOPER_MEM)
+        {
+          if (option[1] == eleveldb::ATOM_TRUE)
+            opts.mmap_size = 1024*1024*2;
         }
         else if (option[0] == eleveldb::ATOM_MMAP_SIZE)
         {
