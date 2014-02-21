@@ -260,12 +260,12 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
                  }
             }
         }
+        // Deprecated use mmap_size to emulate developer mem since it allows
+        // A more finegrained control.
         else if (option[0] == eleveldb::ATOM_LIMITED_DEVELOPER_MEM)
         {
-            if (option[1] == eleveldb::ATOM_TRUE)
-                opts.m_LimitedDeveloper = true;
-            else
-                opts.m_LimitedDeveloper = false;
+          if (option[1] == eleveldb::ATOM_TRUE)
+            opts.mmap_size = 1024*1024*2;
         }
         else if (option[0] == eleveldb::ATOM_ELEVELDB_THREADS)
         {
@@ -1192,7 +1192,7 @@ try
     ATOM(eleveldb::ATOM_COMPRESSION, "compression");
     ATOM(eleveldb::ATOM_USE_BLOOMFILTER, "use_bloomfilter");
     ATOM(eleveldb::ATOM_TOTAL_MEMORY, "total_memory");
-    ATOM(eleveldb::ATOM_MMAP_SIZE, "total_memory");
+    ATOM(eleveldb::ATOM_MMAP_SIZE, "mmap_size");
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_leveldb_mem");
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM_PERCENT, "total_leveldb_mem_percent");
     ATOM(eleveldb::ATOM_BLOCK_CACHE_THRESHOLD, "block_cache_threshold");
