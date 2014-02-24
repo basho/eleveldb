@@ -3,7 +3,8 @@
 %% @doc Where LevelDB will store its data.
 {mapping, "leveldb.data_root", "eleveldb.data_root", [
   {datatype, directory},
-  {default, "#(platform_data_dir)/leveldb"}
+  {default, "#(platform_data_dir)/leveldb"},
+  hidden
 ]}.
 
 %% @see leveldb.data_root
@@ -266,7 +267,8 @@
 %% .sst table file.  Value of 'off' disables the feature.
 {mapping, "leveldb.compaction.trigger.tombstone_count", "eleveldb.delete_threshold", [
   {default, 1000},
-  {datatype, [integer, {atom, off}]}
+  {datatype, [integer, {atom, off}]},
+  hidden
 ]}.
 
 {translation,
