@@ -3,7 +3,7 @@
 %% @doc Where LevelDB will store its data.
 {mapping, "leveldb.data_root", "eleveldb.data_root", [
   {datatype, directory},
-  {default, "#(platform_data_dir)/leveldb"},
+  {default, "$(platform_data_dir)/leveldb"},
   hidden
 ]}.
 
