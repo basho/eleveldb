@@ -13,7 +13,7 @@ basic_schema_test() ->
         ["../priv/eleveldb.schema"], [], context(), predefined_schema()),
 
     cuttlefish_unit:assert_config(Config, "eleveldb.data_root", "./data/leveldb"),
-    cuttlefish_unit:assert_config(Config, "eleveldb.total_leveldb_mem_percent", 80),
+    cuttlefish_unit:assert_config(Config, "eleveldb.total_leveldb_mem_percent", 70),
     cuttlefish_unit:assert_not_configured(Config, "eleveldb.total_leveldb_mem"),
     cuttlefish_unit:assert_config(Config, "eleveldb.sync", false),
     cuttlefish_unit:assert_config(Config, "eleveldb.limited_developer_mem", false),

@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2013 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2014 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -738,7 +738,7 @@ async_iterator_move(
     const ERL_NIF_TERM& action_or_target = argv[2];
     ERL_NIF_TERM ret_term;
 
-    bool submit_new_request(true);
+    bool submit_new_request(true), prefetch_state;
 
     ReferencePtr<ItrObject> itr_ptr;
 
@@ -767,6 +767,11 @@ async_iterator_move(
 
     // debug syslog(LOG_ERR, "move state: %d, %d, %d",
     //              action, itr_ptr->m_Iter->m_PrefetchStarted, itr_ptr->m_Iter->m_HandoffAtomic);
+
+    // must set this BEFORE call to compare_and_swap ... or have potential
+    //  for an "extra" message coming out of prefetch
+    prefetch_state = itr_ptr->m_Iter->m_PrefetchStarted;
+    itr_ptr->m_Iter->m_PrefetchStarted =  prefetch_state && (eleveldb::MoveTask::PREFETCH_STOP != action );
 
     //
     // Three situations:
@@ -802,7 +807,7 @@ async_iterator_move(
         // leave m_HandoffAtomic as 1 so first response is via message
 
         // is this truly a wait for prefetch ... or actually the first prefetch request
-        if (!itr_ptr->m_Iter->m_PrefetchStarted)
+        if (!prefetch_state)
         {
             submit_new_request=true;
             itr_ptr->ReleaseReuseMove();
@@ -814,6 +819,7 @@ async_iterator_move(
             submit_new_request=false;
         }   // else
 
+        // redundant ... but clarifying where it really belongs in logic pattern
         itr_ptr->m_Iter->m_PrefetchStarted=(eleveldb::MoveTask::PREFETCH_STOP != action );
     }   // else if
 
