@@ -152,14 +152,14 @@
   hidden
 ]}.
 
-%% @doc Enables or disables the compression of data on disk.  
+%% @doc Enables or disables the compression of data on disk.
 %% Enabling (default) saves disk space.  Disabling may reduce read
-%% latency but increase overall disk activity.  Option can be 
-%% changed at any time, but will not impact data on disk until 
+%% latency but increase overall disk activity.  Option can be
+%% changed at any time, but will not impact data on disk until
 %% next time a file requires compaction.
 {mapping, "leveldb.compression", "eleveldb.compression", [
-  {default, true},
-  {datatype, {enum, [true, false]}},
+  {default, on},
+  {datatype, flag},
   hidden
 ]}.
 

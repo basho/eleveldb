@@ -116,8 +116,8 @@
 {mapping,
   "multi_backend.$name.leveldb.compression",
   "riak_kv.multi_backend", [
-  {default, true},
-  {datatype, {enum, [true, false]}},
+  {default, on},
+  {datatype, flag},
   hidden
 ]}.
 
