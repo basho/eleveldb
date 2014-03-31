@@ -112,6 +112,15 @@
   hidden
 ]}.
 
+%% @see leveldb.compression
+{mapping,
+  "multi_backend.$name.leveldb.compression",
+  "riak_kv.multi_backend", [
+  {default, true},
+  {datatype, {enum, [true, false]}},
+  hidden
+]}.
+
 %% @see leveldb.delete_threshold
 {mapping,
   "multi_backend.$name.leveldb.compaction.trigger.tombstone_count",
