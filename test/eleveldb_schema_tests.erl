@@ -27,6 +27,7 @@ basic_schema_test() ->
     cuttlefish_unit:assert_config(Config, "eleveldb.eleveldb_threads", 71),
     cuttlefish_unit:assert_config(Config, "eleveldb.fadvise_willneed", false),
     cuttlefish_unit:assert_config(Config, "eleveldb.delete_threshold", 1000),
+    cuttlefish_unit:assert_config(Config, "eleveldb.compression", true),
     %% Make sure no multi_backend
     %% Warning: The following line passes by coincidence. It's because the
     %% first mapping in the schema has no default defined. Testing strategy
@@ -52,6 +53,7 @@ override_schema_test() ->
             {["leveldb", "verify_compaction"], off},
             {["leveldb", "threads"], 7},
             {["leveldb", "fadvise_willneed"], true},
+            {["leveldb", "compression"], off},
             {["leveldb", "compaction", "trigger", "tombstone_count"], off}
            ],
 
@@ -75,6 +77,7 @@ override_schema_test() ->
     cuttlefish_unit:assert_config(Config, "eleveldb.eleveldb_threads", 7),
     cuttlefish_unit:assert_config(Config, "eleveldb.fadvise_willneed", true),
     cuttlefish_unit:assert_config(Config, "eleveldb.delete_threshold", 0),
+    cuttlefish_unit:assert_config(Config, "eleveldb.compression", false),
 
     %% Make sure no multi_backend
     %% Warning: The following line passes by coincidence. It's because the
