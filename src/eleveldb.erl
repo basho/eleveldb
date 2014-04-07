@@ -98,7 +98,10 @@ init() ->
                          {eleveldb_threads, pos_integer()} |
                          {fadvise_willneed, boolean()} |
                          {block_cache_threshold, pos_integer()} |
-                         {delete_threshold, pos_integer()}].
+                         {delete_threshold, pos_integer()} |
+                         {tiered_slow_level, pos_integer()} |
+                         {tiered_fast_prefix, string()} |
+                         {tiered_slow_prefix, string()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()} |
@@ -282,7 +285,10 @@ option_types(open) ->
      {eleveldb_threads, integer},
      {fadvise_willneed, bool},
      {block_cache_threshold, integer},
-     {delete_threshold, integer}];
+     {delete_threshold, integer},
+     {tiered_slow_level, integer},
+     {tiered_fast_prefix, any},
+     {tiered_slow_prefix, any}];
 
 option_types(read) ->
     [{verify_checksums, bool},

@@ -180,3 +180,34 @@
        Int -> Int
    end
  end}.
+
+%% @doc The leveldb level number at which data is stored
+%%  based upon "tiered_slow_prefix" instead of "tiered_fast_prefix".
+%%  Default is zero which disables the option.  Valid values are
+%%  1 to 6 (3 or 4 recommended).
+{mapping, "leveldb.tiered_slow_level", "eleveldb.tiered_slow_level", [
+  {default, 0},
+  {datatype, integer},
+  hidden
+]}.
+
+
+%% @doc When tiered_slow_level is set, this option specifies
+%% the path prefix used for a "fast" disk array.  levels 0 to
+%% tiered_slow_prefix-1 use this path prefix.
+{mapping, "leveldb.tiered_fast_prefix", "eleveldb.tiered_fast_prefix", [
+  {datatype, directory},
+  {default, ""},
+  hidden
+]}.
+
+
+%% @doc When tiered_slow_level is set, this option specifies
+%% the path prefix used for a "slow" disk array.  levels tiered_slow_prefix
+%% through 6 use this path prefix
+{mapping, "leveldb.tiered_slow_prefix", "eleveldb.tiered_slow_prefix", [
+  {datatype, directory},
+  {default, ""},
+  hidden
+]}.
+
