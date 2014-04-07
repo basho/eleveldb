@@ -129,29 +129,29 @@
   hidden
 ]}.
 
-%% @see leveldb.tiered_slow_level
-{mapping, "multi_backend.$name.leveldb.tiered_slow_level",
-  "riak_kv.multi_backend", [
-  {default, 0},
-  {datatype, integer},
+%% @see leveldb.tiered
+{mapping, "multi_backend.$name.leveldb.tiered", "riak_kv.multi_backend", [
+  {default, off},
+  {datatype, [
+              {atom, off},
+              {integer, 1},
+              {integer, 2},
+              {integer, 3},
+              {integer, 4},
+              {integer, 5},
+              {integer, 6}
+             ]},
   hidden
 ]}.
 
-
-%% @see leveldb.tiered_fast_prefix
-{mapping, "multi_backend.$name.leveldb.tiered_fast_prefix",
-  "riak_kv.multi_backend", [
+%% @see leveldb.tiered
+{mapping, "multi_backend.$name.leveldb.tiered.mountpoint.fast", "riak_kv.multi_backend", [
   {datatype, directory},
-  {default, ""},
   hidden
 ]}.
 
-
-%% @see leveldb.tiered_slow_prefix
-{mapping, "multi_backend.$name.leveldb.tiered_slow_prefix",
-  "riak_kv.multi_backend", [
+%% @see leveldb.tiered
+{mapping, "multi_backend.$name.leveldb.tiered.mountpoint.slow", "riak_kv.multi_backend", [
   {datatype, directory},
-  {default, ""},
   hidden
 ]}.
-
