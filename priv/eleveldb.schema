@@ -187,7 +187,7 @@
 %% stored at the chosen level or greater will be stored on
 %% leveldb.tiered.mounts.slow, while everything at the levels below will
 %% be stored on leveldb.tiered.mounts.fast
-%% Levels 3 or 4 are reccomend settings.
+%% Levels 3 or 4 are recommend settings.
 %% WARNING: There is no dynamic reallocation of leveldb
 %% data across mounts.  If you change this setting without manually
 %% moving the level files to the correct mounts, leveldb will act in
