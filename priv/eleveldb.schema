@@ -183,11 +183,11 @@
 
 %% @doc leveldb can be configured to use different mounts for
 %% different levels. This tiered option defaults to off, but you can
-%% configure it to trigger at levels 1-6. If you do this anything
+%% configure it to trigger at levels 1-6. If you do this, anything
 %% stored at the chosen level or greater will be stored on
-%% leveldb.tiered.mounts.slow, while everything at a level below will
+%% leveldb.tiered.mounts.slow, while everything at the levels below will
 %% be stored on leveldb.tiered.mounts.fast
-%% Levels 3-4 are reccomend settings.
+%% Levels 3 or 4 are reccomend settings.
 %% WARNING: There is no dynamic reallocation of leveldb
 %% data across mounts.  If you change this setting without manually
 %% moving the level files to the correct mounts, leveldb will act in
@@ -218,13 +218,13 @@
 }.
 
 %% @see leveldb.tiered
-{mapping, "leveldb.tiered.mountpoint.fast", "eleveldb.tiered_fast_prefix", [
+{mapping, "leveldb.tiered.path.fast", "eleveldb.tiered_fast_prefix", [
   {datatype, directory},
   hidden
 ]}.
 
 %% @see leveldb.tiered
-{mapping, "leveldb.tiered.mountpoint.slow", "eleveldb.tiered_slow_prefix", [
+{mapping, "leveldb.tiered.path.slow", "eleveldb.tiered_slow_prefix", [
   {datatype, directory},
   hidden
 ]}.
