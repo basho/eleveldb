@@ -131,7 +131,9 @@ ERL_NIF_TERM ATOM_LIMITED_DEVELOPER_MEM;
 ERL_NIF_TERM ATOM_ELEVELDB_THREADS;
 ERL_NIF_TERM ATOM_FADVISE_WILLNEED;
 ERL_NIF_TERM ATOM_DELETE_THRESHOLD;
-
+ERL_NIF_TERM ATOM_TIERED_SLOW_LEVEL;
+ERL_NIF_TERM ATOM_TIERED_FAST_PREFIX;
+ERL_NIF_TERM ATOM_TIERED_SLOW_PREFIX;
 }   // namespace eleveldb
 
 
@@ -422,6 +424,32 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             else
                 opts.limited_developer_mem = false;
         }
+
+        else if (option[0] == eleveldb::ATOM_TIERED_SLOW_LEVEL)
+        {
+            int tiered_level;
+            if (enif_get_int(env, option[1], &tiered_level))
+                opts.tiered_slow_level = tiered_level;
+        }
+        else if (option[0] == eleveldb::ATOM_TIERED_FAST_PREFIX)
+        {
+            char buffer[256];
+            int ret_val;
+
+            ret_val=enif_get_string(env, option[1], buffer, 256, ERL_NIF_LATIN1);
+            if (0<ret_val && ret_val<256)
+                opts.tiered_fast_prefix = buffer;
+        }
+        else if (option[0] == eleveldb::ATOM_TIERED_SLOW_PREFIX)
+        {
+            char buffer[256];
+            int ret_val;
+
+            ret_val=enif_get_string(env, option[1], buffer, 256, ERL_NIF_LATIN1);
+            if (0<ret_val && ret_val<256)
+                opts.tiered_slow_prefix = buffer;
+        }
+
     }
 
     return eleveldb::ATOM_OK;
@@ -1194,7 +1222,9 @@ try
     ATOM(eleveldb::ATOM_ELEVELDB_THREADS, "eleveldb_threads");
     ATOM(eleveldb::ATOM_FADVISE_WILLNEED, "fadvise_willneed");
     ATOM(eleveldb::ATOM_DELETE_THRESHOLD, "delete_threshold");
-
+    ATOM(eleveldb::ATOM_TIERED_SLOW_LEVEL, "tiered_slow_level");
+    ATOM(eleveldb::ATOM_TIERED_FAST_PREFIX, "tiered_fast_prefix");
+    ATOM(eleveldb::ATOM_TIERED_SLOW_PREFIX, "tiered_slow_prefix");
 #undef ATOM
 
 

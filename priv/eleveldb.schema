@@ -180,3 +180,51 @@
        Int -> Int
    end
  end}.
+
+%% @doc leveldb can be configured to use different mounts for
+%% different levels. This tiered option defaults to off, but you can
+%% configure it to trigger at levels 1-6. If you do this, anything
+%% stored at the chosen level or greater will be stored on
+%% leveldb.tiered.mounts.slow, while everything at the levels below will
+%% be stored on leveldb.tiered.mounts.fast
+%% Levels 3 or 4 are recommended settings.
+%% WARNING: There is no dynamic reallocation of leveldb
+%% data across mounts.  If you change this setting without manually
+%% moving the level files to the correct mounts, leveldb will act in
+%% an unexpected state.
+%% @see leveldb.tiered.mounts.fast
+%% @see leveldb.tiered.mounts.slow
+{mapping, "leveldb.tiered", "eleveldb.tiered_slow_level", [
+  {default, off},
+  {datatype, [
+              {atom, off},
+              {integer, 1},
+              {integer, 2},
+              {integer, 3},
+              {integer, 4},
+              {integer, 5},
+              {integer, 6}
+             ]},
+  hidden
+]}.
+
+{translation, "eleveldb.tiered_slow_level",
+ fun(Conf) ->
+    case cuttlefish:conf_get("leveldb.tiered", Conf) of
+        off -> 0;
+        I -> I
+    end
+ end
+}.
+
+%% @see leveldb.tiered
+{mapping, "leveldb.tiered.path.fast", "eleveldb.tiered_fast_prefix", [
+  {datatype, directory},
+  hidden
+]}.
+
+%% @see leveldb.tiered
+{mapping, "leveldb.tiered.path.slow", "eleveldb.tiered_slow_prefix", [
+  {datatype, directory},
+  hidden
+]}.
