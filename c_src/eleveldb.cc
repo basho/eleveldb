@@ -724,7 +724,7 @@ async_iterator(
 
     db_ptr.assign(DbObject::RetrieveDbObject(env, dbh_ref));
 
-    if(NULL==db_ptr.get()
+    if(NULL==db_ptr.get() || 0!=db_ptr->m_CloseRequested
        || !enif_is_list(env, options_ref))
      {
         return enif_make_badarg(env);

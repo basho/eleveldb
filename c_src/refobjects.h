@@ -194,7 +194,7 @@ public:
     virtual void Shutdown();
 
     // manual back link to ItrObjects holding reference to this
-    void AddReference(class ItrObject *);
+    bool AddReference(class ItrObject *);
 
     void RemoveReference(class ItrObject *);
 

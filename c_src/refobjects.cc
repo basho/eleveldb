@@ -355,15 +355,19 @@ DbObject::Shutdown()
 }   // DbObject::Shutdown
 
 
-void
+bool
 DbObject::AddReference(
     ItrObject * ItrPtr)
 {
+    bool ret_flag;
     MutexLock lock(m_ItrMutex);
 
-    m_ItrList.push_back(ItrPtr);
+    ret_flag=(0==m_CloseRequested);
 
-    return;
+    if (ret_flag)
+        m_ItrList.push_back(ItrPtr);
+
+    return(ret_flag);
 
 }   // DbObject::AddReference
 
