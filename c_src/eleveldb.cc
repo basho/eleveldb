@@ -1166,6 +1166,10 @@ try
     ret_val=0;
     *priv_data = NULL;
 
+    // make sure the basic leveldb .so modules are in memory
+    //  and initialized ... especially the perf counters
+    leveldb::Env::Default();
+
     // inform erlang of our two resource types
     eleveldb::DbObject::CreateDbObjectType(env);
     eleveldb::ItrObject::CreateItrObjectType(env);
