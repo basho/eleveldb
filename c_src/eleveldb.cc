@@ -947,10 +947,11 @@ eleveldb_close(
 {
     eleveldb::DbObject * db_ptr;
     ERL_NIF_TERM ret_term;
+    bool term_ok=false;
 
     ret_term=eleveldb::ATOM_OK;
 
-    db_ptr=eleveldb::DbObject::RetrieveDbObject(env, argv[0]);
+    db_ptr=eleveldb::DbObject::RetrieveDbObject(env, argv[0], &term_ok);
 
     if (NULL!=db_ptr)
     {
@@ -961,7 +962,7 @@ eleveldb_close(
 
         ret_term=eleveldb::ATOM_OK;
     }   // if
-    else
+    else if (!term_ok)
     {
         ret_term=enif_make_badarg(env);
     }   // else
