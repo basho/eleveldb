@@ -401,7 +401,6 @@ LevelIteratorWrapper::LevelIteratorWrapper(
       m_IteratorStale(0), m_StillUse(true)
 {
     RebuildIterator();
-    m_ItrPtr.assign(NULL);
 };
 
 
