@@ -310,7 +310,7 @@ public:
     // No seek target:
     MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
              LevelIteratorWrapper * IterWrap, action_t& _action)
-        : WorkTask(NULL, _caller_ref, IterWrap->m_DbPtr.get()),
+        : WorkTask(NULL, _caller_ref/*, IterWrap->m_DbPtr.get()*/),
         m_ItrWrap(IterWrap), action(_action)
     {
         // special case construction
@@ -322,7 +322,7 @@ public:
     MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
              LevelIteratorWrapper * IterWrap, action_t& _action,
              std::string& _seek_target)
-        : WorkTask(NULL, _caller_ref, IterWrap->m_DbPtr.get()),
+        : WorkTask(NULL, _caller_ref/*, IterWrap->m_DbPtr.get()*/),
         m_ItrWrap(IterWrap), action(_action),
         seek_target(_seek_target)
         {
