@@ -224,6 +224,7 @@ class LevelIteratorWrapper : public RefObject
 {
 public:
     ReferencePtr<DbObject> m_DbPtr;           //!< need to keep db open for delete of this object
+    ReferencePtr<class ItrObject> m_ItrPtr;         //!< shared itr_ref requires we hold ItrObject
     const leveldb::Snapshot * m_Snapshot;
     leveldb::Iterator * m_Iterator;
     volatile uint32_t m_HandoffAtomic;        //!< matthew's atomic foreground/background prefetch flag.
@@ -237,15 +238,8 @@ public:
     time_t m_IteratorStale;                   //!< time iterator should refresh
     bool m_StillUse;                          //!< true if no error or key end seen
 
-    LevelIteratorWrapper(DbObject * DbPtr, bool KeysOnly,
-                         leveldb::ReadOptions & Options, ERL_NIF_TERM itr_ref)
-        : m_DbPtr(DbPtr), m_Snapshot(NULL), m_Iterator(NULL),
-        m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false),
-        m_Options(Options), itr_ref(itr_ref),
-        m_IteratorStale(0), m_StillUse(true)
-    {
-        RebuildIterator();
-    };
+    LevelIteratorWrapper(ItrObject * ItrPtr, bool KeysOnly,
+                         leveldb::ReadOptions & Options, ERL_NIF_TERM itr_ref);
 
     virtual ~LevelIteratorWrapper()
     {

@@ -279,7 +279,7 @@ public:
         itr_ptr->itr_ref_env = enif_alloc_env();
         itr_ptr->itr_ref = enif_make_copy(itr_ptr->itr_ref_env, caller_ref());
 
-        itr_ptr->m_Iter.assign(new LevelIteratorWrapper(m_DbPtr.get(), keys_only,
+        itr_ptr->m_Iter.assign(new LevelIteratorWrapper(itr_ptr, keys_only,
                                                         options, itr_ptr->itr_ref));
 
         ERL_NIF_TERM result = enif_make_resource(local_env(), itr_ptr);
@@ -310,7 +310,7 @@ public:
     // No seek target:
     MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
              LevelIteratorWrapper * IterWrap, action_t& _action)
-        : WorkTask(NULL, _caller_ref),
+        : WorkTask(NULL, _caller_ref, IterWrap->m_DbPtr.get()),
         m_ItrWrap(IterWrap), action(_action)
     {
         // special case construction
@@ -322,7 +322,7 @@ public:
     MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
              LevelIteratorWrapper * IterWrap, action_t& _action,
              std::string& _seek_target)
-        : WorkTask(NULL, _caller_ref),
+        : WorkTask(NULL, _caller_ref, IterWrap->m_DbPtr.get()),
         m_ItrWrap(IterWrap), action(_action),
         seek_target(_seek_target)
         {

@@ -385,8 +385,29 @@ DbObject::RemoveReference(
 }   // DbObject::RemoveReference
 
 
+
 /**
- * Iterator management object
+ * Regenerative iterator object (malloc memory)
+ */
+
+LevelIteratorWrapper::LevelIteratorWrapper(
+    ItrObject * ItrPtr,
+    bool KeysOnly,
+    leveldb::ReadOptions & Options,
+    ERL_NIF_TERM itr_ref)
+    : m_DbPtr(ItrPtr->m_DbPtr.get()), m_ItrPtr(ItrPtr), m_Snapshot(NULL), m_Iterator(NULL),
+      m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false),
+      m_Options(Options), itr_ref(itr_ref),
+      m_IteratorStale(0), m_StillUse(true)
+{
+    RebuildIterator();
+    m_ItrPtr.assign(NULL);
+};
+
+
+
+/**
+ * Iterator management object (Erlang memory)
  */
 
 ErlNifResourceType * ItrObject::m_Itr_RESOURCE(NULL);
@@ -516,6 +537,8 @@ ItrObject::Shutdown()
     //  (reuse_move holds a counter to this object, which will
     //   release when move object destructs)
     ReleaseReuseMove();
+
+    m_Iter.assign(NULL);
 
     RefDec();
 
