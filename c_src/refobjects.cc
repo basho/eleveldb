@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2013 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2014 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -78,116 +78,6 @@ RefObject::RefDec()
 
 
 /**
- * Erlang reference object
- */
-
-ErlRefObject::ErlRefObject()
-    : m_CloseRequested(0)
-{
-    pthread_mutexattr_t attr;
-
-    pthread_mutexattr_init(&attr);
-    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(&m_CloseMutex, &attr);
-    pthread_cond_init(&m_CloseCond, NULL);
-    pthread_mutexattr_destroy(&attr);
-
-    return;
-
-}   // ErlRefObject::ErlRefObject
-
-
-ErlRefObject::~ErlRefObject()
-{
-
-    pthread_mutex_lock(&m_CloseMutex);
-    m_CloseRequested=3;
-    pthread_cond_broadcast(&m_CloseCond);
-    pthread_mutex_unlock(&m_CloseMutex);
-
-    // DO NOT DESTROY m_CloseMutex or m_CloseCond here
-
-}   // ErlRefObject::~ErlRefObject
-
-
-bool
-ErlRefObject::InitiateCloseRequest(
-    ErlRefObject * Object)
-{
-    bool ret_flag;
-
-    ret_flag=false;
-
-    // special handling since destructor may have been called
-    if (NULL!=Object && 0==Object->m_CloseRequested)
-        ret_flag=compare_and_swap(&Object->m_CloseRequested, 0, 1);
-
-    // vtable is still good, this thread is initiating close
-    //   ask object to clean-up
-    if (ret_flag)
-    {
-        Object->Shutdown();
-    }   // if
-
-    return(ret_flag);
-
-}   // ErlRefObject::InitiateCloseRequest
-
-
-void
-ErlRefObject::AwaitCloseAndDestructor(
-    ErlRefObject * Object)
-{
-    // NOTE:  it is possible, actually likely, that this
-    //        routine is called AFTER the destructor is called
-    //        Don't panic.
-
-    if (NULL!=Object)
-    {
-        // quick test if any work pending
-        if (3!=Object->m_CloseRequested)
-        {
-            pthread_mutex_lock(&Object->m_CloseMutex);
-
-            // retest after mutex helc
-            while (3!=Object->m_CloseRequested)
-            {
-                pthread_cond_wait(&Object->m_CloseCond, &Object->m_CloseMutex);
-            }   // while
-            pthread_mutex_unlock(&Object->m_CloseMutex);
-        }   // if
-
-        pthread_mutex_destroy(&Object->m_CloseMutex);
-        pthread_cond_destroy(&Object->m_CloseCond);
-    }   // if
-
-    return;
-
-}   // ErlRefObject::AwaitCloseAndDestructor
-
-
-uint32_t
-ErlRefObject::RefDec()
-{
-    uint32_t cur_count;
-
-    cur_count=eleveldb::dec_and_fetch(&m_RefCount);
-
-    // this the last active after close requested?
-    //  (atomic swap should be unnecessary ... but going for safety)
-    if (0==cur_count && compare_and_swap(&m_CloseRequested, 1, 2))
-    {
-        // deconstruct, but let erlang deallocate memory later
-        this->~ErlRefObject();
-    }   // if
-
-    return(cur_count);
-
-}   // DbObject::RefDec
-
-
-
-/**
  * DbObject Functions
  */
 
@@ -209,7 +99,7 @@ DbObject::CreateDbObjectType(
 }   // DbObject::CreateDbObjectType
 
 
-DbObject *
+void *
 DbObject::CreateDbObject(
     leveldb::DB * Db,
     leveldb::Options * DbOptions)
@@ -218,18 +108,18 @@ DbObject::CreateDbObject(
     void * alloc_ptr;
 
     // the alloc call initializes the reference count to "one"
-    alloc_ptr=enif_alloc_resource(m_Db_RESOURCE, sizeof(DbObject));
+    alloc_ptr=enif_alloc_resource(m_Db_RESOURCE, sizeof(DbObject *));
 
-    ret_ptr=new (alloc_ptr) DbObject(Db, DbOptions);
+    ret_ptr=new DbObject(Db, DbOptions);
+    *alloc_ptr=ret_ptr;
 
     // manual reference increase to keep active until "close" called
-    //  only inc local counter, leave erl ref count alone ... will force
-    //  erlang to call us if process holding ref dies
     ret_ptr->RefInc();
 
-    // see OpenTask::operator() for release of reference count
+    // 2nd manual reference increase since we give Erlang the pointer
+    ret_ptr->RefInc();
 
-    return(ret_ptr);
+    return(alloc_ptr);
 
 }   // DbObject::CreateDbObject
 
@@ -239,7 +129,7 @@ DbObject::RetrieveDbObject(
     ErlNifEnv * Env,
     const ERL_NIF_TERM & DbTerm)
 {
-    DbObject * ret_ptr;
+    DbObject ** ret_ptr;
 
     ret_ptr=NULL;
 
@@ -253,7 +143,7 @@ DbObject::RetrieveDbObject(
         }   // else
     }   // if
 
-    return(ret_ptr);
+    return(*ret_ptr);
 
 }   // DbObject::RetrieveDbObject
 
@@ -265,7 +155,10 @@ DbObject::DbObjectResourceCleanup(
 {
     DbObject * db_ptr;
 
-    db_ptr=(DbObject *)Arg;
+    db_ptr=*(DbObject **)Arg;
+
+
+
 
     // YES, the destructor may already have been called
     InitiateCloseRequest(db_ptr);

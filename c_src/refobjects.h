@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2013 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2014 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -73,49 +73,6 @@ private:
 
 
 /**
- * Base class for any object that is managed as an Erlang reference
- */
-
-class ErlRefObject : public RefObject
-{
-public:
-    // these member objects are public to simplify
-    //  access by statics and external APIs
-    //  (yes, wrapper functions would be welcome)
-    volatile uint32_t m_CloseRequested;  // 1 once api close called, 2 once thread starts destructor, 3 destructor done
-
-    // DO NOT USE CONTAINER OBJECTS
-    //  ... these must be live after destructor called
-    pthread_mutex_t m_CloseMutex;        //!< for erlang forced close
-    pthread_cond_t  m_CloseCond;         //!< for erlang forced close
-
-protected:
-
-
-public:
-    ErlRefObject();
-
-    virtual ~ErlRefObject();
-
-    virtual uint32_t RefDec();
-
-    // allows for secondary close actions IF InitiateCloseRequest returns true
-    virtual void Shutdown()=0;
-
-    // the following will sometimes be called AFTER the
-    //  destructor ... in which case the vtable is not valid
-    static bool InitiateCloseRequest(ErlRefObject * Object);
-
-    static void AwaitCloseAndDestructor(ErlRefObject * Object);
-
-
-private:
-    ErlRefObject(const ErlRefObject&);              // nocopy
-    ErlRefObject& operator=(const ErlRefObject&);   // nocopyassign
-};  // class RefObject
-
-
-/**
  * Class to manage access and counting of references
  * to a reference object.
  */
@@ -173,7 +130,7 @@ private:
  *
  * Extra reference count created upon initialization, released on close.
  */
-class DbObject : public ErlRefObject
+class DbObject : public RefObject
 {
 public:
     leveldb::DB* m_Db;                                   // NULL or leveldb database object
@@ -200,7 +157,7 @@ public:
 
     static void CreateDbObjectType(ErlNifEnv * Env);
 
-    static DbObject * CreateDbObject(leveldb::DB * Db, leveldb::Options * DbOptions);
+    static void * CreateDbObject(leveldb::DB * Db, leveldb::Options * DbOptions);
 
     static DbObject * RetrieveDbObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm);
 
@@ -294,7 +251,7 @@ private:
 /**
  * Per Iterator object.  Created as erlang reference.
  */
-class ItrObject : public ErlRefObject
+class ItrObject : public RefObject
 {
 public:
     ReferencePtr<LevelIteratorWrapper> m_Iter;
