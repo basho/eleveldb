@@ -78,6 +78,47 @@ RefObject::RefDec()
 
 
 /**
+ * Erlang reference object
+ */
+
+ErlRefObject::ErlRefObject()
+    : m_CloseRequested(0)
+{
+}   // ErlRefObject::ErlRefObject
+
+
+ErlRefObject::~ErlRefObject()
+{
+}   // ErlRefObject::~ErlRefObject
+
+
+// this function is static due to a legacy design, could
+//  be a member function now.
+bool
+ErlRefObject::InitiateCloseRequest(
+    ErlRefObject * Object)
+{
+    bool ret_flag;
+
+    ret_flag=false;
+
+    // special handling since destructor may have been called
+    if (NULL!=Object && 0==Object->m_CloseRequested)
+        ret_flag=compare_and_swap(&Object->m_CloseRequested, 0, 1);
+
+    // this thread is initiating close
+    //   ask object to clean-up
+    if (ret_flag)
+    {
+        Object->Shutdown();
+    }   // if
+
+    return(ret_flag);
+
+}   // ErlRefObject::InitiateCloseRequest
+
+
+/**
  * DbObject Functions
  */
 
@@ -111,12 +152,13 @@ DbObject::CreateDbObject(
     alloc_ptr=enif_alloc_resource(m_Db_RESOURCE, sizeof(DbObject *));
 
     ret_ptr=new DbObject(Db, DbOptions);
-    *alloc_ptr=ret_ptr;
+    *(DbObject **)alloc_ptr=ret_ptr;
 
-    // manual reference increase to keep active until "close" called
+    // manual reference increase to keep active until "eleveldb_close" called
     ret_ptr->RefInc();
 
-    // 2nd manual reference increase since we give Erlang the pointer
+    // 2nd manual reference increase since we give Erlang the pointer,
+    //  cleared by DbObjectResourceCleanup
     ret_ptr->RefInc();
 
     return(alloc_ptr);
@@ -129,21 +171,23 @@ DbObject::RetrieveDbObject(
     ErlNifEnv * Env,
     const ERL_NIF_TERM & DbTerm)
 {
-    DbObject ** ret_ptr;
+    DbObject ** db_ptr_ptr, * ret_ptr;
 
     ret_ptr=NULL;
 
-    if (enif_get_resource(Env, DbTerm, m_Db_RESOURCE, (void **)&ret_ptr))
+    if (enif_get_resource(Env, DbTerm, m_Db_RESOURCE, (void **)&db_ptr_ptr))
     {
+        ret_ptr=*db_ptr_ptr;
+
         // has close been requested?
-        if (ret_ptr->m_CloseRequested)
+        if (0!=ret_ptr->m_CloseRequested)
         {
             // object already closing
             ret_ptr=NULL;
-        }   // else
+        }   // if
     }   // if
 
-    return(*ret_ptr);
+    return(ret_ptr);
 
 }   // DbObject::RetrieveDbObject
 
@@ -157,14 +201,10 @@ DbObject::DbObjectResourceCleanup(
 
     db_ptr=*(DbObject **)Arg;
 
-
-
-
-    // YES, the destructor may already have been called
     InitiateCloseRequest(db_ptr);
 
-    // YES, the destructor may already have been called
-    AwaitCloseAndDestructor(db_ptr);
+    // clear second RefInc() from CreateDbObject
+    db_ptr->RefDec();
 
     return;
 
@@ -200,12 +240,6 @@ DbObject::~DbObject()
         m_DbOptions = NULL;
     }   // if
 
-
-
-
-
-    // do not clean up m_CloseMutex and m_CloseCond
-
     return;
 
 }   // DbObject::~DbObject
@@ -240,8 +274,6 @@ DbObject::Shutdown()
             ItrObject::InitiateCloseRequest(itr_ptr);
 
     } while(again);
-
-    RefDec();
 
     return;
 
@@ -320,7 +352,7 @@ ItrObject::CreateItrObjectType(
 }   // ItrObject::CreateItrObjectType
 
 
-ItrObject *
+void *
 ItrObject::CreateItrObject(
     DbObject * DbPtr,
     bool KeysOnly,
@@ -330,17 +362,19 @@ ItrObject::CreateItrObject(
     void * alloc_ptr;
 
     // the alloc call initializes the reference count to "one"
-    alloc_ptr=enif_alloc_resource(m_Itr_RESOURCE, sizeof(ItrObject));
+    alloc_ptr=enif_alloc_resource(m_Itr_RESOURCE, sizeof(ItrObject *));
 
-    ret_ptr=new (alloc_ptr) ItrObject(DbPtr, KeysOnly, Options);
+    ret_ptr=new ItrObject(DbPtr, KeysOnly, Options);
+    *(ItrObject **)alloc_ptr=ret_ptr;
 
-    // manual reference increase to keep active until "close" called
-    //  only inc local counter
+    // manual reference increase to keep active until "eleveldb_iterator_close" called
     ret_ptr->RefInc();
 
-    // see IterTask::operator() for release of reference count
+    // 2nd manual reference increase since we give Erlang the pointer,
+    //  cleared by ItrObjectResourceCleanup
+    ret_ptr->RefInc();
 
-    return(ret_ptr);
+    return(alloc_ptr);
 
 }   // ItrObject::CreateItrObject
 
@@ -350,19 +384,21 @@ ItrObject::RetrieveItrObject(
     ErlNifEnv * Env,
     const ERL_NIF_TERM & ItrTerm, bool ItrClosing)
 {
-    ItrObject * ret_ptr;
+    ItrObject ** itr_ptr_ptr, * ret_ptr;
 
     ret_ptr=NULL;
 
-    if (enif_get_resource(Env, ItrTerm, m_Itr_RESOURCE, (void **)&ret_ptr))
+    if (enif_get_resource(Env, ItrTerm, m_Itr_RESOURCE, (void **)&itr_ptr_ptr))
     {
+        ret_ptr=*itr_ptr_ptr;
+
         // has close been requested?
         if (ret_ptr->m_CloseRequested
             || (!ItrClosing && ret_ptr->m_DbPtr->m_CloseRequested))
         {
             // object already closing
             ret_ptr=NULL;
-        }   // else
+        }   // if
     }   // if
 
     return(ret_ptr);
@@ -377,14 +413,12 @@ ItrObject::ItrObjectResourceCleanup(
 {
     ItrObject * itr_ptr;
 
-    itr_ptr=(ItrObject *)Arg;
+    itr_ptr=*(ItrObject **)Arg;
 
-    // vtable for itr_ptr could be invalid if close already
-    //  occurred
     InitiateCloseRequest(itr_ptr);
 
-    // YES this can be called after itr_ptr destructor.  Don't panic.
-    AwaitCloseAndDestructor(itr_ptr);
+    // clear second RefInc() from CreateItrObject
+    itr_ptr->RefDec();
 
     return;
 
@@ -432,11 +466,9 @@ ItrObject::Shutdown()
 
     m_Iter.assign(NULL);
 
-    RefDec();
-
     return;
 
-}   // ItrObject::CloseRequest
+}   // ItrObject::Shutdown
 
 
 bool

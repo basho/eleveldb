@@ -62,14 +62,45 @@ public:
 
     virtual ~RefObject();
 
-    virtual uint32_t RefInc();
+    uint32_t RefInc();
 
-    virtual uint32_t RefDec();
+    uint32_t RefDec();
 
 private:
     RefObject(const RefObject&);              // nocopy
     RefObject& operator=(const RefObject&);   // nocopyassign
 };  // class RefObject
+
+
+/**
+ * Base class for any object that is managed as an Erlang reference
+ */
+
+class ErlRefObject : public RefObject
+{
+public:
+    // 1 once api close called, 2 once thread starts destructor, 3 destructor done
+    //   (second and third state are legacy, no longer needed)
+    volatile uint32_t m_CloseRequested;
+
+protected:
+
+
+public:
+    ErlRefObject();
+
+    virtual ~ErlRefObject();
+
+    // allows for secondary close actions IF InitiateCloseRequest returns true
+    virtual void Shutdown()=0;
+
+    static bool InitiateCloseRequest(ErlRefObject * Object);
+
+private:
+    ErlRefObject(const ErlRefObject&);              // nocopy
+    ErlRefObject& operator=(const ErlRefObject&);   // nocopyassign
+};  // class RefObject
+
 
 
 /**
@@ -130,7 +161,7 @@ private:
  *
  * Extra reference count created upon initialization, released on close.
  */
-class DbObject : public RefObject
+class DbObject : public ErlRefObject
 {
 public:
     leveldb::DB* m_Db;                                   // NULL or leveldb database object
@@ -251,7 +282,7 @@ private:
 /**
  * Per Iterator object.  Created as erlang reference.
  */
-class ItrObject : public RefObject
+class ItrObject : public ErlRefObject
 {
 public:
     ReferencePtr<LevelIteratorWrapper> m_Iter;
@@ -279,7 +310,7 @@ public:
 
     static void CreateItrObjectType(ErlNifEnv * Env);
 
-    static ItrObject * CreateItrObject(DbObject * Db, bool KeysOnly, leveldb::ReadOptions & Options);
+    static void * CreateItrObject(DbObject * Db, bool KeysOnly, leveldb::ReadOptions & Options);
 
     static ItrObject * RetrieveItrObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm,
                                          bool ItrClosing=false);
