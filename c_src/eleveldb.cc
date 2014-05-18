@@ -955,10 +955,9 @@ eleveldb_close(
     if (NULL!=db_ptr)
     {
         // set closing flag
-        eleveldb::ErlRefObject::InitiateCloseRequest(db_ptr);
+        db_ptr->InitiateCloseRequest();
 
-        // clear one RefInc() from CreateDbObject
-        db_ptr->RefDec();
+        // db_ptr no longer valid
         db_ptr=NULL;
 
         ret_term=eleveldb::ATOM_OK;
@@ -988,13 +987,10 @@ eleveldb_iterator_close(
 
     if (NULL!=itr_ptr)
     {
-        itr_ptr->ReleaseReuseMove();
+        // set closing flag
+        itr_ptr->InitiateCloseRequest();
 
-        // set closing flag ... atomic likely unnecessary (but safer)
-        eleveldb::ErlRefObject::InitiateCloseRequest(itr_ptr);
-
-        // clear one RefInc() from CreateItrObject
-        itr_ptr->RefDec();
+        // itr_ptr is no longer valid
         itr_ptr=NULL;
 
         ret_term=eleveldb::ATOM_OK;

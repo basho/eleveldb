@@ -62,9 +62,9 @@ public:
 
     virtual ~RefObject();
 
-    uint32_t RefInc();
+    virtual uint32_t RefInc();
 
-    uint32_t RefDec();
+    virtual uint32_t RefDec();
 
 private:
     RefObject(const RefObject&);              // nocopy
@@ -83,6 +83,12 @@ public:
     //   (second and third state are legacy, no longer needed)
     volatile uint32_t m_CloseRequested;
 
+    // It would be nice if leveldb's port::* container objects could be
+    //  be used here.  But requires detailed work relating to build_config.mk
+    pthread_mutex_t m_CloseMutex;        //!< for condition wait
+    pthread_cond_t  m_CloseCond;         //!< for notification of user's finish
+
+    void ** m_RecentErlangPtr;           //!< most recent address of Erlang pointing to this
 protected:
 
 
@@ -91,10 +97,11 @@ public:
 
     virtual ~ErlRefObject();
 
-    // allows for secondary close actions IF InitiateCloseRequest returns true
+    virtual uint32_t RefDec();
+
     virtual void Shutdown()=0;
 
-    static bool InitiateCloseRequest(ErlRefObject * Object);
+    virtual bool InitiateCloseRequest();
 
 private:
     ErlRefObject(const ErlRefObject&);              // nocopy
