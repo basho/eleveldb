@@ -343,6 +343,54 @@ public:
 
 };  // class MoveTask
 
+
+/**
+ * Background object for async write
+ */
+
+class CloseTask : public WorkTask
+{
+protected:
+
+public:
+
+    CloseTask(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
+              DbObject * _db_handle)
+        : WorkTask(_owner_env, _caller_ref, _db_handle)
+    {}
+
+    virtual ~CloseTask()
+    {
+    }
+
+    virtual work_result operator()()
+    {
+        DbObject * db_ptr;
+
+        // get db pointer then clear reference count to it
+        db_ptr=m_DbPtr.get();
+        m_DbPtr.assign(NULL);
+
+        if (NULL!=db_ptr)
+        {
+            // set closing flag, this is blocking
+            db_ptr->InitiateCloseRequest();
+
+            // db_ptr no longer valid
+            db_ptr=NULL;
+
+            return(work_result(ATOM_OK));
+        }   // if
+        else
+        {
+            return work_result(local_env(), ATOM_ERROR, ATOM_BADARG);
+        }   // else
+    }
+
+};  // class CloseTask
+
+
+
 } // namespace eleveldb
 
 

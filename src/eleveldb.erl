@@ -132,10 +132,11 @@ open(Name, Opts) ->
 
 -spec close(db_ref()) -> ok | {error, any()}.
 close(Ref) ->
-    eleveldb_bump:big(),
-    close_int(Ref).
+    CallerRef = make_ref(),
+    async_close(CallerRef, Ref),
+    ?WAIT_FOR_REPLY(CallerRef).
 
-close_int(_Ref) ->
+async_close(_CallerRef, _Ref) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec async_get(reference(), db_ref(), binary(), read_options()) -> ok.
