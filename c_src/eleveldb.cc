@@ -61,7 +61,7 @@
 static ErlNifFunc nif_funcs[] =
 {
     {"async_close", 2, eleveldb::async_close},
-    {"iterator_close", 1, eleveldb_iterator_close},
+    {"async_iterator_close", 2, eleveldb::async_iterator_close},
     {"status", 2, eleveldb_status},
     {"destroy", 2, eleveldb_destroy},
     {"repair", 2, eleveldb_repair},
@@ -971,39 +971,41 @@ async_close(
 }  // async_close
 
 
-} // namespace eleveldb
-
 ERL_NIF_TERM
-eleveldb_iterator_close(
+async_iterator_close(
     ErlNifEnv* env,
     int argc,
     const ERL_NIF_TERM argv[])
 {
-    eleveldb::ItrObject * itr_ptr;
-    ERL_NIF_TERM ret_term;
+    const ERL_NIF_TERM& caller_ref  = argv[0];
+    const ERL_NIF_TERM& itr_ref     = argv[1];
 
-    ret_term=eleveldb::ATOM_OK;
+    ReferencePtr<ItrObject> itr_ptr;
 
-    itr_ptr=eleveldb::ItrObject::RetrieveItrObject(env, argv[0], true);
+    itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_ref));
 
-    if (NULL!=itr_ptr)
+    if(NULL==itr_ptr.get() || 0!=itr_ptr->m_CloseRequested)
     {
-        // set closing flag
-        itr_ptr->InitiateCloseRequest();
+       return enif_make_badarg(env);
+    }
 
-        // itr_ptr is no longer valid
-        itr_ptr=NULL;
+    eleveldb::WorkTask *work_item = new eleveldb::ItrCloseTask(env, caller_ref,
+                                                               itr_ptr.get());
 
-        ret_term=eleveldb::ATOM_OK;
+    // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
+    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+    if(false == priv.thread_pool.submit(work_item))
+    {
+        delete work_item;
+        return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
     }   // if
-    else
-    {
-        ret_term=enif_make_badarg(env);
-    }   // else
 
-    return(ret_term);
+    return ATOM_OK;
 
-}   // elveldb_iterator_close
+}   // async_iterator_close
+
+} // namespace eleveldb
 
 
 ERL_NIF_TERM

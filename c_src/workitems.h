@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2013 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2014 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -345,7 +345,7 @@ public:
 
 
 /**
- * Background object for async write
+ * Background object for async databass close
  */
 
 class CloseTask : public WorkTask
@@ -390,6 +390,52 @@ public:
 };  // class CloseTask
 
 
+/**
+ * Background object for async databass close
+ */
+
+class ItrCloseTask : public WorkTask
+{
+protected:
+    ReferencePtr<ItrObject> m_ItrPtr;
+
+public:
+
+    ItrCloseTask(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
+              ItrObject * _itr_handle)
+        : WorkTask(_owner_env, _caller_ref),
+        m_ItrPtr(_itr_handle)
+    {}
+
+    virtual ~ItrCloseTask()
+    {
+    }
+
+    virtual work_result operator()()
+    {
+        ItrObject * itr_ptr;
+
+        // get iterator pointer then clear reference count to it
+        itr_ptr=m_ItrPtr.get();
+        m_ItrPtr.assign(NULL);
+
+        if (NULL!=itr_ptr)
+        {
+            // set closing flag, this is blocking
+            itr_ptr->InitiateCloseRequest();
+
+            // itr_ptr no longer valid
+            itr_ptr=NULL;
+
+            return(work_result(ATOM_OK));
+        }   // if
+        else
+        {
+            return work_result(local_env(), ATOM_ERROR, ATOM_BADARG);
+        }   // else
+    }
+
+};  // class ItrCloseTask
 
 } // namespace eleveldb
 
