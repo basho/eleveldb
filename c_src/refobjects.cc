@@ -82,7 +82,7 @@ RefObject::RefDec()
  */
 
 ErlRefObject::ErlRefObject()
-    : m_CloseRequested(0), m_RecentErlangPtr(NULL)
+    : m_RecentErlangPtr(NULL), m_CloseRequested(0)
 {
     pthread_mutexattr_t attr;
 
@@ -105,22 +105,28 @@ ErlRefObject::~ErlRefObject()
 
 
 bool
-ErlRefObject::InitiateCloseRequest()
+ErlRefObject::InitiateCloseRequest(
+    bool ErlangCalling)  //!< true if called from Erlang close, false if C thread
 {
     bool ret_flag;
 
-    ret_flag=false;
+    ret_flag=ErlangCalling;
 
-    if (0==m_CloseRequested)
-        ret_flag=compare_and_swap(&m_CloseRequested, 0, 1);
+    // step 1, kill Erlang's access
+    if (!ret_flag)
+    {
+        void * erl_ptr;
 
-    // this thread is initiating close
+        erl_ptr=*m_RecentErlangPtr;
+        ret_flag=(compare_and_swap(m_RecentErlangPtr, erl_ptr, (void *)NULL)
+                 && NULL!=erl_ptr);
+    }   // if
+
+    // step 2, first thread to arrive initiates close
     //   ask object to clean-up
     if (ret_flag)
     {
-        // cut off Erlang's future access
-        if (NULL!=m_RecentErlangPtr)
-            *m_RecentErlangPtr=NULL;
+        m_CloseRequested=1;
 
         Shutdown();
 
@@ -267,12 +273,18 @@ DbObject::DbObjectResourceCleanup(
     ErlNifEnv * Env,
     void * Arg)
 {
+    DbObject * volatile * erl_ptr;
     DbObject * db_ptr;
 
-    db_ptr=*(DbObject **)Arg;
+    erl_ptr=(DbObject * volatile *)Arg;
+    db_ptr=*erl_ptr;
 
-    if (NULL!=db_ptr)
-        db_ptr->InitiateCloseRequest();
+    // is Erlang first to initiate close?
+    if (compare_and_swap(erl_ptr, db_ptr, (DbObject *)NULL)
+        && NULL!=db_ptr)
+    {
+        db_ptr->InitiateCloseRequest(true);
+    }   // if
 
     return;
 
@@ -339,7 +351,7 @@ DbObject::Shutdown()
         // must be outside lock so ItrObject can attempt
         //  RemoveReference
         if (again)
-            itr_ptr->ItrObject::InitiateCloseRequest();
+            itr_ptr->ItrObject::InitiateCloseRequest(false);
 
     } while(again);
 
@@ -480,13 +492,18 @@ ItrObject::ItrObjectResourceCleanup(
     ErlNifEnv * Env,
     void * Arg)
 {
+    ItrObject * volatile * erl_ptr;
     ItrObject * itr_ptr;
 
-    itr_ptr=*(ItrObject **)Arg;
+    erl_ptr=(ItrObject * volatile *)Arg;
+    itr_ptr=*erl_ptr;
 
-    if (NULL!=itr_ptr)
-        itr_ptr->InitiateCloseRequest();
-
+    // is Erlang first to initiate close?
+    if (compare_and_swap(erl_ptr, itr_ptr, (ItrObject *)NULL)
+        && NULL!=itr_ptr)
+    {
+        itr_ptr->InitiateCloseRequest(true);
+    }   // if
 
     return;
 

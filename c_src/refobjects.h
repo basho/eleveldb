@@ -79,8 +79,14 @@ private:
 class ErlRefObject : public RefObject
 {
 public:
-    // 1 once api close called, 2 once thread starts destructor, 3 destructor done
-    //   (second and third state are legacy, no longer needed)
+    // Pointer to "this" from within Erlang heap
+    // First thread to clear "this" in InitiateCloseRequest()
+    //  owns the shutdown (Erlang or async C)
+    void * volatile * m_RecentErlangPtr;
+
+    // 1 once InitiateCloseRequest starts,
+    // 2 other pointers to "this" released
+    // 3 final RefDec and destructor executing
     volatile uint32_t m_CloseRequested;
 
     // It would be nice if leveldb's port::* container objects could be
@@ -88,7 +94,6 @@ public:
     pthread_mutex_t m_CloseMutex;        //!< for condition wait
     pthread_cond_t  m_CloseCond;         //!< for notification of user's finish
 
-    void ** m_RecentErlangPtr;           //!< most recent address of Erlang pointing to this
 protected:
 
 
@@ -101,7 +106,7 @@ public:
 
     virtual void Shutdown()=0;
 
-    virtual bool InitiateCloseRequest();
+    virtual bool InitiateCloseRequest(bool ErlangCalling);
 
 private:
     ErlRefObject(const ErlRefObject&);              // nocopy
