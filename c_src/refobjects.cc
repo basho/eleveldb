@@ -117,9 +117,15 @@ ErlRefObject::InitiateCloseRequest(
     {
         void * erl_ptr;
 
-        erl_ptr=*m_RecentErlangPtr;
-        ret_flag=(compare_and_swap(m_RecentErlangPtr, erl_ptr, (void *)NULL)
-                 && NULL!=erl_ptr);
+        // edge case should no longer possible.
+        if (NULL!=m_RecentErlangPtr)
+        {
+            erl_ptr=*m_RecentErlangPtr;
+            ret_flag=(compare_and_swap(m_RecentErlangPtr, erl_ptr, (void *)NULL)
+                      && NULL!=erl_ptr);
+        }   // if
+        else
+            ret_flag=true;
     }   // if
 
     // step 2, first thread to arrive initiates close
@@ -231,6 +237,7 @@ DbObject::CreateDbObject(
 
     // manual reference increase to keep active until "eleveldb_close" called
     ret_ptr->RefInc();
+    ret_ptr->m_RecentErlangPtr=(void * volatile *)alloc_ptr;
 
     return(alloc_ptr);
 
@@ -449,6 +456,7 @@ ItrObject::CreateItrObject(
 
     // manual reference increase to keep active until "eleveldb_iterator_close" called
     ret_ptr->RefInc();
+    ret_ptr->m_RecentErlangPtr=(void * volatile *)alloc_ptr;
 
     return(alloc_ptr);
 
