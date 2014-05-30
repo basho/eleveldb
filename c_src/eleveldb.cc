@@ -950,21 +950,29 @@ async_close(
        return enif_make_badarg(env);
     }
 
-    // likely useless
-    if(NULL == db_ptr->m_Db)
-        return send_reply(env, caller_ref, error_einval(env));
-
-    eleveldb::WorkTask *work_item = new eleveldb::CloseTask(env, caller_ref,
-                                                            db_ptr.get());
-
-    // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
-    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-    if(false == priv.thread_pool.submit(work_item))
+    // verify that Erlang has not called DbObjectResourceCleanup
+    //  already (that would be bad)
+    if (NULL!=db_ptr->m_Db
+        && compare_and_swap(db_ptr->m_ErlangThisPtr, db_ptr.get(), (DbObject *)NULL))
     {
-        delete work_item;
-        return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
+        eleveldb::WorkTask *work_item = new eleveldb::CloseTask(env, caller_ref,
+                                                                db_ptr.get());
+
+        // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
+        eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+        if(false == priv.thread_pool.submit(work_item))
+        {
+            delete work_item;
+            return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
+        }   // if
     }   // if
+
+    // Erlang already did cleanup
+    else
+    {
+        return send_reply(env, caller_ref, error_einval(env));
+    }   // else
 
     return ATOM_OK;
 
@@ -989,17 +997,28 @@ async_iterator_close(
        return enif_make_badarg(env);
     }
 
-    eleveldb::WorkTask *work_item = new eleveldb::ItrCloseTask(env, caller_ref,
-                                                               itr_ptr.get());
-
-    // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
-    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-    if(false == priv.thread_pool.submit(work_item))
+    // verify that Erlang has not called ItrObjectResourceCleanup AND
+    //  that a database close has not already started death proceedings
+    if (compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr.get(), (ItrObject *)NULL))
     {
-        delete work_item;
-        return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
+        eleveldb::WorkTask *work_item = new eleveldb::ItrCloseTask(env, caller_ref,
+                                                                   itr_ptr.get());
+
+        // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
+        eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+        if(false == priv.thread_pool.submit(work_item))
+        {
+            delete work_item;
+            return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
+        }   // if
     }   // if
+
+    // this close/cleanup call is way late ... bad programmer!
+    else
+    {
+        return send_reply(env, caller_ref, error_einval(env));
+    }   // else
 
     return ATOM_OK;
 

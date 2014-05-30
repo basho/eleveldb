@@ -82,7 +82,7 @@ RefObject::RefDec()
  */
 
 ErlRefObject::ErlRefObject()
-    : m_RecentErlangPtr(NULL), m_CloseRequested(0)
+    : m_ErlangThisPtr(NULL), m_CloseRequested(0)
 {
     pthread_mutexattr_t attr;
 
@@ -104,53 +104,27 @@ ErlRefObject::~ErlRefObject()
 }   // ErlRefObject::~ErlRefObject
 
 
-bool
-ErlRefObject::InitiateCloseRequest(
-    bool ErlangCalling)  //!< true if called from Erlang close, false if C thread
+void
+ErlRefObject::InitiateCloseRequest()
 {
-    bool ret_flag;
+    m_CloseRequested=1;
 
-    ret_flag=ErlangCalling;
+    Shutdown();
 
-    // step 1, kill Erlang's access
-    if (!ret_flag)
+    // WAIT for shutdown to complete
+    pthread_mutex_lock(&m_CloseMutex);
+
+    // one ref from construction, one ref from broadcast in RefDec below
+    if (1<m_RefCount)
     {
-        void * erl_ptr;
+        pthread_cond_wait(&m_CloseCond, &m_CloseMutex);
+    }   // while
+    pthread_mutex_unlock(&m_CloseMutex);
 
-        // edge case should no longer possible.
-        if (NULL!=m_RecentErlangPtr)
-        {
-            erl_ptr=*m_RecentErlangPtr;
-            ret_flag=(compare_and_swap(m_RecentErlangPtr, erl_ptr, (void *)NULL)
-                      && NULL!=erl_ptr);
-        }   // if
-        else
-            ret_flag=true;
-    }   // if
+    m_CloseRequested=3;
+    RefDec();
 
-    // step 2, first thread to arrive initiates close
-    //   ask object to clean-up
-    if (ret_flag)
-    {
-        m_CloseRequested=1;
-
-        Shutdown();
-
-        // WAIT for shutdown to complete
-        pthread_mutex_lock(&m_CloseMutex);
-
-        // one ref from construction, one ref from broadcast in RefDec below
-        if (1<m_RefCount)
-        {
-            pthread_cond_wait(&m_CloseCond, &m_CloseMutex);
-        }   // while
-        pthread_mutex_unlock(&m_CloseMutex);
-
-        m_CloseRequested=3;
-        RefDec();
-    }   // if
-
-    return(ret_flag);
+    return;
 
 }   // ErlRefObject::InitiateCloseRequest
 
@@ -237,7 +211,7 @@ DbObject::CreateDbObject(
 
     // manual reference increase to keep active until "eleveldb_close" called
     ret_ptr->RefInc();
-    ret_ptr->m_RecentErlangPtr=(void * volatile *)alloc_ptr;
+    ret_ptr->m_ErlangThisPtr=(void * volatile *)alloc_ptr;
 
     return(alloc_ptr);
 
@@ -259,8 +233,6 @@ DbObject::RetrieveDbObject(
 
         if (NULL!=ret_ptr)
         {
-            ret_ptr->m_RecentErlangPtr=(void **)db_ptr_ptr;
-
             // has close been requested?
             if (0!=ret_ptr->m_CloseRequested)
             {
@@ -290,7 +262,7 @@ DbObject::DbObjectResourceCleanup(
     if (compare_and_swap(erl_ptr, db_ptr, (DbObject *)NULL)
         && NULL!=db_ptr)
     {
-        db_ptr->InitiateCloseRequest(true);
+        db_ptr->InitiateCloseRequest();
     }   // if
 
     return;
@@ -358,8 +330,11 @@ DbObject::Shutdown()
         // must be outside lock so ItrObject can attempt
         //  RemoveReference
         if (again)
-            itr_ptr->ItrObject::InitiateCloseRequest(false);
-
+        {
+            // follow protocol, only one thread calls Initiate
+            if (compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr, (ItrObject *)NULL))
+                itr_ptr->ItrObject::InitiateCloseRequest();
+        }   // if
     } while(again);
 
     return;
@@ -456,7 +431,7 @@ ItrObject::CreateItrObject(
 
     // manual reference increase to keep active until "eleveldb_iterator_close" called
     ret_ptr->RefInc();
-    ret_ptr->m_RecentErlangPtr=(void * volatile *)alloc_ptr;
+    ret_ptr->m_ErlangThisPtr=(void * volatile *)alloc_ptr;
 
     return(alloc_ptr);
 
@@ -478,8 +453,6 @@ ItrObject::RetrieveItrObject(
 
         if (NULL!=ret_ptr)
         {
-            ret_ptr->m_RecentErlangPtr=(void **)itr_ptr_ptr;
-
             // has close been requested?
             if (ret_ptr->m_CloseRequested
                 || (!ItrClosing && ret_ptr->m_DbPtr->m_CloseRequested))
@@ -510,7 +483,7 @@ ItrObject::ItrObjectResourceCleanup(
     if (compare_and_swap(erl_ptr, itr_ptr, (ItrObject *)NULL)
         && NULL!=itr_ptr)
     {
-        itr_ptr->InitiateCloseRequest(true);
+        itr_ptr->InitiateCloseRequest();
     }   // if
 
     return;

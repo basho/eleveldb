@@ -79,10 +79,10 @@ private:
 class ErlRefObject : public RefObject
 {
 public:
-    // Pointer to "this" from within Erlang heap
-    // First thread to clear "this" in InitiateCloseRequest()
+    // Pointer to "this" from within Erlang heap.
+    // First thread to clear "this" in Erlang heap
     //  owns the shutdown (Erlang or async C)
-    void * volatile * m_RecentErlangPtr;
+    void * volatile * m_ErlangThisPtr;
 
     // 1 once InitiateCloseRequest starts,
     // 2 other pointers to "this" released
@@ -106,7 +106,7 @@ public:
 
     virtual void Shutdown()=0;
 
-    virtual bool InitiateCloseRequest(bool ErlangCalling);
+    void InitiateCloseRequest();
 
 private:
     ErlRefObject(const ErlRefObject&);              // nocopy

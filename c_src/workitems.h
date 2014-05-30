@@ -374,7 +374,7 @@ public:
         if (NULL!=db_ptr)
         {
             // set closing flag, this is blocking
-            db_ptr->InitiateCloseRequest(false);
+            db_ptr->InitiateCloseRequest();
 
             // db_ptr no longer valid
             db_ptr=NULL;
@@ -422,7 +422,7 @@ public:
         if (NULL!=itr_ptr)
         {
             // set closing flag, this is blocking
-            itr_ptr->InitiateCloseRequest(false);
+            itr_ptr->InitiateCloseRequest();
 
             // itr_ptr no longer valid
             itr_ptr=NULL;
