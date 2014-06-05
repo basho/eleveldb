@@ -1,4 +1,3 @@
-// -------------------------------------------------------------------
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
@@ -202,7 +201,7 @@ public:
 
     static void * CreateDbObject(leveldb::DB * Db, leveldb::Options * DbOptions);
 
-    static DbObject * RetrieveDbObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm);
+    static DbObject * RetrieveDbObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm, bool * term_ok=NULL);
 
     static void DbObjectResourceCleanup(ErlNifEnv *Env, void * Arg);
 

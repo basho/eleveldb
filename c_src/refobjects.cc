@@ -221,14 +221,21 @@ DbObject::CreateDbObject(
 DbObject *
 DbObject::RetrieveDbObject(
     ErlNifEnv * Env,
-    const ERL_NIF_TERM & DbTerm)
+    const ERL_NIF_TERM & DbTerm,
+    bool * term_ok)
 {
     DbObject ** db_ptr_ptr, * ret_ptr;
 
     ret_ptr=NULL;
 
+    if (NULL!=term_ok)
+        *term_ok=false;
+
     if (enif_get_resource(Env, DbTerm, m_Db_RESOURCE, (void **)&db_ptr_ptr))
     {
+        if (NULL!=term_ok)
+            *term_ok=true;
+
         ret_ptr=*db_ptr_ptr;
 
         if (NULL!=ret_ptr)
