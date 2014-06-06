@@ -391,7 +391,7 @@ public:
 
 
 /**
- * Background object for async databass close
+ * Background object for async iterator close
  */
 
 class ItrCloseTask : public WorkTask
