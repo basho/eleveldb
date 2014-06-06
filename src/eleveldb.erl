@@ -132,10 +132,11 @@ open(Name, Opts) ->
 
 -spec close(db_ref()) -> ok | {error, any()}.
 close(Ref) ->
-    eleveldb_bump:big(),
-    close_int(Ref).
+    CallerRef = make_ref(),
+    async_close(CallerRef, Ref),
+    ?WAIT_FOR_REPLY(CallerRef).
 
-close_int(_Ref) ->
+async_close(_CallerRef, _Ref) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec async_get(reference(), db_ref(), binary(), read_options()) -> ok.
@@ -209,10 +210,11 @@ iterator_move(_IRef, _Loc) ->
 
 -spec iterator_close(itr_ref()) -> ok.
 iterator_close(IRef) ->
-    eleveldb_bump:small(),
-    iterator_close_int(IRef).
+    CallerRef = make_ref(),
+    async_iterator_close(CallerRef, IRef),
+    ?WAIT_FOR_REPLY(CallerRef).
 
-iterator_close_int(_IRef) ->
+async_iterator_close(_CallerRef, _IRef) ->
     erlang:nif_error({error, not_loaded}).
 
 -type fold_fun() :: fun(({Key::binary(), Value::binary()}, any()) -> any()).
