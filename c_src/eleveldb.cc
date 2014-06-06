@@ -940,10 +940,11 @@ async_close(
 {
     const ERL_NIF_TERM& caller_ref  = argv[0];
     const ERL_NIF_TERM& dbh_ref     = argv[1];
+    bool term_ok=false;
 
     ReferencePtr<DbObject> db_ptr;
 
-    db_ptr.assign(DbObject::RetrieveDbObject(env, dbh_ref));
+    db_ptr.assign(DbObject::RetrieveDbObject(env, dbh_ref, &term_ok));
 
     if(NULL==db_ptr.get() || 0!=db_ptr->m_CloseRequested)
     {
@@ -967,9 +968,7 @@ async_close(
             return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
         }   // if
     }   // if
-
-    // Erlang already did cleanup
-    else
+    else if (!term_ok)
     {
         return send_reply(env, caller_ref, error_einval(env));
     }   // else

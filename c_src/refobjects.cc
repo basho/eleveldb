@@ -227,6 +227,10 @@ DbObject::RetrieveDbObject(
     DbObject ** db_ptr_ptr, * ret_ptr;
 
     ret_ptr=NULL;
+    if (NULL!=term_ok)
+    {
+        *term_ok=false;
+    }
 
     if (NULL!=term_ok)
         *term_ok=false;
