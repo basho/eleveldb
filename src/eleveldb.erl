@@ -211,8 +211,9 @@ iterator_move(_IRef, _Loc) ->
 -spec iterator_close(itr_ref()) -> ok.
 iterator_close(IRef) ->
     CallerRef = make_ref(),
-    async_iterator_close(CallerRef, IRef),
-    ?WAIT_FOR_REPLY(CallerRef).
+    async_iterator_close(CallerRef, IRef).
+
+%%    ?WAIT_FOR_REPLY(CallerRef).
 
 async_iterator_close(_CallerRef, _IRef) ->
     erlang:nif_error({error, not_loaded}).

@@ -104,6 +104,30 @@ ErlRefObject::~ErlRefObject()
 }   // ErlRefObject::~ErlRefObject
 
 
+bool
+ErlRefObject::ClaimCloseFromCThread()
+{
+    bool ret_flag;
+    void * volatile * erlang_ptr;
+
+    ret_flag=false;
+
+    // first C thread claims contents of m_ErlangThisPtr and sets it to NULL
+    //  This reduces number of times C code might look into Erlang heap memory
+    //  that has garbage collected
+    erlang_ptr=m_ErlangThisPtr;
+    if (compare_and_swap(&m_ErlangThisPtr, erlang_ptr, (void * volatile *)NULL)
+        && NULL!=erlang_ptr)
+    {
+        // now test if this C thread preceded Erlang in claiming the close operation
+        ret_flag=compare_and_swap(erlang_ptr, (void volatile *)this,(void volatile *) NULL);
+    }   // if
+
+    return(ret_flag);
+
+}   // ErlRefObject::ClaimCloseFromCThread
+
+
 void
 ErlRefObject::InitiateCloseRequest()
 {
@@ -343,7 +367,8 @@ DbObject::Shutdown()
         if (again)
         {
             // follow protocol, only one thread calls Initiate
-            if (compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr, (ItrObject *)NULL))
+//            if (compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr, (ItrObject *)NULL))
+            if (itr_ptr->ClaimCloseFromCThread())
                 itr_ptr->ItrObject::InitiateCloseRequest();
         }   // if
     } while(again);
