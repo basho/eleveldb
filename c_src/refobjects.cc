@@ -531,7 +531,8 @@ ItrObject::ItrObject(
     DbObject * DbPtr,
     bool KeysOnly,
     leveldb::ReadOptions & Options)
-    : keys_only(KeysOnly), m_ReadOptions(Options), reuse_move(NULL), m_DbPtr(DbPtr)
+    : keys_only(KeysOnly), m_ReadOptions(Options), reuse_move(NULL),
+      m_DbPtr(DbPtr), itr_ref_env(NULL)
 {
     if (NULL!=DbPtr)
         DbPtr->AddReference(this);
