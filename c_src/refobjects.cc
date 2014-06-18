@@ -566,6 +566,14 @@ ItrObject::Shutdown()
     //   release when move object destructs)
     ReleaseReuseMove();
 
+    // only need this to create new Move objects,
+    //  get rid of it early
+    if (NULL!=itr_ref_env)
+    {
+        enif_free_env(itr_ref_env);
+        itr_ref_env=NULL;
+    }   // if
+
     // ItrObject and m_Iter each hold pointers to other, release ours
     m_Iter.assign(NULL);
 
