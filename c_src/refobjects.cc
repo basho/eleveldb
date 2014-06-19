@@ -139,7 +139,8 @@ ErlRefObject::InitiateCloseRequest()
     pthread_mutex_lock(&m_CloseMutex);
 
     // one ref from construction, one ref from broadcast in RefDec below
-    if (1<m_RefCount)
+    //  (only wait if RefDec has not signaled)
+    if (0<m_RefCount && 1==m_CloseRequested)
     {
         pthread_cond_wait(&m_CloseCond, &m_CloseMutex);
     }   // while
@@ -169,7 +170,7 @@ ErlRefObject::RefDec()
         m_CloseRequested=2;
 
         // is there really more than one ref count now?
-        flag=(0<cur_count);
+        flag=(0<m_RefCount);
         if (flag)
         {
             RefObject::RefInc();
