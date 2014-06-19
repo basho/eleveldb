@@ -120,7 +120,7 @@ ErlRefObject::ClaimCloseFromCThread()
         && NULL!=erlang_ptr)
     {
         // now test if this C thread preceded Erlang in claiming the close operation
-        ret_flag=compare_and_swap(erlang_ptr, (void volatile *)this,(void volatile *) NULL);
+        ret_flag=compare_and_swap((void **)erlang_ptr, (void *)this,(void *) NULL);
     }   // if
 
     return(ret_flag);
@@ -140,7 +140,7 @@ ErlRefObject::InitiateCloseRequest()
 
     // one ref from construction, one ref from broadcast in RefDec below
     //  (only wait if RefDec has not signaled)
-    if (0<m_RefCount && 1==m_CloseRequested)
+    if (1<m_RefCount && 1==m_CloseRequested)
     {
         pthread_cond_wait(&m_CloseCond, &m_CloseMutex);
     }   // while
@@ -159,13 +159,13 @@ ErlRefObject::RefDec()
 {
     uint32_t cur_count;
 
+    pthread_mutex_lock(&m_CloseMutex);
     cur_count=eleveldb::dec_and_fetch(&m_RefCount);
 
     if (cur_count<2 && 1==m_CloseRequested)
     {
         bool flag;
 
-        pthread_mutex_lock(&m_CloseMutex);
         // state 2 is sign that all secondary references have cleared
         m_CloseRequested=2;
 
@@ -176,7 +176,6 @@ ErlRefObject::RefDec()
             RefObject::RefInc();
             pthread_cond_broadcast(&m_CloseCond);
         }   // if
-        pthread_mutex_unlock(&m_CloseMutex);
 
         // this "flag" and ref count dance is to ensure
         //  that the mutex unlock is called on all threads
@@ -184,14 +183,15 @@ ErlRefObject::RefDec()
         if (flag)
             RefObject::RefDec();
         else
-            delete this;
+            cur_count=0;
     }   // if
+    pthread_mutex_unlock(&m_CloseMutex);
 
-    else if (0==cur_count)
+    if (0==cur_count)
     {
         assert(0!=m_CloseRequested);
         delete this;
-    }   // else if
+    }   // if
 
     return(cur_count);
 
