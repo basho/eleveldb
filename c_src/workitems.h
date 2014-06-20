@@ -427,11 +427,13 @@ public:
             // itr_ptr no longer valid
             itr_ptr=NULL;
 
-            return(work_result(ATOM_OK));
+//            return(work_result(ATOM_OK));
+            return(work_result());  // no message
         }   // if
         else
         {
-            return work_result(local_env(), ATOM_ERROR, ATOM_BADARG);
+//            return work_result(local_env(), ATOM_ERROR, ATOM_BADARG);
+            return(work_result());  // no message
         }   // else
     }
 

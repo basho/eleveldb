@@ -104,6 +104,30 @@ ErlRefObject::~ErlRefObject()
 }   // ErlRefObject::~ErlRefObject
 
 
+bool
+ErlRefObject::ClaimCloseFromCThread()
+{
+    bool ret_flag;
+    void * volatile * erlang_ptr;
+
+    ret_flag=false;
+
+    // first C thread claims contents of m_ErlangThisPtr and sets it to NULL
+    //  This reduces number of times C code might look into Erlang heap memory
+    //  that has garbage collected
+    erlang_ptr=m_ErlangThisPtr;
+    if (compare_and_swap(&m_ErlangThisPtr, erlang_ptr, (void * volatile *)NULL)
+        && NULL!=erlang_ptr)
+    {
+        // now test if this C thread preceded Erlang in claiming the close operation
+        ret_flag=compare_and_swap((void **)erlang_ptr, (void *)this,(void *) NULL);
+    }   // if
+
+    return(ret_flag);
+
+}   // ErlRefObject::ClaimCloseFromCThread
+
+
 void
 ErlRefObject::InitiateCloseRequest()
 {
@@ -115,7 +139,8 @@ ErlRefObject::InitiateCloseRequest()
     pthread_mutex_lock(&m_CloseMutex);
 
     // one ref from construction, one ref from broadcast in RefDec below
-    if (1<m_RefCount)
+    //  (only wait if RefDec has not signaled)
+    if (1<m_RefCount && 1==m_CloseRequested)
     {
         pthread_cond_wait(&m_CloseCond, &m_CloseMutex);
     }   // while
@@ -134,24 +159,23 @@ ErlRefObject::RefDec()
 {
     uint32_t cur_count;
 
+    pthread_mutex_lock(&m_CloseMutex);
     cur_count=eleveldb::dec_and_fetch(&m_RefCount);
 
     if (cur_count<2 && 1==m_CloseRequested)
     {
         bool flag;
 
-        pthread_mutex_lock(&m_CloseMutex);
         // state 2 is sign that all secondary references have cleared
         m_CloseRequested=2;
 
         // is there really more than one ref count now?
-        flag=(0<cur_count);
+        flag=(0<m_RefCount);
         if (flag)
         {
             RefObject::RefInc();
             pthread_cond_broadcast(&m_CloseCond);
         }   // if
-        pthread_mutex_unlock(&m_CloseMutex);
 
         // this "flag" and ref count dance is to ensure
         //  that the mutex unlock is called on all threads
@@ -159,14 +183,15 @@ ErlRefObject::RefDec()
         if (flag)
             RefObject::RefDec();
         else
-            delete this;
+            cur_count=0;
     }   // if
+    pthread_mutex_unlock(&m_CloseMutex);
 
-    else if (0==cur_count)
+    if (0==cur_count)
     {
         assert(0!=m_CloseRequested);
         delete this;
-    }   // else if
+    }   // if
 
     return(cur_count);
 
@@ -343,7 +368,8 @@ DbObject::Shutdown()
         if (again)
         {
             // follow protocol, only one thread calls Initiate
-            if (compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr, (ItrObject *)NULL))
+//            if (compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr, (ItrObject *)NULL))
+            if (itr_ptr->ClaimCloseFromCThread())
                 itr_ptr->ItrObject::InitiateCloseRequest();
         }   // if
     } while(again);
@@ -506,7 +532,8 @@ ItrObject::ItrObject(
     DbObject * DbPtr,
     bool KeysOnly,
     leveldb::ReadOptions & Options)
-    : keys_only(KeysOnly), m_ReadOptions(Options), reuse_move(NULL), m_DbPtr(DbPtr)
+    : keys_only(KeysOnly), m_ReadOptions(Options), reuse_move(NULL),
+      m_DbPtr(DbPtr), itr_ref_env(NULL)
 {
     if (NULL!=DbPtr)
         DbPtr->AddReference(this);
@@ -540,6 +567,14 @@ ItrObject::Shutdown()
     //  (reuse_move holds a counter to this object, which will
     //   release when move object destructs)
     ReleaseReuseMove();
+
+    // only need this to create new Move objects,
+    //  get rid of it early
+    if (NULL!=itr_ref_env)
+    {
+        enif_free_env(itr_ref_env);
+        itr_ref_env=NULL;
+    }   // if
 
     // ItrObject and m_Iter each hold pointers to other, release ours
     m_Iter.assign(NULL);

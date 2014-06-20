@@ -105,6 +105,8 @@ public:
 
     virtual void Shutdown()=0;
 
+    bool ClaimCloseFromCThread();
+
     void InitiateCloseRequest();
 
 private:

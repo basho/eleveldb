@@ -772,7 +772,7 @@ async_iterator_move(
 
     itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_handle_ref));
 
-    if(NULL==itr_ptr.get())
+    if(NULL==itr_ptr.get() || 0!=itr_ptr->m_CloseRequested)
         return enif_make_badarg(env);
 
     // Reuse ref from iterator creation
@@ -954,7 +954,8 @@ async_close(
     // verify that Erlang has not called DbObjectResourceCleanup
     //  already (that would be bad)
     if (NULL!=db_ptr->m_Db
-        && compare_and_swap(db_ptr->m_ErlangThisPtr, db_ptr.get(), (DbObject *)NULL))
+//        && compare_and_swap(db_ptr->m_ErlangThisPtr, db_ptr.get(), (DbObject *)NULL))
+        && db_ptr->ClaimCloseFromCThread())
     {
         eleveldb::WorkTask *work_item = new eleveldb::CloseTask(env, caller_ref,
                                                                 db_ptr.get());
@@ -998,7 +999,8 @@ async_iterator_close(
 
     // verify that Erlang has not called ItrObjectResourceCleanup AND
     //  that a database close has not already started death proceedings
-    if (compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr.get(), (ItrObject *)NULL))
+//    if (compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr.get(), (ItrObject *)NULL))
+    if (itr_ptr->ClaimCloseFromCThread())
     {
         eleveldb::WorkTask *work_item = new eleveldb::ItrCloseTask(env, caller_ref,
                                                                    itr_ptr.get());
