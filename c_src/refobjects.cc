@@ -116,7 +116,7 @@ ErlRefObject::ClaimCloseFromCThread()
     //  This reduces number of times C code might look into Erlang heap memory
     //  that has garbage collected
     erlang_ptr=m_ErlangThisPtr;
-    if (compare_and_swap(&m_ErlangThisPtr, erlang_ptr, (void * volatile *)NULL)
+    if (compare_and_swap((void**)&m_ErlangThisPtr, (void *)erlang_ptr, (void *)NULL)
         && NULL!=erlang_ptr)
     {
         // now test if this C thread preceded Erlang in claiming the close operation
