@@ -999,7 +999,6 @@ async_iterator_close(
 
     // verify that Erlang has not called ItrObjectResourceCleanup AND
     //  that a database close has not already started death proceedings
-//    if (compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr.get(), (ItrObject *)NULL))
     if (itr_ptr->ClaimCloseFromCThread())
     {
         eleveldb::WorkTask *work_item = new eleveldb::ItrCloseTask(env, caller_ref,
