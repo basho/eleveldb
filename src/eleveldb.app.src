@@ -1,7 +1,7 @@
 {application, eleveldb,
  [
   {description, ""},
-  {vsn, git},
+  {vsn, "git"},
   {registered, []},
   {applications, [
                   kernel,
