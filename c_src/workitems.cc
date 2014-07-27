@@ -156,7 +156,7 @@ OpenTask::OpenTask(
 work_result
 OpenTask::operator()()
 {
-    DbObject * db_ptr;
+    void * db_ptr_ptr;
     leveldb::DB *db(0);
 
     leveldb::Status status = leveldb::DB::Open(*open_options, db_name, &db);
@@ -164,13 +164,13 @@ OpenTask::operator()()
     if(!status.ok())
         return error_tuple(local_env(), ATOM_ERROR_DB_OPEN, status);
 
-    db_ptr=DbObject::CreateDbObject(db, open_options);
+    db_ptr_ptr=DbObject::CreateDbObject(db, open_options);
 
     // create a resource reference to send erlang
-    ERL_NIF_TERM result = enif_make_resource(local_env(), db_ptr);
+    ERL_NIF_TERM result = enif_make_resource(local_env(), db_ptr_ptr);
 
     // clear the automatic reference from enif_alloc_resource in CreateDbObject
-    enif_release_resource(db_ptr);
+    enif_release_resource(db_ptr_ptr);
 
     return work_result(local_env(), ATOM_OK, result);
 

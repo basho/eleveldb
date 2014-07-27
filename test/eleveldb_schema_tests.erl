@@ -13,7 +13,7 @@ basic_schema_test() ->
         ["../priv/eleveldb.schema"], [], context(), predefined_schema()),
 
     cuttlefish_unit:assert_config(Config, "eleveldb.data_root", "./data/leveldb"),
-    cuttlefish_unit:assert_config(Config, "eleveldb.total_leveldb_mem_percent", 80),
+    cuttlefish_unit:assert_config(Config, "eleveldb.total_leveldb_mem_percent", 70),
     cuttlefish_unit:assert_not_configured(Config, "eleveldb.total_leveldb_mem"),
     cuttlefish_unit:assert_config(Config, "eleveldb.sync", false),
     cuttlefish_unit:assert_config(Config, "eleveldb.limited_developer_mem", false),
@@ -27,6 +27,11 @@ basic_schema_test() ->
     cuttlefish_unit:assert_config(Config, "eleveldb.eleveldb_threads", 71),
     cuttlefish_unit:assert_config(Config, "eleveldb.fadvise_willneed", false),
     cuttlefish_unit:assert_config(Config, "eleveldb.delete_threshold", 1000),
+    cuttlefish_unit:assert_config(Config, "eleveldb.compression", true),
+    cuttlefish_unit:assert_config(Config, "eleveldb.tiered_slow_level", 0),
+    cuttlefish_unit:assert_not_configured(Config, "eleveldb.tiered_fast_prefix"),
+    cuttlefish_unit:assert_not_configured(Config, "eleveldb.tiered_slow_prefix"),
+
     %% Make sure no multi_backend
     %% Warning: The following line passes by coincidence. It's because the
     %% first mapping in the schema has no default defined. Testing strategy
@@ -52,7 +57,11 @@ override_schema_test() ->
             {["leveldb", "verify_compaction"], off},
             {["leveldb", "threads"], 7},
             {["leveldb", "fadvise_willneed"], true},
-            {["leveldb", "compaction", "trigger", "tombstone_count"], off}
+            {["leveldb", "compression"], off},
+            {["leveldb", "compaction", "trigger", "tombstone_count"], off},
+            {["leveldb", "tiered"], "2"},
+            {["leveldb", "tiered", "path", "fast"], "/mnt/speedy"},
+            {["leveldb", "tiered", "path", "slow"], "/mnt/slowpoke"}
            ],
 
     %% The defaults are defined in ../priv/eleveldb.schema.
@@ -75,12 +84,47 @@ override_schema_test() ->
     cuttlefish_unit:assert_config(Config, "eleveldb.eleveldb_threads", 7),
     cuttlefish_unit:assert_config(Config, "eleveldb.fadvise_willneed", true),
     cuttlefish_unit:assert_config(Config, "eleveldb.delete_threshold", 0),
+    cuttlefish_unit:assert_config(Config, "eleveldb.compression", false),
+    cuttlefish_unit:assert_config(Config, "eleveldb.tiered_slow_level", 2),
+    cuttlefish_unit:assert_config(Config, "eleveldb.tiered_fast_prefix", "/mnt/speedy"),
+    cuttlefish_unit:assert_config(Config, "eleveldb.tiered_slow_prefix", "/mnt/slowpoke"),
 
     %% Make sure no multi_backend
     %% Warning: The following line passes by coincidence. It's because the
     %% first mapping in the schema has no default defined. Testing strategy
     %% for multibackend needs to be revisited.
     cuttlefish_unit:assert_not_configured(Config, "riak_kv.multi_backend"),
+    ok.
+
+multi_backend_test() ->
+    Conf = [
+            {["multi_backend", "default", "storage_backend"], leveldb},
+            {["multi_backend", "default", "leveldb", "data_root"], "/data/default_leveldb"}
+           ],
+    Config = cuttlefish_unit:generate_templated_config(
+               ["../priv/eleveldb.schema", "../priv/eleveldb_multi.schema", "../test/multi_backend.schema"],
+               Conf, context(), predefined_schema()),
+
+    MultiBackendConfig = proplists:get_value(multi_backend, proplists:get_value(riak_kv, Config)),
+
+    {<<"default">>, riak_kv_eleveldb_backend, DefaultBackend} = lists:keyfind(<<"default">>, 1, MultiBackendConfig),
+
+    cuttlefish_unit:assert_config(DefaultBackend, "data_root", "/data/default_leveldb"),
+
+    cuttlefish_unit:assert_config(DefaultBackend, "total_leveldb_mem_percent", 35),
+    cuttlefish_unit:assert_not_configured(DefaultBackend, "total_leveldb_mem"),
+    cuttlefish_unit:assert_config(DefaultBackend, "sync", false),
+    cuttlefish_unit:assert_config(DefaultBackend, "limited_developer_mem", false),
+    cuttlefish_unit:assert_config(DefaultBackend, "write_buffer_size_min", 15728640),
+    cuttlefish_unit:assert_config(DefaultBackend, "write_buffer_size_max", 31457280),
+    cuttlefish_unit:assert_config(DefaultBackend, "use_bloomfilter", true),
+    cuttlefish_unit:assert_config(DefaultBackend, "sst_block_size", 4096),
+    cuttlefish_unit:assert_config(DefaultBackend, "block_restart_interval", 16),
+    cuttlefish_unit:assert_config(DefaultBackend, "verify_checksums", true),
+    cuttlefish_unit:assert_config(DefaultBackend, "verify_compaction", true),
+    cuttlefish_unit:assert_config(DefaultBackend, "eleveldb_threads", 71),
+    cuttlefish_unit:assert_config(DefaultBackend, "fadvise_willneed", false),
+    cuttlefish_unit:assert_config(DefaultBackend, "delete_threshold", 1000),
     ok.
 
 %% this context() represents the substitution variables that rebar

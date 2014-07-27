@@ -99,7 +99,10 @@ init() ->
                          {eleveldb_threads, pos_integer()} |
                          {fadvise_willneed, boolean()} |
                          {block_cache_threshold, pos_integer()} |
-                         {delete_threshold, pos_integer()}].
+                         {delete_threshold, pos_integer()} |
+                         {tiered_slow_level, pos_integer()} |
+                         {tiered_fast_prefix, string()} |
+                         {tiered_slow_prefix, string()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()} |
@@ -117,7 +120,7 @@ init() ->
 
 -opaque itr_ref() :: binary().
 
--spec async_open(reference(), string(), open_options()) -> {ok, db_ref()} | {error, any()}.
+-spec async_open(reference(), string(), open_options()) -> ok.
 async_open(_CallerRef, _Name, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
@@ -130,10 +133,11 @@ open(Name, Opts) ->
 
 -spec close(db_ref()) -> ok | {error, any()}.
 close(Ref) ->
-    eleveldb_bump:big(),
-    close_int(Ref).
+    CallerRef = make_ref(),
+    async_close(CallerRef, Ref),
+    ?WAIT_FOR_REPLY(CallerRef).
 
-close_int(_Ref) ->
+async_close(_CallerRef, _Ref) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec async_get(reference(), db_ref(), binary(), read_options()) -> ok.
@@ -158,12 +162,12 @@ write(Ref, Updates, Opts) ->
     async_write(CallerRef, Ref, Updates, Opts),
     ?WAIT_FOR_REPLY(CallerRef).
 
--spec async_write(reference(), db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
+-spec async_write(reference(), db_ref(), write_actions(), write_options()) -> ok.
 async_write(_CallerRef, _Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
--spec async_iterator(reference(), db_ref(), read_options()) -> {_CallerRef, ok, itr_ref()}.
--spec async_iterator(reference(), db_ref(), read_options(), keys_only) -> {_CallerRef, ok, itr_ref()}.
+-spec async_iterator(reference(), db_ref(), read_options()) -> ok.
+-spec async_iterator(reference(), db_ref(), read_options(), keys_only) -> ok.
 async_iterator(_CallerRef, _Ref, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
@@ -207,10 +211,11 @@ iterator_move(_IRef, _Loc) ->
 
 -spec iterator_close(itr_ref()) -> ok.
 iterator_close(IRef) ->
-    eleveldb_bump:small(),
-    iterator_close_int(IRef).
+    CallerRef = make_ref(),
+    async_iterator_close(CallerRef, IRef),
+    ?WAIT_FOR_REPLY(CallerRef).
 
-iterator_close_int(_IRef) ->
+async_iterator_close(_CallerRef, _IRef) ->
     erlang:nif_error({error, not_loaded}).
 
 -type fold_fun() :: fun(({Key::binary(), Value::binary()}, any()) -> any()).
@@ -284,7 +289,10 @@ option_types(open) ->
      {eleveldb_threads, integer},
      {fadvise_willneed, bool},
      {block_cache_threshold, integer},
-     {delete_threshold, integer}];
+     {delete_threshold, integer},
+     {tiered_slow_level, integer},
+     {tiered_fast_prefix, any},
+     {tiered_slow_prefix, any}];
 
 option_types(read) ->
     [{verify_checksums, bool},

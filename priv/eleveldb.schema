@@ -3,12 +3,7 @@
 %% @doc Where LevelDB will store its data.
 {mapping, "leveldb.data_root", "eleveldb.data_root", [
   {datatype, directory},
-  {default, "#(platform_data_dir)/leveldb"}
-]}.
-
-%% @see leveldb.data_root
-{mapping, "multi_backend.$name.leveldb.data_root", "riak_kv.multi_backend", [
-  {datatype, directory},
+  {default, "$(platform_data_dir)/leveldb"},
   hidden
 ]}.
 
@@ -23,13 +18,6 @@
   {datatype, integer}
 ]}.
 
-%% @see leveldb.maximum_memory.percent
-{mapping, "multi_backend.$name.leveldb.maximum_memory.percent", "riak_kv.multi_backend", [
-  {default, "35"},
-  {datatype, integer},
-  hidden
-]}.
-
 %% @doc This parameter defines the number of bytes of server memory to
 %% assign to LevelDB. LevelDB will dynamically adjust its internal
 %% cache sizes to stay within this size. The memory size can
@@ -37,13 +25,6 @@
 %% leveldb.maximum_memory.percent.
 %% @see leveldb.maximum_memory.percent
 {mapping, "leveldb.maximum_memory", "eleveldb.total_leveldb_mem", [
-  {datatype, bytesize},
-  hidden
-]}.
-
-%% @see leveldb.maximum_memory
-{mapping, "multi_backend.$name.leveldb.maximum_memory", "riak_kv.multi_backend", [
-  {default, "512MB"},
   {datatype, bytesize},
   hidden
 ]}.
@@ -57,26 +38,12 @@
   hidden
 ]}.
 
-%% @see leveldb.sync
-{mapping, "multi_backend.$name.leveldb.sync_on_write", "riak_kv.multi_backend", [
-  {default, off},
-  {datatype, flag},
-  hidden
-]}.
-
 %% @doc limited_developer_mem is a Riak specific option that is used
 %% when a developer is testing a high number of vnodes and/or several
 %% VMs on a machine with limited physical memory.  Do NOT use this
 %% option if making performance measurements.  This option overwrites
 %% values given to write_buffer_size_min and write_buffer_size_max.
 {mapping, "leveldb.limited_developer_mem", "eleveldb.limited_developer_mem", [
-  {default, off},
-  {datatype, flag},
-  hidden
-]}.
-
-%% @see leveldb.limited_developer_mem
-{mapping, "multi_backend.$name.leveldb.limited_developer_mem", "riak_kv.multi_backend", [
   {default, off},
   {datatype, flag},
   hidden
@@ -96,22 +63,8 @@
 ]}.
 
 %% @see leveldb.write_buffer_size_min
-{mapping, "multi_backend.$name.leveldb.write_buffer_size_min", "riak_kv.multi_backend", [
-  {default, "15MB"},
-  {datatype, bytesize},
-  hidden
-]}.
-
-%% @see leveldb.write_buffer_size_min
 {mapping, "leveldb.write_buffer_size_max", "eleveldb.write_buffer_size_max", [
   {default, "60MB"},
-  {datatype, bytesize},
-  hidden
-]}.
-
-%% @see leveldb.write_buffer_size_min
-{mapping, "multi_backend.$name.leveldb.write_buffer_size_max", "riak_kv.multi_backend", [
-  {default, "30MB"},
   {datatype, bytesize},
   hidden
 ]}.
@@ -127,25 +80,11 @@
   hidden
 ]}.
 
-%% @see leveldb.bloomfilter
-{mapping, "multi_backend.$name.leveldb.bloomfilter", "riak_kv.multi_backend", [
-  {default, on},
-  {datatype, flag},
-  hidden
-]}.
-
 %% @doc Defines the limit where block cache memory can no longer be
 %% released in favor of the page cache.  This has no impact with
 %% regard to release in favor of file cache.  The value is per
 %% vnode.
 {mapping, "leveldb.block_cache_threshold", "eleveldb.block_cache_threshold", [
-  {default, "32MB"},
-  {datatype, bytesize},
-  hidden
-]}.
-
-%% @see leveldb.block_cache_threshold
-{mapping, "multi_backend.$name.leveldb.block_cache_threshold", "riak_kv.multi_backend", [
   {default, "32MB"},
   {datatype, bytesize},
   hidden
@@ -160,13 +99,6 @@
   hidden
 ]}.
 
-%% @see leveldb.block.size
-{mapping, "multi_backend.$name.leveldb.block.size", "riak_kv.multi_backend", [
-  {default, "4KB"},
-  {datatype, bytesize},
-  hidden
-]}.
-
 %% @doc Defines the key count threshold for a new key entry in the key
 %% index for a block. Most deployments should leave this parameter
 %% alone.
@@ -176,12 +108,6 @@
   hidden
 ]}.
 
-%% @see leveldb.block.restart_interval
-{mapping, "multi_backend.$name.leveldb.block.restart_interval", "riak_kv.multi_backend", [
-  {default, 16},
-  {datatype, integer},
-  hidden
-]}.
 
 %% @doc Defines the number of incremental adjustments to attempt
 %% between the block.size value and the maximum block.size for an .sst
@@ -189,13 +115,6 @@
 %% block_size feature.
 %% @see leveldb.block.size
 {mapping, "leveldb.block.size_steps", "eleveldb.block_size_steps", [
-  {default, 16},
-  {datatype, integer},
-  hidden
-]}.
-
-%% @see leveldb.block.size_steps
-{mapping, "multi_backend.$name.leveldb.block.size_steps", "riak_kv.multi_backend", [
   {default, 16},
   {datatype, integer},
   hidden
@@ -209,13 +128,6 @@
   hidden
 ]}.
 
-%% @see leveldb.verify_checksums
-{mapping, "multi_backend.$name.leveldb.verify_checksums", "riak_kv.multi_backend", [
-  {default, on},
-  {datatype, flag},
-  hidden
-]}.
-
 %% @doc Enables or disables the verification of LevelDB data during
 %% compaction.
 {mapping, "leveldb.verify_compaction", "eleveldb.verify_compaction", [
@@ -224,22 +136,8 @@
   hidden
 ]}.
 
-%% @see leveldb.verify_compaction
-{mapping, "multi_backend.$name.leveldb.verify_compaction", "riak_kv.multi_backend", [
-  {default, on},
-  {datatype, flag},
-  hidden
-]}.
-
 %% @doc The number of worker threads performing LevelDB operations.
 {mapping, "leveldb.threads", "eleveldb.eleveldb_threads", [
-  {default, 71},
-  {datatype, integer},
-  hidden
-]}.
-
-%% @see leveldb.threads
-{mapping, "multi_backend.$name.leveldb.threads", "riak_kv.multi_backend", [
   {default, 71},
   {datatype, integer},
   hidden
@@ -254,10 +152,14 @@
   hidden
 ]}.
 
-%% @see leveldb.fadvise_willneed
-{mapping, "multi_backend.$name.leveldb.fadvise_willneed", "riak_kv.multi_backend", [
-  {default, false},
-  {datatype, {enum, [true, false]}},
+%% @doc Enables or disables the compression of data on disk.
+%% Enabling (default) saves disk space.  Disabling may reduce read
+%% latency but increase overall disk activity.  Option can be
+%% changed at any time, but will not impact data on disk until
+%% next time a file requires compaction.
+{mapping, "leveldb.compression", "eleveldb.compression", [
+  {default, on},
+  {datatype, flag},
   hidden
 ]}.
 
@@ -266,7 +168,8 @@
 %% .sst table file.  Value of 'off' disables the feature.
 {mapping, "leveldb.compaction.trigger.tombstone_count", "eleveldb.delete_threshold", [
   {default, 1000},
-  {datatype, [integer, {atom, off}]}
+  {datatype, [integer, {atom, off}]},
+  hidden
 ]}.
 
 {translation,
@@ -278,8 +181,50 @@
    end
  end}.
 
-%% @see leveldb.delete_threshold
-{mapping, "multi_backend.$name.leveldb.delete_threshold", "riak_kv.multi_backend", [
-  {datatype, [integer, {atom, off}]},
+%% @doc leveldb can be configured to use different mounts for
+%% different levels. This tiered option defaults to off, but you can
+%% configure it to trigger at levels 1-6. If you do this, anything
+%% stored at the chosen level or greater will be stored on
+%% leveldb.tiered.mounts.slow, while everything at the levels below will
+%% be stored on leveldb.tiered.mounts.fast
+%% Levels 3 or 4 are recommended settings.
+%% WARNING: There is no dynamic reallocation of leveldb
+%% data across mounts.  If you change this setting without manually
+%% moving the level files to the correct mounts, leveldb will act in
+%% an unexpected state.
+%% @see leveldb.tiered.mounts.fast
+%% @see leveldb.tiered.mounts.slow
+{mapping, "leveldb.tiered", "eleveldb.tiered_slow_level", [
+  {default, off},
+  {datatype, [
+              {atom, off},
+              {integer, 1},
+              {integer, 2},
+              {integer, 3},
+              {integer, 4},
+              {integer, 5},
+              {integer, 6}
+             ]},
+  hidden
+]}.
+
+{translation, "eleveldb.tiered_slow_level",
+ fun(Conf) ->
+    case cuttlefish:conf_get("leveldb.tiered", Conf) of
+        off -> 0;
+        I -> I
+    end
+ end
+}.
+
+%% @see leveldb.tiered
+{mapping, "leveldb.tiered.path.fast", "eleveldb.tiered_fast_prefix", [
+  {datatype, directory},
+  hidden
+]}.
+
+%% @see leveldb.tiered
+{mapping, "leveldb.tiered.path.slow", "eleveldb.tiered_slow_prefix", [
+  {datatype, directory},
   hidden
 ]}.

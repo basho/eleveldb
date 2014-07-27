@@ -1,8 +1,7 @@
-// -------------------------------------------------------------------
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2013 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2014 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -79,15 +78,20 @@ private:
 class ErlRefObject : public RefObject
 {
 public:
-    // these member objects are public to simplify
-    //  access by statics and external APIs
-    //  (yes, wrapper functions would be welcome)
-    volatile uint32_t m_CloseRequested;  // 1 once api close called, 2 once thread starts destructor, 3 destructor done
+    // Pointer to "this" from within Erlang heap.
+    // First thread to clear "this" in Erlang heap
+    //  owns the shutdown (Erlang or async C)
+    void * volatile * m_ErlangThisPtr;
 
-    // DO NOT USE CONTAINER OBJECTS
-    //  ... these must be live after destructor called
-    pthread_mutex_t m_CloseMutex;        //!< for erlang forced close
-    pthread_cond_t  m_CloseCond;         //!< for erlang forced close
+    // 1 once InitiateCloseRequest starts,
+    // 2 other pointers to "this" released
+    // 3 final RefDec and destructor executing
+    volatile uint32_t m_CloseRequested;
+
+    // It would be nice if leveldb's port::* container objects could be
+    //  be used here.  But requires detailed work relating to build_config.mk
+    pthread_mutex_t m_CloseMutex;        //!< for condition wait
+    pthread_cond_t  m_CloseCond;         //!< for notification of user's finish
 
 protected:
 
@@ -99,20 +103,17 @@ public:
 
     virtual uint32_t RefDec();
 
-    // allows for secondary close actions IF InitiateCloseRequest returns true
     virtual void Shutdown()=0;
 
-    // the following will sometimes be called AFTER the
-    //  destructor ... in which case the vtable is not valid
-    static bool InitiateCloseRequest(ErlRefObject * Object);
+    bool ClaimCloseFromCThread();
 
-    static void AwaitCloseAndDestructor(ErlRefObject * Object);
-
+    void InitiateCloseRequest();
 
 private:
     ErlRefObject(const ErlRefObject&);              // nocopy
     ErlRefObject& operator=(const ErlRefObject&);   // nocopyassign
 };  // class RefObject
+
 
 
 /**
@@ -194,15 +195,15 @@ public:
     virtual void Shutdown();
 
     // manual back link to ItrObjects holding reference to this
-    void AddReference(class ItrObject *);
+    bool AddReference(class ItrObject *);
 
     void RemoveReference(class ItrObject *);
 
     static void CreateDbObjectType(ErlNifEnv * Env);
 
-    static DbObject * CreateDbObject(leveldb::DB * Db, leveldb::Options * DbOptions);
+    static void * CreateDbObject(leveldb::DB * Db, leveldb::Options * DbOptions);
 
-    static DbObject * RetrieveDbObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm);
+    static DbObject * RetrieveDbObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm, bool * term_ok=NULL);
 
     static void DbObjectResourceCleanup(ErlNifEnv *Env, void * Arg);
 
@@ -224,6 +225,7 @@ class LevelIteratorWrapper : public RefObject
 {
 public:
     ReferencePtr<DbObject> m_DbPtr;           //!< need to keep db open for delete of this object
+    ReferencePtr<class ItrObject> m_ItrPtr;         //!< shared itr_ref requires we hold ItrObject
     const leveldb::Snapshot * m_Snapshot;
     leveldb::Iterator * m_Iterator;
     volatile uint32_t m_HandoffAtomic;        //!< matthew's atomic foreground/background prefetch flag.
@@ -237,15 +239,8 @@ public:
     time_t m_IteratorStale;                   //!< time iterator should refresh
     bool m_StillUse;                          //!< true if no error or key end seen
 
-    LevelIteratorWrapper(DbObject * DbPtr, bool KeysOnly,
-                         leveldb::ReadOptions & Options, ERL_NIF_TERM itr_ref)
-        : m_DbPtr(DbPtr), m_Snapshot(NULL), m_Iterator(NULL),
-        m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false),
-        m_Options(Options), itr_ref(itr_ref),
-        m_IteratorStale(0), m_StillUse(true)
-    {
-        RebuildIterator();
-    };
+    LevelIteratorWrapper(ItrObject * ItrPtr, bool KeysOnly,
+                         leveldb::ReadOptions & Options, ERL_NIF_TERM itr_ref);
 
     virtual ~LevelIteratorWrapper()
     {
@@ -328,7 +323,7 @@ public:
 
     static void CreateItrObjectType(ErlNifEnv * Env);
 
-    static ItrObject * CreateItrObject(DbObject * Db, bool KeysOnly, leveldb::ReadOptions & Options);
+    static void * CreateItrObject(DbObject * Db, bool KeysOnly, leveldb::ReadOptions & Options);
 
     static ItrObject * RetrieveItrObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm,
                                          bool ItrClosing=false);

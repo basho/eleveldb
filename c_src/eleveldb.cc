@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2013 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2014 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -60,8 +60,8 @@
 
 static ErlNifFunc nif_funcs[] =
 {
-    {"close", 1, eleveldb_close},
-    {"iterator_close", 1, eleveldb_iterator_close},
+    {"async_close", 2, eleveldb::async_close},
+    {"async_iterator_close", 2, eleveldb::async_iterator_close},
     {"status", 2, eleveldb_status},
     {"destroy", 2, eleveldb_destroy},
     {"repair", 2, eleveldb_repair},
@@ -132,7 +132,9 @@ ERL_NIF_TERM ATOM_LIMITED_DEVELOPER_MEM;
 ERL_NIF_TERM ATOM_ELEVELDB_THREADS;
 ERL_NIF_TERM ATOM_FADVISE_WILLNEED;
 ERL_NIF_TERM ATOM_DELETE_THRESHOLD;
-
+ERL_NIF_TERM ATOM_TIERED_SLOW_LEVEL;
+ERL_NIF_TERM ATOM_TIERED_FAST_PREFIX;
+ERL_NIF_TERM ATOM_TIERED_SLOW_PREFIX;
 }   // namespace eleveldb
 
 
@@ -434,6 +436,32 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             else
                 opts.limited_developer_mem = false;
         }
+
+        else if (option[0] == eleveldb::ATOM_TIERED_SLOW_LEVEL)
+        {
+            int tiered_level;
+            if (enif_get_int(env, option[1], &tiered_level))
+                opts.tiered_slow_level = tiered_level;
+        }
+        else if (option[0] == eleveldb::ATOM_TIERED_FAST_PREFIX)
+        {
+            char buffer[256];
+            int ret_val;
+
+            ret_val=enif_get_string(env, option[1], buffer, 256, ERL_NIF_LATIN1);
+            if (0<ret_val && ret_val<256)
+                opts.tiered_fast_prefix = buffer;
+        }
+        else if (option[0] == eleveldb::ATOM_TIERED_SLOW_PREFIX)
+        {
+            char buffer[256];
+            int ret_val;
+
+            ret_val=enif_get_string(env, option[1], buffer, 256, ERL_NIF_LATIN1);
+            if (0<ret_val && ret_val<256)
+                opts.tiered_slow_prefix = buffer;
+        }
+
     }
 
     return eleveldb::ATOM_OK;
@@ -708,7 +736,7 @@ async_iterator(
 
     db_ptr.assign(DbObject::RetrieveDbObject(env, dbh_ref));
 
-    if(NULL==db_ptr.get()
+    if(NULL==db_ptr.get() || 0!=db_ptr->m_CloseRequested
        || !enif_is_list(env, options_ref))
      {
         return enif_make_badarg(env);
@@ -750,13 +778,13 @@ async_iterator_move(
     const ERL_NIF_TERM& action_or_target = argv[2];
     ERL_NIF_TERM ret_term;
 
-    bool submit_new_request(true);
+    bool submit_new_request(true), prefetch_state;
 
     ReferencePtr<ItrObject> itr_ptr;
 
     itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_handle_ref));
 
-    if(NULL==itr_ptr.get())
+    if(NULL==itr_ptr.get() || 0!=itr_ptr->m_CloseRequested)
         return enif_make_badarg(env);
 
     // Reuse ref from iterator creation
@@ -779,6 +807,11 @@ async_iterator_move(
 
     // debug syslog(LOG_ERR, "move state: %d, %d, %d",
     //              action, itr_ptr->m_Iter->m_PrefetchStarted, itr_ptr->m_Iter->m_HandoffAtomic);
+
+    // must set this BEFORE call to compare_and_swap ... or have potential
+    //  for an "extra" message coming out of prefetch
+    prefetch_state = itr_ptr->m_Iter->m_PrefetchStarted;
+    itr_ptr->m_Iter->m_PrefetchStarted =  prefetch_state && (eleveldb::MoveTask::PREFETCH_STOP != action );
 
     //
     // Three situations:
@@ -814,7 +847,7 @@ async_iterator_move(
         // leave m_HandoffAtomic as 1 so first response is via message
 
         // is this truly a wait for prefetch ... or actually the first prefetch request
-        if (!itr_ptr->m_Iter->m_PrefetchStarted)
+        if (!prefetch_state)
         {
             submit_new_request=true;
             itr_ptr->ReleaseReuseMove();
@@ -826,6 +859,7 @@ async_iterator_move(
             submit_new_request=false;
         }   // else
 
+        // redundant ... but clarifying where it really belongs in logic pattern
         itr_ptr->m_Iter->m_PrefetchStarted=(eleveldb::MoveTask::PREFETCH_STOP != action );
     }   // else if
 
@@ -910,77 +944,99 @@ async_iterator_move(
 }   // async_iter_move
 
 
+ERL_NIF_TERM
+async_close(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    const ERL_NIF_TERM& caller_ref  = argv[0];
+    const ERL_NIF_TERM& dbh_ref     = argv[1];
+    bool term_ok=false;
+
+    ReferencePtr<DbObject> db_ptr;
+
+    db_ptr.assign(DbObject::RetrieveDbObject(env, dbh_ref, &term_ok));
+
+    if(NULL==db_ptr.get() || 0!=db_ptr->m_CloseRequested)
+    {
+       return enif_make_badarg(env);
+    }
+
+    // verify that Erlang has not called DbObjectResourceCleanup
+    //  already (that would be bad)
+    if (NULL!=db_ptr->m_Db
+//        && compare_and_swap(db_ptr->m_ErlangThisPtr, db_ptr.get(), (DbObject *)NULL))
+        && db_ptr->ClaimCloseFromCThread())
+    {
+        eleveldb::WorkTask *work_item = new eleveldb::CloseTask(env, caller_ref,
+                                                                db_ptr.get());
+
+        // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
+        eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+        if(false == priv.thread_pool.submit(work_item))
+        {
+            delete work_item;
+            return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
+        }   // if
+    }   // if
+    else if (!term_ok)
+    {
+        return send_reply(env, caller_ref, error_einval(env));
+    }   // else
+
+    return ATOM_OK;
+
+}  // async_close
+
+
+ERL_NIF_TERM
+async_iterator_close(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    const ERL_NIF_TERM& caller_ref  = argv[0];
+    const ERL_NIF_TERM& itr_ref     = argv[1];
+
+    ReferencePtr<ItrObject> itr_ptr;
+
+    itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_ref));
+
+    if(NULL==itr_ptr.get() || 0!=itr_ptr->m_CloseRequested)
+    {
+       return enif_make_badarg(env);
+    }
+
+    // verify that Erlang has not called ItrObjectResourceCleanup AND
+    //  that a database close has not already started death proceedings
+    if (itr_ptr->ClaimCloseFromCThread())
+    {
+        eleveldb::WorkTask *work_item = new eleveldb::ItrCloseTask(env, caller_ref,
+                                                                   itr_ptr.get());
+
+        // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
+        eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+        if(false == priv.thread_pool.submit(work_item))
+        {
+            delete work_item;
+            return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
+        }   // if
+    }   // if
+
+    // this close/cleanup call is way late ... bad programmer!
+    else
+    {
+        return send_reply(env, caller_ref, error_einval(env));
+    }   // else
+
+    return ATOM_OK;
+
+}   // async_iterator_close
+
 } // namespace eleveldb
-
-
-/***
- * HEY YOU, please convert this to an async operation
- */
-
-ERL_NIF_TERM
-eleveldb_close(
-    ErlNifEnv* env,
-    int argc,
-    const ERL_NIF_TERM argv[])
-{
-    eleveldb::DbObject * db_ptr;
-    ERL_NIF_TERM ret_term;
-
-    ret_term=eleveldb::ATOM_OK;
-
-    db_ptr=eleveldb::DbObject::RetrieveDbObject(env, argv[0]);
-
-    if (NULL!=db_ptr)
-    {
-        // set closing flag
-        eleveldb::ErlRefObject::InitiateCloseRequest(db_ptr);
-
-        db_ptr=NULL;
-
-        ret_term=eleveldb::ATOM_OK;
-    }   // if
-    else
-    {
-        ret_term=enif_make_badarg(env);
-    }   // else
-
-    return(ret_term);
-
-}  // eleveldb_close
-
-
-ERL_NIF_TERM
-eleveldb_iterator_close(
-    ErlNifEnv* env,
-    int argc,
-    const ERL_NIF_TERM argv[])
-{
-    eleveldb::ItrObject * itr_ptr;
-    ERL_NIF_TERM ret_term;
-
-    ret_term=eleveldb::ATOM_OK;
-
-    itr_ptr=eleveldb::ItrObject::RetrieveItrObject(env, argv[0], true);
-
-    if (NULL!=itr_ptr)
-    {
-        itr_ptr->ReleaseReuseMove();
-
-        // set closing flag ... atomic likely unnecessary (but safer)
-        eleveldb::ErlRefObject::InitiateCloseRequest(itr_ptr);
-
-        itr_ptr=NULL;
-
-        ret_term=eleveldb::ATOM_OK;
-    }   // if
-    else
-    {
-        ret_term=enif_make_badarg(env);
-    }   // else
-
-    return(ret_term);
-
-}   // elveldb_iterator_close
 
 
 ERL_NIF_TERM
@@ -1144,6 +1200,10 @@ try
     ret_val=0;
     *priv_data = NULL;
 
+    // make sure the basic leveldb .so modules are in memory
+    //  and initialized ... especially the perf counters
+    leveldb::Env::Default();
+
     // inform erlang of our two resource types
     eleveldb::DbObject::CreateDbObjectType(env);
     eleveldb::ItrObject::CreateItrObjectType(env);
@@ -1201,7 +1261,9 @@ try
     ATOM(eleveldb::ATOM_ELEVELDB_THREADS, "eleveldb_threads");
     ATOM(eleveldb::ATOM_FADVISE_WILLNEED, "fadvise_willneed");
     ATOM(eleveldb::ATOM_DELETE_THRESHOLD, "delete_threshold");
-
+    ATOM(eleveldb::ATOM_TIERED_SLOW_LEVEL, "tiered_slow_level");
+    ATOM(eleveldb::ATOM_TIERED_FAST_PREFIX, "tiered_fast_prefix");
+    ATOM(eleveldb::ATOM_TIERED_SLOW_PREFIX, "tiered_slow_prefix");
 #undef ATOM
 
 
