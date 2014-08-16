@@ -240,7 +240,7 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
     {
         if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM)
         {
-            size_t memory_sz;
+            unsigned long memory_sz;
             if (enif_get_ulong(env, option[1], &memory_sz))
             {
                 if (memory_sz != 0)
@@ -328,7 +328,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         }
         else if (option[0] == eleveldb::ATOM_BLOCK_CACHE_THRESHOLD)
         {
-            size_t memory_sz;
+            unsigned long memory_sz;
             if (enif_get_ulong(env, option[1], &memory_sz))
             {
                 if (memory_sz != 0)
