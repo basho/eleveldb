@@ -105,7 +105,8 @@ init() ->
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()} |
-                         {iterator_refresh, boolean()}].
+                         {iterator_refresh, boolean()} |
+                         {first_key, boolean()}].
 
 -type write_options() :: [{sync, boolean()}].
 
