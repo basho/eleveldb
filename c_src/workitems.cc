@@ -415,13 +415,12 @@ bool RangeScanTask::SyncObject::AckBytes(uint32_t n)
     uint32_t num_bytes = sub_and_fetch(&num_bytes_, n);
     bool ret;
 
-    bool is_under_max = num_bytes < max_bytes_;
-    bool went_under_max = num_bytes < max_bytes_
-        && (num_bytes_ + n) >= max_bytes_;
-    // If just went below max bytes, or consumer antsy for not
-    // getting any messages, maybe wake producer
-    if (n == 0 || went_under_max || 
-        (is_under_max && producer_sleeping_)) {
+    const bool is_reack = n == 0;
+    const bool is_under_max = num_bytes < max_bytes_;
+    const bool was_over_max = num_bytes_ + n >= max_bytes_;
+    const bool went_under_max = is_under_max && was_over_max;
+
+    if (went_under_max || is_reack) {
         enif_mutex_lock(mutex_);
         if (producer_sleeping_) {
             producer_sleeping_ = false;
@@ -447,6 +446,7 @@ void RangeScanTask::SyncObject::MarkConsumerDead() {
         enif_cond_signal(cond_);
     enif_mutex_unlock(mutex_);
 }
+
 
 void send_batch(ErlNifPid * pid, ErlNifEnv * msg_env, ERL_NIF_TERM ref_term,
                 ErlNifBinary * bin) {
@@ -514,27 +514,29 @@ work_result RangeScanTask::operator()()
         // Shove next entry in the batch.
         leveldb::Slice key = iter->key();
         leveldb::Slice value = iter->value();
-        size_t val_size = 8 + value.size() + VarintLength(value.size());
-        size_t next_offset = out_offset + val_size;
+        const size_t ksz = key.size(), vsz = value.size();
+        const size_t ksz_sz = VarintLength(ksz);
+        const size_t vsz_sz = VarintLength(vsz);
+        const size_t esz = ksz + ksz_sz + vsz + vsz_sz;
+        const size_t next_offset = out_offset + esz;
         if (out_offset == 0)
             enif_alloc_binary(initial_bin_size, &bin);
         // If we need more space, allocate it exactly since that means we
         // reached the batch max anyway and will send it right away.
-        if (next_offset > bin.size) {
+        if (next_offset > bin.size)
             enif_realloc_binary(&bin, next_offset);
-        }
-        // 64 bit timestamp, then length prefixed value blob
-        memcpy(bin.data + out_offset, key.data(), 8);
-        char * out = (char*)bin.data + out_offset + 8;
-        out = EncodeVarint64(out, value.size());
-        memcpy(out, value.data(), value.size());
-        out_offset += val_size;
+        char * const out = (char*)bin.data + out_offset;
+        EncodeVarint64(out, ksz);
+        memcpy(out + ksz_sz, key.data(), ksz);
+        EncodeVarint64(out + ksz_sz + ksz, vsz);
+        memcpy(out + ksz_sz + ksz + vsz_sz, value.data(), vsz);
+        out_offset = next_offset;
         if (out_offset >= options_.max_batch_bytes) {
             if (out_offset != bin.size)
                 enif_realloc_binary(&bin, out_offset);
             send_batch(&pid, msg_env, caller_ref_term, &bin);
             // Maybe block if max reached.
-            sync_obj_->AddBytes(out_offset);
+            sync_obj_->AddBytes(esz);
             out_offset = 0;
         }
         iter->Next();

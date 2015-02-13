@@ -142,6 +142,7 @@ ERL_NIF_TERM ATOM_MAX_UNACKED_BYTES;
 ERL_NIF_TERM ATOM_MAX_BATCH_BYTES;
 ERL_NIF_TERM ATOM_RANGE_SCAN_BATCH;
 ERL_NIF_TERM ATOM_RANGE_SCAN_END;
+ERL_NIF_TERM ATOM_NEEDS_REACK;
 }   // namespace eleveldb
 
 
@@ -827,21 +828,18 @@ range_scan_ack(ErlNifEnv * env,
     const ERL_NIF_TERM num_bytes_term   = argv[1];
     uint32_t num_bytes;
 
-    if (!enif_get_uint(env, num_bytes_term, &num_bytes)) {
+    if (!enif_get_uint(env, num_bytes_term, &num_bytes))
         return enif_make_badarg(env);
-    }
 
     using eleveldb::RangeScanTask;
     RangeScanTask::SyncHandle * sync_handle;
     sync_handle = RangeScanTask::RetrieveSyncHandle(env, ref);
 
-    if (!sync_handle || !sync_handle->sync_obj) {
+    if (!sync_handle || !sync_handle->sync_obj)
         return enif_make_badarg(env);
-    }
 
-    sync_handle->sync_obj->AckBytes(num_bytes);
-
-    return eleveldb::ATOM_OK;
+    bool needs_reack = sync_handle->sync_obj->AckBytes(num_bytes);
+    return needs_reack ? eleveldb::ATOM_NEEDS_REACK : eleveldb::ATOM_OK;
 }
 
 ERL_NIF_TERM
@@ -1415,6 +1413,7 @@ try
     ATOM(eleveldb::ATOM_MAX_BATCH_BYTES, "max_batch_bytes");
     ATOM(eleveldb::ATOM_RANGE_SCAN_BATCH, "range_scan_batch");
     ATOM(eleveldb::ATOM_RANGE_SCAN_END, "range_scan_end");
+    ATOM(eleveldb::ATOM_NEEDS_REACK, "needs_reack");
 #undef ATOM
 
 

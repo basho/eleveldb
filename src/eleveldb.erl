@@ -44,7 +44,8 @@
          iterator_move/2,
          iterator_close/1,
          range_scan/4,
-         range_scan_ack/2]).
+         range_scan_ack/2,
+         range_scan_fold/6]).
 
 -export_type([db_ref/0,
               itr_ref/0]).
@@ -237,6 +238,49 @@ range_scan_ack(_Ref, _NumBytes) ->
     erlang:nif_error({error, not_loaded}).
 
 -type fold_fun() :: fun(({Key::binary(), Value::binary()}, any()) -> any()).
+
+range_scan_fold(Ref, Fun, Acc0, SKey, EKey, Opts) ->
+    {ok, {MsgRef, AckRef}} = range_scan(Ref, SKey, EKey, Opts),
+    do_range_scan_fold(MsgRef, AckRef, Fun, Acc0).
+
+do_range_scan_batch(<<>>, _Fun, Acc) ->
+    Acc;
+do_range_scan_batch(Bin, Fun, Acc) ->
+    {K, Bin2} = parse_string(Bin),
+    {V, Bin3} = parse_string(Bin2),
+    Acc2 = Fun({K, V}, Acc),
+    do_range_scan_batch(Bin3, Fun, Acc2).
+
+do_range_scan_ack(MsgRef, AckRef, Size, Fun, Acc) ->
+    case range_scan_ack(AckRef, Size) of
+        ok ->
+            do_range_scan_fold(MsgRef, AckRef, Fun, Acc);
+        needs_reack ->
+            do_range_scan_ack(MsgRef, AckRef, 0, Fun, Acc)
+    end.
+
+do_range_scan_fold(MsgRef, AckRef, Fun, Acc) ->
+    receive
+        {range_scan_end, MsgRef} ->
+            Acc;
+        {range_scan_batch, MsgRef, Batch} ->
+            Size = byte_size(Batch),
+            Acc2 = do_range_scan_batch(Batch, Fun, Acc),
+            do_range_scan_ack(MsgRef, AckRef, Size, Fun, Acc2);
+        Msg ->
+            lager:info("Range scan got unexpected message: ~p\n", [Msg])
+    end.
+
+parse_string(Bin) ->
+    parse_string(0, 0, Bin).
+
+parse_string(Size, Shift, <<1:1, N:7, Bin/binary>>) ->
+    Size1 = Size + (N bsl Shift),
+    parse_string(Size1, Shift + 7, Bin);
+parse_string(Size, Shift, <<0:1, N:7, Bin/binary>>) ->
+    Size1 = Size + (N bsl Shift),
+    <<String:Size1/binary, Rest/binary>> = Bin,
+    {String, Rest}.
 
 %% Fold over the keys and values in the database
 %% will throw an exception if the database is closed while the fold runs
