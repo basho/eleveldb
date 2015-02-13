@@ -74,7 +74,9 @@ static ErlNifFunc nif_funcs[] =
     {"async_iterator", 3, eleveldb::async_iterator},
     {"async_iterator", 4, eleveldb::async_iterator},
 
-    {"async_iterator_move", 3, eleveldb::async_iterator_move}
+    {"async_iterator_move", 3, eleveldb::async_iterator_move},
+    {"range_scan", 4, eleveldb::range_scan},
+    {"range_scan_ack", 2, eleveldb::range_scan_ack}
 };
 
 
@@ -134,6 +136,11 @@ ERL_NIF_TERM ATOM_DELETE_THRESHOLD;
 ERL_NIF_TERM ATOM_TIERED_SLOW_LEVEL;
 ERL_NIF_TERM ATOM_TIERED_FAST_PREFIX;
 ERL_NIF_TERM ATOM_TIERED_SLOW_PREFIX;
+ERL_NIF_TERM ATOM_START_INCLUSIVE;
+ERL_NIF_TERM ATOM_END_INCLUSIVE;
+ERL_NIF_TERM ATOM_MAX_UNACKED_BYTES;
+ERL_NIF_TERM ATOM_RANGE_SCAN_BATCH;
+ERL_NIF_TERM ATOM_RANGE_SCAN_END;
 }   // namespace eleveldb
 
 
@@ -472,6 +479,29 @@ ERL_NIF_TERM parse_read_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::ReadO
     return eleveldb::ATOM_OK;
 }
 
+ERL_NIF_TERM parse_range_scan_option(ErlNifEnv* env, ERL_NIF_TERM item,
+                                     eleveldb::RangeScanOptions & opts)
+{
+    int arity;
+    const ERL_NIF_TERM* option;
+    if (enif_get_tuple(env, item, &arity, &option) && 2 == arity)
+    {
+        if (option[0] == eleveldb::ATOM_START_INCLUSIVE)
+            opts.start_inclusive = (option[1] == eleveldb::ATOM_TRUE);
+        else if (option[0] == eleveldb::ATOM_END_INCLUSIVE)
+            opts.end_inclusive = (option[1] == eleveldb::ATOM_TRUE);
+        else if (option[0] == eleveldb::ATOM_FILL_CACHE)
+            opts.fill_cache = (option[1] == eleveldb::ATOM_TRUE);
+        else if (option[0] == eleveldb::ATOM_MAX_UNACKED_BYTES) {
+            unsigned max_unacked_bytes;
+            if (enif_get_uint(env, option[1], &max_unacked_bytes))
+                opts.max_unacked_bytes = max_unacked_bytes;
+        }
+    }
+
+    return eleveldb::ATOM_OK;
+}
+
 ERL_NIF_TERM parse_write_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::WriteOptions& opts)
 {
     int arity;
@@ -606,6 +636,28 @@ async_open(
 
 
 ERL_NIF_TERM
+convert_ts_batch( ErlNifEnv * env, ERL_NIF_TERM bin_term,
+                  leveldb::DB * db, leveldb::WriteBatch * write_batch)
+{
+    ErlNifBinary bin;
+    enif_inspect_binary(env, bin_term, &bin);
+    leveldb::Slice input((const char *)bin.data, bin.size);
+
+    leveldb::Status s = leveldb::convert_ts_batch(db, input, write_batch);
+
+    if (s.ok()) {
+        return eleveldb::ATOM_OK;
+    }
+
+    std::string err_str = s.ToString();
+    ERL_NIF_TERM err_str_term = enif_make_string_len(env, err_str.data(),
+                                                     err_str.length(),
+                                                     ERL_NIF_LATIN1);
+
+    return enif_make_tuple2(env, eleveldb::ATOM_ERROR, err_str_term);
+}
+
+ERL_NIF_TERM
 async_write(
     ErlNifEnv* env,
     int argc,
@@ -621,7 +673,7 @@ async_write(
     db_ptr.assign(DbObject::RetrieveDbObject(env, handle_ref));
 
     if(NULL==db_ptr.get()
-       || !enif_is_list(env, action_ref)
+       || (!enif_is_list(env, action_ref) && !enif_is_binary(env, action_ref))
        || !enif_is_list(env, opts_ref))
     {
         return enif_make_badarg(env);
@@ -634,10 +686,17 @@ async_write(
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
     // Construct a write batch:
-    leveldb::WriteBatch* batch = new leveldb::WriteBatch;
+    leveldb::WriteBatch* batch = new leveldb::WriteBatch();
 
     // Seed the batch's data:
-    ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, *batch);
+    ERL_NIF_TERM result;
+   
+    if (enif_is_list(env, action_ref)) {
+        result = fold(env, action_ref, write_batch_item, *batch);
+    } else {
+        result = convert_ts_batch(env, action_ref, db_ptr->m_Db, batch);
+    }
+
     if(eleveldb::ATOM_OK != result)
     {
         return send_reply(env, caller_ref,
@@ -647,7 +706,7 @@ async_write(
     }   // if
 
     leveldb::WriteOptions* opts = new leveldb::WriteOptions;
-    fold(env, argv[3], parse_write_option, *opts);
+    fold(env, opts_ref, parse_write_option, *opts);
 
     eleveldb::WorkTask* work_item = new eleveldb::WriteTask(env, caller_ref,
                                                             db_ptr.get(), batch, opts);
@@ -754,6 +813,84 @@ async_iterator(
 
 }   // async_iterator
 
+ERL_NIF_TERM
+range_scan_ack(ErlNifEnv * env,
+               int argc,
+               const ERL_NIF_TERM argv[])
+{
+    const ERL_NIF_TERM ref              = argv[0];
+    const ERL_NIF_TERM num_bytes_term   = argv[1];
+    uint32_t num_bytes;
+
+    if (!enif_get_uint(env, num_bytes_term, &num_bytes)) {
+        return enif_make_badarg(env);
+    }
+
+    using eleveldb::RangeScanTask;
+    RangeScanTask::SyncHandle * sync_handle;
+    sync_handle = RangeScanTask::RetrieveSyncHandle(env, ref);
+
+    if (!sync_handle || !sync_handle->sync_obj) {
+        return enif_make_badarg(env);
+    }
+
+    sync_handle->sync_obj->AckBytes(num_bytes);
+
+    return eleveldb::ATOM_OK;
+}
+
+ERL_NIF_TERM
+range_scan(ErlNifEnv * env,
+           int argc,
+           const ERL_NIF_TERM argv[])
+{
+    const ERL_NIF_TERM db_ref       = argv[0];
+    const ERL_NIF_TERM start_key    = argv[1];
+    const ERL_NIF_TERM end_key      = argv[2];
+    const ERL_NIF_TERM options_list = argv[3];
+
+    ReferencePtr<DbObject> db_ptr;
+    db_ptr.assign(DbObject::RetrieveDbObject(env, db_ref));
+
+    if (NULL == db_ptr.get()
+        || !enif_is_binary(env, start_key)
+        || !enif_is_binary(env, end_key)
+        || !enif_is_list(env, options_list))
+    {
+        return enif_make_badarg(env);
+    }
+
+    if (NULL == db_ptr->m_Db)
+        return error_einval(env);
+
+    ERL_NIF_TERM reply_ref = enif_make_ref(env);
+
+    RangeScanOptions opts;
+    fold(env, options_list, parse_range_scan_option, opts);
+    
+    using eleveldb::RangeScanTask;
+    RangeScanTask::SyncHandle * sync_handle =
+        RangeScanTask::CreateSyncHandle(opts);
+
+    ERL_NIF_TERM sync_ref = enif_make_resource(env, sync_handle);
+
+    RangeScanTask * task =
+        new RangeScanTask(env, reply_ref, db_ptr.get(),
+                          start_key, end_key, opts, sync_handle->sync_obj);
+
+    eleveldb_priv_data& priv =
+        *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+    if (false == priv.thread_pool.submit(task))
+    {
+        delete task; // TODO: May require fancier destruction.
+        // TODO: Add thread pool submit error atom
+        return enif_make_tuple2(env, eleveldb::ATOM_ERROR, reply_ref);
+    }
+
+    return enif_make_tuple2(env, eleveldb::ATOM_OK,
+                           enif_make_tuple2(env, reply_ref, sync_ref));
+}
 
 ERL_NIF_TERM
 async_iterator_move(
@@ -1192,9 +1329,10 @@ try
     //  and initialized ... especially the perf counters
     leveldb::Env::Default();
 
-    // inform erlang of our two resource types
+    // inform erlang of our resource types
     eleveldb::DbObject::CreateDbObjectType(env);
     eleveldb::ItrObject::CreateItrObjectType(env);
+    eleveldb::RangeScanTask::CreateSyncHandleType(env);
 
 // must initialize atoms before processing options
 #define ATOM(Id, Value) { Id = enif_make_atom(env, Value); }
@@ -1251,6 +1389,11 @@ try
     ATOM(eleveldb::ATOM_TIERED_SLOW_LEVEL, "tiered_slow_level");
     ATOM(eleveldb::ATOM_TIERED_FAST_PREFIX, "tiered_fast_prefix");
     ATOM(eleveldb::ATOM_TIERED_SLOW_PREFIX, "tiered_slow_prefix");
+    ATOM(eleveldb::ATOM_START_INCLUSIVE, "start_inclusive");
+    ATOM(eleveldb::ATOM_END_INCLUSIVE, "end_inclusive");
+    ATOM(eleveldb::ATOM_MAX_UNACKED_BYTES, "max_unacked_bytes");
+    ATOM(eleveldb::ATOM_RANGE_SCAN_BATCH, "range_scan_batch");
+    ATOM(eleveldb::ATOM_RANGE_SCAN_END, "range_scan_end");
 #undef ATOM
 
 

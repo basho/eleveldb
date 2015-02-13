@@ -21,7 +21,7 @@
 // -------------------------------------------------------------------
 
 #ifndef __ELEVELDB_DETAIL_HPP
- #define __ELEVELDB_DETAIL_HPP 1
+#define __ELEVELDB_DETAIL_HPP
 
 #include <stdint.h>
 #include <stddef.h>
@@ -128,6 +128,42 @@ inline size_t dec_and_fetch(volatile size_t *ptr)
     return __sync_sub_and_fetch(ptr, 1);
 }
 #endif
+
+static inline uint64_t add_and_fetch(volatile uint64_t *ptr, uint64_t v)
+{
+#if ELEVELDB_IS_SOLARIS
+    return atomic_add_64_nv(ptr, v);
+#else
+    return __sync_add_and_fetch(ptr, v);
+#endif
+}
+
+static inline uint32_t add_and_fetch(volatile uint32_t *ptr, uint32_t v)
+{
+#if ELEVELDB_IS_SOLARIS
+    return atomic_add_32_nv(ptr);
+#else
+    return __sync_add_and_fetch(ptr, v);
+#endif
+}
+
+static inline uint64_t sub_and_fetch(volatile uint64_t *ptr, uint64_t v)
+{
+#if ELEVELDB_IS_SOLARIS
+    return atomic_add_64_nv(ptr, -(int64_t)v);
+#else
+    return __sync_sub_and_fetch(ptr, v);
+#endif
+}
+
+static inline uint32_t sub_and_fetch(volatile uint32_t *ptr, uint32_t v)
+{
+#if ELEVELDB_IS_SOLARIS
+    return atomic_sub_32_nv(ptr, -(int32_t)v);
+#else
+    return __sync_sub_and_fetch(ptr, v);
+#endif
+}
 
 } // namespace eleveldb::detail
 

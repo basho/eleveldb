@@ -393,7 +393,6 @@ public:
 /**
  * Background object for async iterator close
  */
-
 class ItrCloseTask : public WorkTask
 {
 protected:
@@ -438,6 +437,89 @@ public:
     }
 
 };  // class ItrCloseTask
+
+struct RangeScanOptions {
+  size_t max_unacked_bytes;
+  size_t max_batch_bytes;
+  bool start_inclusive;
+  bool end_inclusive;
+  bool fill_cache;
+
+  RangeScanOptions()
+    : max_unacked_bytes(10 * 1024 * 1024), max_batch_bytes(1 * 1024 * 1024),
+    start_inclusive(true), end_inclusive(false), fill_cache(false)
+  { }
+};
+
+
+class RangeScanTask : public WorkTask
+{
+public:
+    // Used to coordinate production and consumption of batches of data.
+    // Producers acknowledge each batch received. Consumers block when the
+    // unacked limit has been reached and need to be woken up by the consumer.
+    // When consumers die, the ref count is decremented and that will signal
+    // the producer to go away too.
+    class SyncObject : public RefObject {
+        public:
+            explicit SyncObject(const RangeScanOptions & opts);
+            ~SyncObject();
+
+            // True if only one side (producer or consumer) alive.
+            inline bool SingleOwned() { return m_RefCount == 1; }
+
+            // Adds number of bytes sent to count.
+            // Will block if count exceeds max waiting for the other
+            // side to ack some and take it under the limit or for the other
+            // side to shut down.
+            void AddBytes(uint32_t n);
+
+            // Returns true if num bytes was over the max, so that producer
+            // has gone or will go to sleep waiting on ack. Consumer *needs*
+            // to signal it or it will sleep forever.
+            bool AckBytes(uint32_t n);
+
+            void MarkConsumerDead();
+
+        private:
+            const uint32_t max_bytes_;
+            volatile uint32_t num_bytes_;
+            volatile bool producer_sleeping_;
+            volatile bool pending_signal_;
+            volatile bool consumer_dead_;
+            ErlNifMutex * mutex_;
+            ErlNifCond * cond_;
+    };
+
+    struct SyncHandle {
+        SyncObject * sync_obj;
+    };
+
+    RangeScanTask(ErlNifEnv * caller_env,
+                  ERL_NIF_TERM caller_ref,
+                  DbObject * db_handle,
+                  ERL_NIF_TERM start_key,
+                  ERL_NIF_TERM end_key,
+                  RangeScanOptions & options,
+                  SyncObject * sync_obj);
+
+    virtual ~RangeScanTask();
+    virtual work_result operator()();
+
+    static void CreateSyncHandleType(ErlNifEnv * env);
+    static SyncHandle * CreateSyncHandle(const RangeScanOptions & options);
+    static SyncHandle * RetrieveSyncHandle(ErlNifEnv * env, ERL_NIF_TERM term);
+    static void SyncHandleResourceCleanup(ErlNifEnv * env, void * arg);
+
+private:
+    static ErlNifResourceType * sync_handle_resource_;
+protected:
+    RangeScanOptions options_;
+    SyncObject * sync_obj_;
+    ERL_NIF_TERM start_key_;
+    ERL_NIF_TERM end_key_;
+
+};  // class RangeScanTask
 
 } // namespace eleveldb
 

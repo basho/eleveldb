@@ -32,6 +32,7 @@
          status/2,
          destroy/2,
          repair/2,
+         ts_batch_to_binary/1,
          is_empty/1]).
 
 -export([option_types/1,
@@ -40,7 +41,9 @@
 -export([iterator/2,
          iterator/3,
          iterator_move/2,
-         iterator_close/1]).
+         iterator_close/1,
+         range_scan/4,
+         range_scan_ack/2]).
 
 -export_type([db_ref/0,
               itr_ref/0]).
@@ -111,7 +114,13 @@ init() ->
 
 -type write_actions() :: [{put, Key::binary(), Value::binary()} |
                           {delete, Key::binary()} |
-                          clear].
+                          clear] | binary().
+
+-type range_scan_options() :: [{start_inclusive, boolean()} |
+                               {end_inclusive, boolean()} |
+                               {fill_cache, boolean()} |
+                               {max_batch_size, pos_integer()} |
+                               {max_unacked_bytes, pos_integer()}].
 
 -type iterator_action() :: first | last | next | prev | prefetch | binary().
 
@@ -215,6 +224,15 @@ iterator_close(IRef) ->
     ?WAIT_FOR_REPLY(CallerRef).
 
 async_iterator_close(_CallerRef, _IRef) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec range_scan(db_ref(), binary(), binary(), range_scan_options()) ->
+    {ok, {itr_ref(), reference()}} | {error, any()}.
+range_scan(_DBRef, _StartKey, _EndKey, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec range_scan_ack(reference(), pos_integer()) -> ok.
+range_scan_ack(_Ref, _NumBytes) ->
     erlang:nif_error({error, not_loaded}).
 
 -type fold_fun() :: fun(({Key::binary(), Value::binary()}, any()) -> any()).
@@ -362,6 +380,37 @@ validate_type({_Key, bool}, false)                           -> true;
 validate_type({_Key, integer}, Value) when is_integer(Value) -> true;
 validate_type({_Key, any}, _Value)                           -> true;
 validate_type(_, _)                                          -> false.
+
+append_varint(N, Bin) ->
+    N2 = N bsr 7,
+    case N2 of
+        0 ->
+            C = N rem 128,
+            <<Bin/binary, C:8>>;
+        _ ->
+            C = (N rem 128) + 128,
+            append_varint(N2, <<Bin/binary, C:8>>)
+    end.
+
+append_string(S, Bin) ->
+    L = byte_size(S),
+    B2 = append_varint(L, Bin),
+    <<B2/binary, S/binary>>.
+
+append_points([], Bin) ->
+    Bin;
+append_points([{Timestamp, Value}|MorePoints], Bin) ->
+    Bin2 = <<Bin/binary, Timestamp:64>>,
+    Bin3 = append_string(Value, Bin2),
+    append_points(MorePoints, Bin3).
+
+
+ts_batch_to_binary({ts_batch, Family, Series, Points}) ->
+    B1 = append_varint(1, <<>>),
+    B2 = append_string(Family, B1),
+    B3 = append_string(Series, B2),
+    B4 = append_varint(length(Points), B3),
+    append_points(Points, B4).
 
 
 %% ===================================================================
