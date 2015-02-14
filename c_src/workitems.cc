@@ -362,16 +362,15 @@ MoveTask::recycle()
 RangeScanTask::RangeScanTask(ErlNifEnv * caller_env,
                              ERL_NIF_TERM caller_ref,
                              DbObject * db_handle,
-                             ERL_NIF_TERM start_key,
-                             ERL_NIF_TERM end_key,
+                             const std::string & start_key,
+                             const std::string & end_key,
                              RangeScanOptions & options,
                              SyncObject * sync_obj)
 : WorkTask(caller_env, caller_ref, db_handle),
-    options_(options)
+    options_(options),
+    start_key_(start_key), end_key_(end_key),
+    sync_obj_(sync_obj)
 {
-    start_key_ = enif_make_copy(local_env_, start_key);
-    end_key_ = enif_make_copy(local_env_, start_key);
-    sync_obj_ = sync_obj;
     sync_obj_->RefInc();
 }
 
@@ -477,8 +476,9 @@ void send_batch(ErlNifPid * pid, ErlNifEnv * msg_env, ERL_NIF_TERM ref_term,
                 ErlNifBinary * bin) {
     // Binary now owned. No need to release it.
     ERL_NIF_TERM bin_term = enif_make_binary(msg_env, bin);
+    ERL_NIF_TERM local_ref = enif_make_copy(msg_env, ref_term);
     ERL_NIF_TERM msg =
-        enif_make_tuple3(msg_env, ATOM_RANGE_SCAN_BATCH, ref_term, bin_term);
+        enif_make_tuple3(msg_env, ATOM_RANGE_SCAN_BATCH, local_ref, bin_term);
     enif_send(NULL, pid, msg_env, msg);
     enif_clear_env(msg_env);
 }
@@ -511,16 +511,8 @@ work_result RangeScanTask::operator()()
     read_options.fill_cache = options_.fill_cache;
     leveldb::Iterator * iter = m_DbPtr->m_Db->NewIterator(read_options);
     const leveldb::Comparator * cmp = m_DbPtr->m_DbOptions->comparator;
-    ErlNifBinary skey_bin;
-    ErlNifBinary ekey_bin;
-
-    enif_inspect_binary(env, start_key_, &skey_bin);
-    enif_inspect_binary(env, end_key_, &ekey_bin);
-
-    const leveldb::Slice skey_slice((const char *)skey_bin.data,
-                                    skey_bin.size);
-    const leveldb::Slice ekey_slice((const char*)ekey_bin.data,
-                                    ekey_bin.size);
+    const leveldb::Slice skey_slice(start_key_);
+    const leveldb::Slice ekey_slice(end_key_);
 
     iter->Seek(skey_slice);
 
@@ -557,7 +549,7 @@ work_result RangeScanTask::operator()()
         }
         // 64 bit timestamp, then length prefixed value blob
         memcpy(bin.data + out_offset, key.data(), 8);
-        char * out = (char*)bin.data + out_offset;
+        char * out = (char*)bin.data + out_offset + 8;
         out = EncodeVarint64(out, value.size());
         memcpy(out, value.data(), value.size());
         out_offset += val_size;
@@ -572,8 +564,9 @@ work_result RangeScanTask::operator()()
         iter->Next();
     }
 
+    ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
     ERL_NIF_TERM msg =
-        enif_make_tuple2(msg_env, ATOM_RANGE_SCAN_END, caller_ref_term);
+        enif_make_tuple2(msg_env, ATOM_RANGE_SCAN_END, ref_copy);
     enif_send(NULL, &pid, msg_env, msg);
     enif_free_env(msg_env);
     return work_result();

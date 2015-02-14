@@ -139,6 +139,7 @@ ERL_NIF_TERM ATOM_TIERED_SLOW_PREFIX;
 ERL_NIF_TERM ATOM_START_INCLUSIVE;
 ERL_NIF_TERM ATOM_END_INCLUSIVE;
 ERL_NIF_TERM ATOM_MAX_UNACKED_BYTES;
+ERL_NIF_TERM ATOM_MAX_BATCH_BYTES;
 ERL_NIF_TERM ATOM_RANGE_SCAN_BATCH;
 ERL_NIF_TERM ATOM_RANGE_SCAN_END;
 }   // namespace eleveldb
@@ -496,6 +497,10 @@ ERL_NIF_TERM parse_range_scan_option(ErlNifEnv* env, ERL_NIF_TERM item,
             unsigned max_unacked_bytes;
             if (enif_get_uint(env, option[1], &max_unacked_bytes))
                 opts.max_unacked_bytes = max_unacked_bytes;
+        } else if (option[0] == eleveldb::ATOM_MAX_BATCH_BYTES) {
+            unsigned max_batch_bytes;
+            if (enif_get_uint(env, option[1], &max_batch_bytes))
+                opts.max_batch_bytes = max_batch_bytes;
         }
     }
 
@@ -844,17 +849,17 @@ range_scan(ErlNifEnv * env,
            int argc,
            const ERL_NIF_TERM argv[])
 {
-    const ERL_NIF_TERM db_ref       = argv[0];
-    const ERL_NIF_TERM start_key    = argv[1];
-    const ERL_NIF_TERM end_key      = argv[2];
-    const ERL_NIF_TERM options_list = argv[3];
+    const ERL_NIF_TERM db_ref           = argv[0];
+    const ERL_NIF_TERM start_key_term   = argv[1];
+    const ERL_NIF_TERM end_key_term     = argv[2];
+    const ERL_NIF_TERM options_list     = argv[3];
 
     ReferencePtr<DbObject> db_ptr;
     db_ptr.assign(DbObject::RetrieveDbObject(env, db_ref));
 
     if (NULL == db_ptr.get()
-        || !enif_is_binary(env, start_key)
-        || !enif_is_binary(env, end_key)
+        || !enif_is_binary(env, start_key_term)
+        || !enif_is_binary(env, end_key_term)
         || !enif_is_list(env, options_list))
     {
         return enif_make_badarg(env);
@@ -864,6 +869,21 @@ range_scan(ErlNifEnv * env,
         return error_einval(env);
 
     ERL_NIF_TERM reply_ref = enif_make_ref(env);
+
+    ErlNifBinary start_key_bin;
+    ErlNifBinary end_key_bin;
+    enif_inspect_binary(env, start_key_term, &start_key_bin);
+    enif_inspect_binary(env, end_key_term, &end_key_bin);
+    leveldb::Slice start_key_slice((const char *)start_key_bin.data,
+                                   start_key_bin.size);
+    leveldb::Slice end_key_slice((const char *)end_key_bin.data,
+                                 end_key_bin.size);
+
+    std::string start_key;
+    std::string end_key;
+
+    convert_ts_key(db_ptr->m_Db, start_key_slice, &start_key); 
+    convert_ts_key(db_ptr->m_Db, end_key_slice, &end_key); 
 
     RangeScanOptions opts;
     fold(env, options_list, parse_range_scan_option, opts);
@@ -1392,6 +1412,7 @@ try
     ATOM(eleveldb::ATOM_START_INCLUSIVE, "start_inclusive");
     ATOM(eleveldb::ATOM_END_INCLUSIVE, "end_inclusive");
     ATOM(eleveldb::ATOM_MAX_UNACKED_BYTES, "max_unacked_bytes");
+    ATOM(eleveldb::ATOM_MAX_BATCH_BYTES, "max_batch_bytes");
     ATOM(eleveldb::ATOM_RANGE_SCAN_BATCH, "range_scan_batch");
     ATOM(eleveldb::ATOM_RANGE_SCAN_END, "range_scan_end");
 #undef ATOM

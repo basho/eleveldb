@@ -479,6 +479,8 @@ public:
             // to signal it or it will sleep forever.
             bool AckBytes(uint32_t n);
 
+            // Should be called when the Erlang handle is garbage collected
+            // so no process is there to consume the output.
             void MarkConsumerDead();
 
         private:
@@ -498,8 +500,8 @@ public:
     RangeScanTask(ErlNifEnv * caller_env,
                   ERL_NIF_TERM caller_ref,
                   DbObject * db_handle,
-                  ERL_NIF_TERM start_key,
-                  ERL_NIF_TERM end_key,
+                  const std::string & start_key,
+                  const std::string & end_key,
                   RangeScanOptions & options,
                   SyncObject * sync_obj);
 
@@ -515,9 +517,9 @@ private:
     static ErlNifResourceType * sync_handle_resource_;
 protected:
     RangeScanOptions options_;
+    std::string start_key_;
+    std::string end_key_;
     SyncObject * sync_obj_;
-    ERL_NIF_TERM start_key_;
-    ERL_NIF_TERM end_key_;
 
 };  // class RangeScanTask
 

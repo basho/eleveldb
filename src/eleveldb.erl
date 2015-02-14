@@ -33,6 +33,7 @@
          destroy/2,
          repair/2,
          ts_batch_to_binary/1,
+         ts_key/1,
          is_empty/1]).
 
 -export([option_types/1,
@@ -412,6 +413,10 @@ ts_batch_to_binary({ts_batch, Family, Series, Points}) ->
     B4 = append_varint(length(Points), B3),
     append_points(Points, B4).
 
+ts_key({Family, Series, Time}) ->
+    B1 = <<Time:64>>,
+    B2 = append_string(Family, B1),
+    append_string(Series, B2).
 
 %% ===================================================================
 %% EUnit tests
