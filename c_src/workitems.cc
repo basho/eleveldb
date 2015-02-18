@@ -432,7 +432,7 @@ bool RangeScanTask::SyncObject::AckBytes(uint32_t n)
             pending_signal_ = true;
             ret = true;
         }
-        enif_mutex_lock(mutex_);
+        enif_mutex_unlock(mutex_);
     } else 
         ret = false;
 
@@ -536,7 +536,7 @@ work_result RangeScanTask::operator()()
                 enif_realloc_binary(&bin, out_offset);
             send_batch(&pid, msg_env, caller_ref_term, &bin);
             // Maybe block if max reached.
-            sync_obj_->AddBytes(esz);
+            sync_obj_->AddBytes(out_offset);
             out_offset = 0;
         }
         iter->Next();
