@@ -448,30 +448,6 @@ void RangeScanTask::SyncObject::MarkConsumerDead() {
     enif_mutex_unlock(mutex_);
 }
 
-class OutBuffer
-{
-    public:
-        explicit OutBuffer(size_t initial_size) :
-            data_(new char[initial_size]), size_(initial_size) {}
-        ~OutBuffer() { delete [] data_; }
-        char * data() const { return data_; }
-        size_t size() const { return size_; }
-
-        void maybe_expand(size_t size) {
-            if (size > size_) {
-                char * new_data = new char[size];
-                memcpy(new_data, data_, size_);
-                delete [] data_;
-                data_ = new_data;
-                size_ = size;
-            }
-        }
-    private:
-        char * data_;
-        size_t size_;
-};
-
-
 void send_batch(ErlNifPid * pid, ErlNifEnv * msg_env, ERL_NIF_TERM ref_term,
                 ErlNifBinary * bin) {
     // Binary now owned. No need to release it.
