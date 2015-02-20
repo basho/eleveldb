@@ -514,23 +514,20 @@ work_result RangeScanTask::operator()()
         // Shove next entry in the batch.
         leveldb::Slice key = iter->key();
         leveldb::Slice value = iter->value();
-        const size_t ksz = key.size(), vsz = value.size();
-        const size_t ksz_sz = VarintLength(ksz);
-        const size_t vsz_sz = VarintLength(vsz);
-        const size_t esz = ksz + ksz_sz + vsz + vsz_sz;
-        const size_t next_offset = out_offset + esz;
+        size_t val_size = 8 + value.size() + VarintLength(value.size());
+        size_t next_offset = out_offset + val_size;
         if (out_offset == 0)
             enif_alloc_binary(initial_bin_size, &bin);
         // If we need more space, allocate it exactly since that means we
         // reached the batch max anyway and will send it right away.
         if (next_offset > bin.size)
             enif_realloc_binary(&bin, next_offset);
-        char * const out = (char*)bin.data + out_offset;
-        EncodeVarint64(out, ksz);
-        memcpy(out + ksz_sz, key.data(), ksz);
-        EncodeVarint64(out + ksz_sz + ksz, vsz);
-        memcpy(out + ksz_sz + ksz + vsz_sz, value.data(), vsz);
-        out_offset = next_offset;
+        // 64 bit timestamp, then length prefixed value blob
+        memcpy(bin.data + out_offset, key.data(), 8);
+        char * out = (char*)bin.data + out_offset + 8;
+        out = EncodeVarint64(out, value.size());
+        memcpy(out, value.data(), value.size());
+        out_offset += val_size;
         if (out_offset >= options_.max_batch_bytes) {
             if (out_offset != bin.size)
                 enif_realloc_binary(&bin, out_offset);
