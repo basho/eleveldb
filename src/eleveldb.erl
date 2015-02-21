@@ -32,6 +32,8 @@
          status/2,
          destroy/2,
          repair/2,
+         append_string/2,
+         append_point/3,
          ts_batch_to_binary/1,
          ts_key/1,
          is_empty/1]).
@@ -442,13 +444,15 @@ append_string(S, Bin) ->
     B2 = append_varint(L, Bin),
     <<B2/binary, S/binary>>.
 
+append_point(Timestamp, Value, Bin) ->
+    Bin2 = <<Bin/binary, Timestamp:64>>,
+    append_string(Value, Bin2).
+
 append_points([], Bin) ->
     Bin;
 append_points([{Timestamp, Value}|MorePoints], Bin) ->
-    Bin2 = <<Bin/binary, Timestamp:64>>,
-    Bin3 = append_string(Value, Bin2),
-    append_points(MorePoints, Bin3).
-
+    Bin2 = append_point(Timestamp, Value, Bin),
+    append_points(MorePoints, Bin2).
 
 ts_batch_to_binary({ts_batch, Family, Series, Points}) ->
     B1 = append_varint(1, <<>>),
