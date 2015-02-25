@@ -41,6 +41,7 @@
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
 #include "leveldb/perf_count.h"
+#include "leveldb/translator.h"
 
 #ifndef INCL_THREADING_H
     #include "threading.h"
@@ -143,6 +144,7 @@ ERL_NIF_TERM ATOM_MAX_BATCH_BYTES;
 ERL_NIF_TERM ATOM_RANGE_SCAN_BATCH;
 ERL_NIF_TERM ATOM_RANGE_SCAN_END;
 ERL_NIF_TERM ATOM_NEEDS_REACK;
+ERL_NIF_TERM ATOM_TIME_SERIES;
 }   // namespace eleveldb
 
 
@@ -458,7 +460,18 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (0<ret_val && ret_val<256)
                 opts.tiered_slow_prefix = buffer;
         }
-
+        else if (option[0] == eleveldb::ATOM_TIME_SERIES)
+        {
+            if (option[1] == eleveldb::ATOM_TRUE)
+            {
+                opts.comparator = leveldb::GetTSComparator();
+                opts.data_dictionary = leveldb::NewDataDictionary();
+                leveldb::TSTranslator * translator =
+                    new leveldb::TSTranslator(opts.data_dictionary);
+                opts.translator = translator;
+                opts.batch_translator = translator;
+            }
+        }
     }
 
     return eleveldb::ATOM_OK;
@@ -642,23 +655,29 @@ async_open(
 
 
 ERL_NIF_TERM
-convert_ts_batch( ErlNifEnv * env, ERL_NIF_TERM bin_term,
-                  leveldb::DB * db, leveldb::WriteBatch * write_batch)
+convert_binary_batch( ErlNifEnv * env, ERL_NIF_TERM bin_term,
+                      leveldb::DB * db, leveldb::WriteBatch * write_batch)
 {
     ErlNifBinary bin;
     enif_inspect_binary(env, bin_term, &bin);
     leveldb::Slice input((const char *)bin.data, bin.size);
 
-    leveldb::Status s = leveldb::convert_ts_batch(db, input, write_batch);
-
-    if (s.ok()) {
-        return eleveldb::ATOM_OK;
+    leveldb::Status s;
+    leveldb::BatchTranslator * batch_translator =
+        db->GetOptions().batch_translator;
+    if (batch_translator) {
+        s = batch_translator->TranslateBatch(input, write_batch);
+    } else {
+        s = leveldb::Status::InvalidArgument("No binary batch support configured");
     }
 
+    if (s.ok())
+        return eleveldb::ATOM_OK;
+
     std::string err_str = s.ToString();
-    ERL_NIF_TERM err_str_term = enif_make_string_len(env, err_str.data(),
-                                                     err_str.length(),
-                                                     ERL_NIF_LATIN1);
+    ERL_NIF_TERM err_str_term =
+        enif_make_string_len(env, err_str.data(), err_str.length(),
+                             ERL_NIF_LATIN1);
 
     return enif_make_tuple2(env, eleveldb::ATOM_ERROR, err_str_term);
 }
@@ -700,7 +719,7 @@ async_write(
     if (enif_is_list(env, action_ref)) {
         result = fold(env, action_ref, write_batch_item, *batch);
     } else {
-        result = convert_ts_batch(env, action_ref, db_ptr->m_Db, batch);
+        result = convert_binary_batch(env, action_ref, db_ptr->m_Db, batch);
     }
 
     if(eleveldb::ATOM_OK != result)
@@ -866,22 +885,26 @@ range_scan(ErlNifEnv * env,
     if (NULL == db_ptr->m_Db)
         return error_einval(env);
 
+    const leveldb::Options & options = db_ptr->m_Db->GetOptions();
+    leveldb::KeyTranslator * key_tx = options.translator;
+
     ERL_NIF_TERM reply_ref = enif_make_ref(env);
 
     ErlNifBinary start_key_bin;
-    ErlNifBinary end_key_bin;
     enif_inspect_binary(env, start_key_term, &start_key_bin);
-    enif_inspect_binary(env, end_key_term, &end_key_bin);
     leveldb::Slice start_key_slice((const char *)start_key_bin.data,
                                    start_key_bin.size);
+    std::string start_key;
+    start_key.resize(key_tx->GetOutputSize(start_key_slice));
+    key_tx->TranslateKey(start_key_slice, (char*)start_key.data());
+
+    ErlNifBinary end_key_bin;
+    enif_inspect_binary(env, end_key_term, &end_key_bin);
     leveldb::Slice end_key_slice((const char *)end_key_bin.data,
                                  end_key_bin.size);
-
-    std::string start_key;
     std::string end_key;
-
-    convert_ts_key(db_ptr->m_Db, start_key_slice, &start_key); 
-    convert_ts_key(db_ptr->m_Db, end_key_slice, &end_key); 
+    end_key.resize(key_tx->GetOutputSize(end_key_slice));
+    key_tx->TranslateKey(end_key_slice, (char*)end_key.data());
 
     RangeScanOptions opts;
     fold(env, options_list, parse_range_scan_option, opts);
@@ -1414,6 +1437,7 @@ try
     ATOM(eleveldb::ATOM_RANGE_SCAN_BATCH, "range_scan_batch");
     ATOM(eleveldb::ATOM_RANGE_SCAN_END, "range_scan_end");
     ATOM(eleveldb::ATOM_NEEDS_REACK, "needs_reack");
+    ATOM(eleveldb::ATOM_TIME_SERIES, "time_series");
 #undef ATOM
 
 

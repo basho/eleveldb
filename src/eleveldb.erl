@@ -100,6 +100,10 @@ init() ->
                          {total_memory, pos_integer()} |
                          {total_leveldb_mem, pos_integer()} |
                          {total_leveldb_mem_percent, pos_integer()} |
+                         % TODO: Probably only good for prototype.
+                         % Higher level might have to tweak specific knobs in
+                         % different ways for time series tables.
+                         {time_series, boolean()} |
                          {is_internal_db, boolean()} |
                          {limited_developer_mem, boolean()} |
                          {eleveldb_threads, pos_integer()} |
