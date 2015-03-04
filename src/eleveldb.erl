@@ -36,6 +36,7 @@
          append_point/3,
          ts_batch_to_binary/1,
          ts_key/1,
+         parse_string/1,
          is_empty/1]).
 
 -export([option_types/1,
