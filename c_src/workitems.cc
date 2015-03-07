@@ -29,6 +29,7 @@
 #include "leveldb/filter_policy.h"
 #include "leveldb/perf_count.h"
 #include "leveldb/comparator.h"
+#include "leveldb/translator.h"
 
 // error_tuple duplicated in workitems.cc and eleveldb.cc ... how to fix?
 static ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Status& status)
@@ -489,6 +490,8 @@ work_result RangeScanTask::operator()()
     const leveldb::Comparator * cmp = m_DbPtr->m_DbOptions->comparator;
     const leveldb::Slice skey_slice(start_key_);
     const leveldb::Slice ekey_slice(end_key_);
+    const leveldb::Options & db_options = m_DbPtr->m_Db->GetOptions();
+    leveldb::KeyTranslator * translator = db_options.translator;
 
     iter->Seek(skey_slice);
 
@@ -497,6 +500,8 @@ work_result RangeScanTask::operator()()
     ErlNifBinary bin;
     const size_t initial_bin_size = size_t(options_.max_batch_bytes * 1.1);
     size_t out_offset = 0;
+    std::string key_buffer;
+    key_buffer.reserve(256);
 
     for (;;) {
         // If reached end or key past end key.
@@ -514,20 +519,25 @@ work_result RangeScanTask::operator()()
         // Shove next entry in the batch.
         leveldb::Slice key = iter->key();
         leveldb::Slice value = iter->value();
-        size_t val_size = 8 + value.size() + VarintLength(value.size());
-        size_t next_offset = out_offset + val_size;
+        key_buffer.resize(0);
+        translator->TranslateInternalKey(key, &key_buffer);
+        const size_t ksz = key_buffer.size(), vsz = value.size();
+        const size_t ksz_sz = VarintLength(ksz);
+        const size_t vsz_sz = VarintLength(vsz);
+        const size_t esz = ksz + ksz_sz + vsz + vsz_sz;
+        const size_t next_offset = out_offset + esz;
         if (out_offset == 0)
             enif_alloc_binary(initial_bin_size, &bin);
         // If we need more space, allocate it exactly since that means we
         // reached the batch max anyway and will send it right away.
         if (next_offset > bin.size)
             enif_realloc_binary(&bin, next_offset);
-        // 64 bit timestamp, then length prefixed value blob
-        memcpy(bin.data + out_offset, key.data(), 8);
-        char * out = (char*)bin.data + out_offset + 8;
-        out = EncodeVarint64(out, value.size());
-        memcpy(out, value.data(), value.size());
-        out_offset += val_size;
+        char * const out = (char*)bin.data + out_offset;
+        EncodeVarint64(out, ksz);
+        memcpy(out + ksz_sz, key_buffer.data(), ksz);
+        EncodeVarint64(out + ksz_sz + ksz, vsz);
+        memcpy(out + ksz_sz + ksz + vsz_sz, value.data(), vsz);
+        out_offset = next_offset;
         if (out_offset >= options_.max_batch_bytes) {
             if (out_offset != bin.size)
                 enif_realloc_binary(&bin, out_offset);

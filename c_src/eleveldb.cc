@@ -895,16 +895,16 @@ range_scan(ErlNifEnv * env,
     leveldb::Slice start_key_slice((const char *)start_key_bin.data,
                                    start_key_bin.size);
     std::string start_key;
-    start_key.resize(key_tx->GetOutputSize(start_key_slice));
-    key_tx->TranslateKey(start_key_slice, (char*)start_key.data());
+    start_key.resize(key_tx->GetInternalKeySize(start_key_slice));
+    key_tx->TranslateExternalKey(start_key_slice, (char*)start_key.data());
 
     ErlNifBinary end_key_bin;
     enif_inspect_binary(env, end_key_term, &end_key_bin);
     leveldb::Slice end_key_slice((const char *)end_key_bin.data,
                                  end_key_bin.size);
     std::string end_key;
-    end_key.resize(key_tx->GetOutputSize(end_key_slice));
-    key_tx->TranslateKey(end_key_slice, (char*)end_key.data());
+    end_key.resize(key_tx->GetInternalKeySize(end_key_slice));
+    key_tx->TranslateExternalKey(end_key_slice, (char*)end_key.data());
 
     RangeScanOptions opts;
     fold(env, options_list, parse_range_scan_option, opts);
