@@ -534,10 +534,58 @@ ERL_NIF_TERM parse_write_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Writ
     return eleveldb::ATOM_OK;
 }
 
-ERL_NIF_TERM write_batch_item(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::WriteBatch& batch)
+struct WriteBatchItemAcc {
+    leveldb::KeyTranslator * translator;
+    leveldb::WriteBatch * batch;
+    WriteBatchItemAcc(leveldb::KeyTranslator * in_translator,
+                      leveldb::WriteBatch * in_batch)
+        : translator(in_translator), batch(in_batch)
+    {
+    }
+};
+
+class WriteKey {
+    public:
+
+    WriteKey(const leveldb::Slice & user_key,
+             leveldb::KeyTranslator * translator)
+        : big_key_(NULL)
+    {
+        char * buffer;
+        size_t internal_size = translator->GetInternalKeySize(user_key);
+        if (internal_size > sizeof(space_)) {
+            big_key_ = new char[internal_size];
+            buffer = big_key_;
+        } else {
+            buffer = space_;
+        }
+        translator->TranslateExternalKey(user_key, buffer);
+        internal_key = leveldb::Slice(buffer, internal_size);
+    }
+
+    leveldb::Slice Slice() const {
+        return internal_key;
+    }
+
+    ~WriteKey() {
+        delete [] big_key_;
+    }
+
+    private:
+        char space_[256];
+        char * big_key_;
+        leveldb::Slice internal_key;
+
+        WriteKey(const WriteKey&);
+        void operator=(const WriteKey&);
+};
+
+ERL_NIF_TERM write_batch_item(ErlNifEnv* env, ERL_NIF_TERM item,
+                              WriteBatchItemAcc & acc)
 {
     int arity;
     const ERL_NIF_TERM* action;
+    leveldb::WriteBatch & batch = *acc.batch;
     if (enif_get_tuple(env, item, &arity, &action) ||
         enif_is_atom(env, item))
     {
@@ -553,9 +601,10 @@ ERL_NIF_TERM write_batch_item(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::WriteB
             enif_inspect_binary(env, action[1], &key) &&
             enif_inspect_binary(env, action[2], &value))
         {
-            leveldb::Slice key_slice((const char*)key.data, key.size);
+            leveldb::Slice in_key_slice((const char*)key.data, key.size);
+            WriteKey write_key(in_key_slice, acc.translator);
             leveldb::Slice value_slice((const char*)value.data, value.size);
-            batch.Put(key_slice, value_slice);
+            batch.Put(write_key.Slice(), value_slice);
             return eleveldb::ATOM_OK;
         }
 
@@ -563,7 +612,8 @@ ERL_NIF_TERM write_batch_item(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::WriteB
             enif_inspect_binary(env, action[1], &key))
         {
             leveldb::Slice key_slice((const char*)key.data, key.size);
-            batch.Delete(key_slice);
+            WriteKey write_key(key_slice, acc.translator);
+            batch.Delete(write_key.Slice());
             return eleveldb::ATOM_OK;
         }
     }
@@ -712,12 +762,15 @@ async_write(
 
     // Construct a write batch:
     leveldb::WriteBatch* batch = new leveldb::WriteBatch();
+    leveldb::KeyTranslator * translator =
+        db_ptr->m_Db->GetOptions().translator;
 
     // Seed the batch's data:
     ERL_NIF_TERM result;
    
     if (enif_is_list(env, action_ref)) {
-        result = fold(env, action_ref, write_batch_item, *batch);
+        WriteBatchItemAcc acc(translator, batch);
+        result = fold(env, action_ref, write_batch_item, acc);
     } else {
         result = convert_binary_batch(env, action_ref, db_ptr->m_Db, batch);
     }
