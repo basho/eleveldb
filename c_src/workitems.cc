@@ -574,6 +574,7 @@ RangeScanTask::SyncHandle *
 RangeScanTask::CreateSyncHandle(const RangeScanOptions & options)
 {
     SyncObject * sync_obj = new SyncObject(options);
+    sync_obj->RefInc();
     SyncHandle * handle =
         (SyncHandle*)enif_alloc_resource(sync_handle_resource_,
                                          sizeof(SyncHandle));
