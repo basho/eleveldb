@@ -23,10 +23,16 @@
 
 -export([open/2,
          close/1,
+         open_family/3,
+         close_family/2,
          get/3,
+         get/4,
          put/4,
+         put/5,
          delete/3,
+         delete/4,
          write/3,
+         write/4,
          fold/4,
          fold_keys/4,
          status/2,
@@ -157,6 +163,43 @@ close(Ref) ->
 async_close(_CallerRef, _Ref) ->
     erlang:nif_error({error, not_loaded}).
 
+async_open_family(_CallerRef, _Dbh, _Name, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
+open_family(Dbh, Name, Opts) ->
+    CallerRef = make_ref(),
+    async_open_family(CallerRef, Dbh, Name, Opts),
+    ?WAIT_FOR_REPLY(CallerRef).
+
+async_close_family(_CallerRef, _Dbh, _Name) ->
+    erlang:nif_error({error, not_loaded}).
+
+close_family(Dbh, Name) ->
+    CallerRef = make_ref(),
+    async_close_family(CallerRef, Dbh, Name),
+    ?WAIT_FOR_REPLY(CallerRef).
+ 
+async_get(_CallerRef, _Dbh, _Family, _Key, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
+get(Dbh, Family, Key, Opts) ->
+    CallerRef = make_ref(),
+    async_get(CallerRef, Dbh, Family, Key, Opts),
+    ?WAIT_FOR_REPLY(CallerRef).
+
+async_write(_CallerRef, _Ref, _Family, _Updates, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+    
+put(Ref, Family, Key, Value, Opts) -> write(Ref, Family, [{put, Key, Value}], Opts).
+    
+delete(Ref, Family, Key, Opts) -> write(Ref, Family, [{delete, Key}], Opts).
+
+write(Ref, Family, Updates, Opts) ->
+    CallerRef = make_ref(),
+    async_write(CallerRef, Ref, Family, Updates, Opts),
+    ?WAIT_FOR_REPLY(CallerRef).
+
+    
 -spec async_get(reference(), db_ref(), binary(), read_options()) -> ok.
 async_get(_CallerRef, _Dbh, _Key, _Opts) ->
     erlang:nif_error({error, not_loaded}).

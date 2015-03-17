@@ -174,6 +174,96 @@ OpenTask::operator()()
 }   // OpenTask::operator()
 
 
+OpenFamilyTask::OpenFamilyTask(
+    ErlNifEnv* caller_env,
+    ERL_NIF_TERM _caller_ref,
+    DbObject * db_handle,
+    const char* family_name,
+    leveldb::Options *open_options)
+    : WorkTask(caller_env, _caller_ref, db_handle),
+    family_name_(family_name), open_options_(open_options)
+{
+}
+
+work_result
+OpenFamilyTask::operator()()
+{
+    leveldb::Status status = m_DbPtr->m_Db->OpenFamily(*open_options_, family_name_);
+    return (status.ok() ? work_result(ATOM_OK) : work_result(local_env(), ATOM_ERROR_DB_WRITE, status));
+}
+
+
+CloseFamilyTask::CloseFamilyTask(ErlNifEnv *caller_env, ERL_NIF_TERM caller_ref, DbObject *db_handle, const char *family_name)
+    : WorkTask(caller_env, caller_ref, db_handle),
+      family_name_(family_name)
+{
+}
+
+work_result CloseFamilyTask::operator()()
+{
+    leveldb::Status status = m_DbPtr->m_Db->CloseFamily(family_name_);
+    return (status.ok() ? work_result(ATOM_OK) : work_result(local_env(), ATOM_ERROR_DB_WRITE, status));
+}
+
+WriteTask::WriteTask(
+        ErlNifEnv *_owner_env,
+        ERL_NIF_TERM _caller_ref,
+        DbObject *_db_handle,
+        const char *family,
+        leveldb::WriteBatch *_batch,
+        leveldb::WriteOptions *_options)
+    : WorkTask(_owner_env, _caller_ref, _db_handle),
+      batch(_batch),
+      options(_options),
+      family(family)
+{}
+
+work_result WriteTask::operator()()
+{
+    leveldb::Status status;
+    if ( family.empty() )
+        status = m_DbPtr->m_Db->Write(*options, batch.get());
+    else
+        status = m_DbPtr->m_Db->Write(family, *options, batch.get());
+    return (status.ok() ? work_result(ATOM_OK) : work_result(local_env(), ATOM_ERROR_DB_WRITE, status));
+}
+
+GetTask::GetTask(
+    ErlNifEnv *_caller_env,
+    ERL_NIF_TERM _caller_ref,
+    DbObject *_db_handle,
+    const char *family,
+    ERL_NIF_TERM _key_term,
+    leveldb::ReadOptions &_options) :
+
+    WorkTask(_caller_env, _caller_ref, _db_handle),
+    options(_options),
+    family(family)
+{
+    ErlNifBinary key;
+    enif_inspect_binary(_caller_env, _key_term, &key);
+    m_Key.assign((const char *)key.data, key.size);
+}
+
+work_result GetTask::operator()()
+{
+    ERL_NIF_TERM value_bin;
+    BinaryValue value(local_env(), value_bin);
+    leveldb::Slice key_slice(m_Key);
+
+    leveldb::Status status;
+    if ( family.empty() )
+        status = m_DbPtr->m_Db->Get(options, key_slice, &value);
+    else
+        status = m_DbPtr->m_Db->Get(family, options, key_slice, &value);
+    if(!status.ok()){
+        if ( status.IsNotFound() )
+            return work_result(ATOM_NOT_FOUND);
+        else
+            return work_result(local_env(), ATOM_ERROR, status);
+    }
+    return work_result(local_env(), ATOM_OK, value_bin);
+}
 
 /**
  * MoveTask functions

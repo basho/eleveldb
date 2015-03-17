@@ -72,6 +72,11 @@ static ErlNifFunc nif_funcs[] =
     {"async_write", 4, eleveldb::async_write},
     {"async_get", 4, eleveldb::async_get},
 
+    {"async_open_family", 4, eleveldb::async_open_family},
+    {"async_close_family", 3, eleveldb::async_close_family},
+    {"async_write", 5, eleveldb::async_write},
+    {"async_get", 5, eleveldb::async_get},
+
     {"async_iterator", 3, eleveldb::async_iterator},
     {"async_iterator", 4, eleveldb::async_iterator},
 
@@ -703,6 +708,18 @@ async_open(
 
 }   // async_open
 
+/// takes ownership of thw item. assumes allocated through new
+ERL_NIF_TERM
+submit_to_thread_queue(eleveldb::WorkTask *work_item, ErlNifEnv* env, ERL_NIF_TERM caller_ref){
+    eleveldb_priv_data& data = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+    if(false == data.thread_pool.submit(work_item))
+    {
+        delete work_item;
+        return send_reply(env, caller_ref,
+                          enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
+    }   // if
+    return eleveldb::ATOM_OK;
+}
 
 ERL_NIF_TERM
 convert_binary_batch( ErlNifEnv * env, ERL_NIF_TERM bin_term,
@@ -733,33 +750,103 @@ convert_binary_batch( ErlNifEnv * env, ERL_NIF_TERM bin_term,
 }
 
 ERL_NIF_TERM
-async_write(
+async_open_family(
     ErlNifEnv* env,
     int argc,
     const ERL_NIF_TERM argv[])
 {
     const ERL_NIF_TERM& caller_ref = argv[0];
-    const ERL_NIF_TERM& handle_ref = argv[1];
-    const ERL_NIF_TERM& action_ref = argv[2];
+    const ERL_NIF_TERM& db_ref     = argv[1];
+    const ERL_NIF_TERM& family_name_ref = argv[2];
     const ERL_NIF_TERM& opts_ref   = argv[3];
 
+    char family_name[4096];
     ReferencePtr<DbObject> db_ptr;
-
-    db_ptr.assign(DbObject::RetrieveDbObject(env, handle_ref));
-
+    db_ptr.assign(DbObject::RetrieveDbObject(env, db_ref));
     if(NULL==db_ptr.get()
-       || (!enif_is_list(env, action_ref) && !enif_is_binary(env, action_ref))
-       || !enif_is_list(env, opts_ref))
+       ||!enif_get_string(env, family_name_ref, family_name, sizeof(family_name), ERL_NIF_LATIN1)
+       ||!enif_is_list(env, opts_ref))
     {
         return enif_make_badarg(env);
     }
-
     // is this even possible?
     if(NULL == db_ptr->m_Db)
         return send_reply(env, caller_ref, error_einval(env));
 
-    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+    leveldb::Options *opts = new leveldb::Options;
+    fold(env, opts_ref, parse_open_option, *opts);
 
+    eleveldb::OpenFamilyTask* work_item = new eleveldb::OpenFamilyTask(env, caller_ref,
+                                                            db_ptr.get(), family_name, opts);
+    return submit_to_thread_queue(work_item, env, caller_ref);
+}
+
+ERL_NIF_TERM
+async_close_family(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    const ERL_NIF_TERM& caller_ref = argv[0];
+    const ERL_NIF_TERM& db_ref     = argv[1];
+    const ERL_NIF_TERM& family_name_ref = argv[2];
+
+    char family_name[4096];
+    ReferencePtr<DbObject> db_ptr;
+    db_ptr.assign(DbObject::RetrieveDbObject(env, db_ref));
+    if(NULL==db_ptr.get() || !enif_get_string(env, family_name_ref, family_name, sizeof(family_name), ERL_NIF_LATIN1))
+        return enif_make_badarg(env);
+    // is this even possible?
+    if(NULL == db_ptr->m_Db)
+        return send_reply(env, caller_ref, error_einval(env));
+
+    eleveldb::CloseFamilyTask* work_item = new eleveldb::CloseFamilyTask(env, caller_ref,
+                                                            db_ptr.get(), family_name);
+    return submit_to_thread_queue(work_item, env, caller_ref);
+}
+
+ERL_NIF_TERM
+async_write(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    ERL_NIF_TERM caller_ref;
+    ERL_NIF_TERM handle_ref;
+    ERL_NIF_TERM action_ref;
+    ERL_NIF_TERM opts_ref  ;
+    ERL_NIF_TERM family_name_ref;
+    bool hasFamily = false;
+    if ( argc ==  4 ){
+        caller_ref = argv[0];
+        handle_ref = argv[1];
+        action_ref = argv[2];
+        opts_ref   = argv[3];
+    }
+    else{
+        assert(argc == 5);
+        hasFamily = true;
+        caller_ref = argv[0];
+        handle_ref = argv[1];
+        family_name_ref = argv[2];
+        action_ref = argv[3];
+        opts_ref   = argv[4];
+
+    }
+    char family_name[4096];
+    family_name[0] = 0;
+    ReferencePtr<DbObject> db_ptr;
+    db_ptr.assign(DbObject::RetrieveDbObject(env, handle_ref));
+    if(NULL==db_ptr.get()
+       || (!enif_is_list(env, action_ref) && !enif_is_binary(env, action_ref))
+       || (hasFamily && !enif_get_string(env, family_name_ref, family_name, sizeof(family_name), ERL_NIF_LATIN1))
+       || !enif_is_list(env, opts_ref))
+    {
+        return enif_make_badarg(env);
+    }
+    // is this even possible?
+    if(NULL == db_ptr->m_Db)
+        return send_reply(env, caller_ref, error_einval(env));
     // Construct a write batch:
     leveldb::WriteBatch* batch = new leveldb::WriteBatch();
     leveldb::KeyTranslator * translator =
@@ -767,14 +854,12 @@ async_write(
 
     // Seed the batch's data:
     ERL_NIF_TERM result;
-   
     if (enif_is_list(env, action_ref)) {
         WriteBatchItemAcc acc(translator, batch);
         result = fold(env, action_ref, write_batch_item, acc);
     } else {
         result = convert_binary_batch(env, action_ref, db_ptr->m_Db, batch);
     }
-
     if(eleveldb::ATOM_OK != result)
     {
         return send_reply(env, caller_ref,
@@ -782,21 +867,11 @@ async_write(
                                            enif_make_tuple2(env, eleveldb::ATOM_BAD_WRITE_ACTION,
                                                             result)));
     }   // if
-
     leveldb::WriteOptions* opts = new leveldb::WriteOptions;
     fold(env, opts_ref, parse_write_option, *opts);
-
     eleveldb::WorkTask* work_item = new eleveldb::WriteTask(env, caller_ref,
-                                                            db_ptr.get(), batch, opts);
-
-    if(false == priv.thread_pool.submit(work_item))
-    {
-        delete work_item;
-        return send_reply(env, caller_ref,
-                          enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
-    }   // if
-
-    return eleveldb::ATOM_OK;
+                                                            db_ptr.get(), family_name, batch, opts);
+    return submit_to_thread_queue(work_item, env, caller_ref);
 }
 
 
@@ -806,16 +881,34 @@ async_get(
     int argc,
     const ERL_NIF_TERM argv[])
 {
-    const ERL_NIF_TERM& caller_ref = argv[0];
-    const ERL_NIF_TERM& dbh_ref    = argv[1];
-    const ERL_NIF_TERM& key_ref    = argv[2];
-    const ERL_NIF_TERM& opts_ref   = argv[3];
+    ERL_NIF_TERM caller_ref;
+    ERL_NIF_TERM dbh_ref   ;
+    ERL_NIF_TERM key_ref   ;
+    ERL_NIF_TERM opts_ref  ;
+    ERL_NIF_TERM family_name_ref;
+    bool hasFamily = false;
+    if ( argc == 4 ){
+        caller_ref = argv[0];
+        dbh_ref    = argv[1];
+        key_ref    = argv[2];
+        opts_ref   = argv[3];
+    }
+    else{
+        assert(argc == 5);
+        hasFamily = true;
+        caller_ref = argv[0];
+        dbh_ref    = argv[1];
+        family_name_ref = argv[2];
+        key_ref    = argv[3];
+        opts_ref   = argv[4];
+    }
 
+    char family_name[4096];
+    family_name[0] = 0;
     ReferencePtr<DbObject> db_ptr;
-
     db_ptr.assign(DbObject::RetrieveDbObject(env, dbh_ref));
-
     if(NULL==db_ptr.get()
+       || (hasFamily && !enif_get_string(env, family_name_ref, family_name, sizeof(family_name), ERL_NIF_LATIN1))
        || !enif_is_list(env, opts_ref)
        || !enif_is_binary(env, key_ref))
     {
@@ -829,19 +922,8 @@ async_get(
     fold(env, opts_ref, parse_read_option, opts);
 
     eleveldb::WorkTask *work_item = new eleveldb::GetTask(env, caller_ref,
-                                                          db_ptr.get(), key_ref, opts);
-
-    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-    if(false == priv.thread_pool.submit(work_item))
-    {
-        delete work_item;
-        return send_reply(env, caller_ref,
-                          enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
-    }   // if
-
-    return eleveldb::ATOM_OK;
-
+                                                          db_ptr.get(), family_name, key_ref, opts);
+    return submit_to_thread_queue(work_item, env, caller_ref);
 }   // async_get
 
 
@@ -877,18 +959,7 @@ async_iterator(
 
     eleveldb::WorkTask *work_item = new eleveldb::IterTask(env, caller_ref,
                                                            db_ptr.get(), keys_only, opts);
-
-    // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
-    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-    if(false == priv.thread_pool.submit(work_item))
-    {
-        delete work_item;
-        return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
-    }   // if
-
-    return ATOM_OK;
-
+    return submit_to_thread_queue(work_item, env, caller_ref);
 }   // async_iterator
 
 ERL_NIF_TERM
@@ -1234,25 +1305,13 @@ async_iterator_close(
     {
         eleveldb::WorkTask *work_item = new eleveldb::ItrCloseTask(env, caller_ref,
                                                                    itr_ptr.get());
-
-        // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
-        eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-        if(false == priv.thread_pool.submit(work_item))
-        {
-            delete work_item;
-            return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
-        }   // if
+        return submit_to_thread_queue(work_item, env, caller_ref);
     }   // if
-
     // this close/cleanup call is way late ... bad programmer!
     else
     {
         return send_reply(env, caller_ref, error_einval(env));
     }   // else
-
-    return ATOM_OK;
-
 }   // async_iterator_close
 
 } // namespace eleveldb

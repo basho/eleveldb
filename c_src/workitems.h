@@ -23,6 +23,8 @@
 #ifndef INCL_WORKITEMS_H
 #define INCL_WORKITEMS_H
 
+#include <memory>
+#include <string>
 #include <stdint.h>
 
 #include "leveldb/db.h"
@@ -125,7 +127,49 @@ private:
 
 };  // class OpenTask
 
+/**
+ * Background object for async open of a leveldb instance
+ */
 
+class OpenFamilyTask : public WorkTask
+{
+protected:
+    std::string         family_name_;
+    leveldb::Options   *open_options_;  // associated with db handle, we don't free it
+
+public:
+    OpenFamilyTask(
+        ErlNifEnv* caller_env,
+        ERL_NIF_TERM caller_ref,
+        DbObject * db_handle,
+        const char* family_name,
+        leveldb::Options *open_options);
+
+    virtual work_result operator()();
+
+    OpenFamilyTask(const OpenFamilyTask &) = delete;
+    OpenFamilyTask & operator=(const OpenFamilyTask &) = delete;
+
+};
+
+class CloseFamilyTask : public WorkTask
+{
+protected:
+    std::string         family_name_;
+
+public:
+    CloseFamilyTask(
+        ErlNifEnv* caller_env,
+        ERL_NIF_TERM caller_ref,
+        DbObject * db_handle,
+        const char* family_name);
+
+    virtual work_result operator()();
+
+    CloseFamilyTask(const CloseFamilyTask &) = delete;
+    CloseFamilyTask & operator=(const CloseFamilyTask &) = delete;
+
+};
 
 /**
  * Background object for async write
@@ -134,33 +178,21 @@ private:
 class WriteTask : public WorkTask
 {
 protected:
-    leveldb::WriteBatch*    batch;
-    leveldb::WriteOptions*          options;
+    std::unique_ptr<leveldb::WriteBatch>    batch;
+    std::unique_ptr<leveldb::WriteOptions>  options;
+    std::string family;
 
 public:
 
-    WriteTask(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
-                DbObject * _db_handle,
-                leveldb::WriteBatch* _batch,
-                leveldb::WriteOptions* _options)
-        : WorkTask(_owner_env, _caller_ref, _db_handle),
-       batch(_batch),
-       options(_options)
-    {}
+    WriteTask(
+        ErlNifEnv* _owner_env,
+        ERL_NIF_TERM _caller_ref,
+        DbObject * _db_handle,
+        const char *family,
+        leveldb::WriteBatch* _batch,
+        leveldb::WriteOptions* _options);
 
-    virtual ~WriteTask()
-    {
-        delete batch;
-        delete options;
-    }
-
-    virtual work_result operator()()
-    {
-        leveldb::Status status = m_DbPtr->m_Db->Write(*options, batch);
-
-        return (status.ok() ? work_result(ATOM_OK) : work_result(local_env(), ATOM_ERROR_DB_WRITE, status));
-    }
-
+    virtual work_result operator()();
 };  // class WriteTask
 
 
@@ -205,40 +237,18 @@ class GetTask : public WorkTask
 protected:
     std::string                        m_Key;
     leveldb::ReadOptions              options;
+    std::string family;
 
 public:
-    GetTask(ErlNifEnv *_caller_env,
-            ERL_NIF_TERM _caller_ref,
-            DbObject *_db_handle,
-            ERL_NIF_TERM _key_term,
-            leveldb::ReadOptions &_options)
-        : WorkTask(_caller_env, _caller_ref, _db_handle),
-        options(_options)
-        {
-            ErlNifBinary key;
+    GetTask(
+        ErlNifEnv *_caller_env,
+        ERL_NIF_TERM _caller_ref,
+        DbObject *_db_handle,
+        const char *family,
+        ERL_NIF_TERM _key_term,
+        leveldb::ReadOptions &_options);
 
-            enif_inspect_binary(_caller_env, _key_term, &key);
-            m_Key.assign((const char *)key.data, key.size);
-        }
-
-    virtual ~GetTask()
-    {
-    }
-
-    virtual work_result operator()()
-    {
-        ERL_NIF_TERM value_bin;
-        BinaryValue value(local_env(), value_bin);
-        leveldb::Slice key_slice(m_Key);
-
-        leveldb::Status status = m_DbPtr->m_Db->Get(options, key_slice, &value);
-
-        if(!status.ok())
-            return work_result(ATOM_NOT_FOUND);
-
-        return work_result(local_env(), ATOM_OK, value_bin);
-    }
-
+    virtual work_result operator()();
 };  // class GetTask
 
 
