@@ -331,8 +331,6 @@ DbObject::~DbObject()
         delete m_DbOptions->filter_policy;
         m_DbOptions->filter_policy = NULL;
 
-        DeleteDataDictionary(m_DbOptions->data_dictionary);
-
         delete m_DbOptions;
         m_DbOptions = NULL;
 

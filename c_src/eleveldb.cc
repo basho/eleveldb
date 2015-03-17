@@ -42,6 +42,7 @@
 #include "leveldb/filter_policy.h"
 #include "leveldb/perf_count.h"
 #include "leveldb/translator.h"
+#include "leveldb/data_dictionary.h"
 
 #ifndef INCL_THREADING_H
     #include "threading.h"
@@ -150,6 +151,7 @@ ERL_NIF_TERM ATOM_RANGE_SCAN_BATCH;
 ERL_NIF_TERM ATOM_RANGE_SCAN_END;
 ERL_NIF_TERM ATOM_NEEDS_REACK;
 ERL_NIF_TERM ATOM_TIME_SERIES;
+ERL_NIF_TERM ATOM_GLOBAL_DATA_DIR;
 }   // namespace eleveldb
 
 
@@ -200,13 +202,15 @@ struct EleveldbOptions
 
     bool m_LimitedDeveloper;
     bool m_FadviseWillNeed;
+    std::string m_GlobalDataDir;
 
     EleveldbOptions()
         : m_EleveldbThreads(71),
           m_LeveldbImmThreads(0), m_LeveldbBGWriteThreads(0),
           m_LeveldbOverlapThreads(0), m_LeveldbGroomingThreads(0),
           m_TotalMemPercent(0), m_TotalMem(0),
-          m_LimitedDeveloper(false), m_FadviseWillNeed(false)
+          m_LimitedDeveloper(false), m_FadviseWillNeed(false),
+          m_GlobalDataDir(".")
         {};
 
     void Dump()
@@ -234,9 +238,11 @@ class eleveldb_priv_data
 public:
     EleveldbOptions m_Opts;
     eleveldb::eleveldb_thread_pool thread_pool;
+    leveldb::DataDictionary data_dictionary;
 
     explicit eleveldb_priv_data(EleveldbOptions & Options)
-    : m_Opts(Options), thread_pool(Options.m_EleveldbThreads)
+    : m_Opts(Options), thread_pool(Options.m_EleveldbThreads),
+    data_dictionary(Options.m_GlobalDataDir)
         {}
 
 private:
@@ -246,6 +252,16 @@ private:
 
 };
 
+bool get_nif_string(ErlNifEnv * env, ERL_NIF_TERM estr, size_t max_size,
+                    std::string * out) {
+    char buf[max_size];
+    int ret_val = enif_get_string(env, estr, buf, max_size, ERL_NIF_LATIN1);
+    if (0<ret_val && ret_val<256) {
+        *out = buf;
+        return true;
+    }
+    return false;
+}
 
 ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOptions& opts)
 {
@@ -294,11 +310,15 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
                     opts.m_EleveldbThreads = temp;
                 }   // if
             }   // if
-        }   // if
+        } 
         else if (option[0] == eleveldb::ATOM_FADVISE_WILLNEED)
         {
             opts.m_FadviseWillNeed = (option[1] == eleveldb::ATOM_TRUE);
-        }   // else if
+        }
+        else if (option[0] == eleveldb::ATOM_GLOBAL_DATA_DIR)
+        {
+            get_nif_string(env, option[1], 1024, &opts.m_GlobalDataDir);
+        }
     }
 
     return eleveldb::ATOM_OK;
@@ -470,7 +490,9 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (option[1] == eleveldb::ATOM_TRUE)
             {
                 opts.comparator = leveldb::GetTSComparator();
-                opts.data_dictionary = leveldb::NewDataDictionary();
+                eleveldb_priv_data& priv =
+                    *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+                opts.data_dictionary = &priv.data_dictionary;
                 leveldb::TSTranslator * translator =
                     new leveldb::TSTranslator(opts.data_dictionary);
                 opts.translator = translator;
@@ -1550,6 +1572,7 @@ try
     ATOM(eleveldb::ATOM_RANGE_SCAN_END, "range_scan_end");
     ATOM(eleveldb::ATOM_NEEDS_REACK, "needs_reack");
     ATOM(eleveldb::ATOM_TIME_SERIES, "time_series");
+    ATOM(eleveldb::ATOM_GLOBAL_DATA_DIR, "global_data_dir");
 #undef ATOM
 
 
