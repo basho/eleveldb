@@ -460,8 +460,7 @@ append_points([{Timestamp, Value}|MorePoints], Bin) ->
     append_points(MorePoints, Bin2).
 
 ts_batch_to_binary({ts_batch, Family, Series, Points}) ->
-    B1 = append_varint(1, <<>>),
-    B2 = append_string(Family, B1),
+    B2 = append_string(Family, <<>>),
     B3 = append_string(Series, B2),
     B4 = append_varint(length(Points), B3),
     append_points(Points, B4).
