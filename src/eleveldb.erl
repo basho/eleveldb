@@ -162,6 +162,7 @@ write(Ref, Updates, Opts) ->
     async_write(CallerRef, Ref, Updates, Opts),
     ?WAIT_FOR_REPLY(CallerRef).
 
+-spec async_put(db_ref(), reference(), binary(), binary(), write_options()) -> ok.
 async_put(Ref, Context, Key, Value, Opts) ->
     Updates = [{put, Key, Value}],
     async_write(Context, Ref, Updates, Opts),
