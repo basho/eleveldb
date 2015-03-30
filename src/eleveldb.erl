@@ -484,13 +484,23 @@ values() ->
     eqc_gen:non_empty(list(binary())).
 
 ops(Keys, Values) ->
-    {oneof([put, delete]), oneof(Keys), oneof(Values)}.
+    {oneof([put, async_put, delete]), oneof(Keys), oneof(Values)}.
 
 apply_kv_ops([], _Ref, Acc0) ->
     Acc0;
 apply_kv_ops([{put, K, V} | Rest], Ref, Acc0) ->
     ok = eleveldb:put(Ref, K, V, []),
     apply_kv_ops(Rest, Ref, orddict:store(K, V, Acc0));
+apply_kv_ops([{async_put, K, V} | Rest], Ref, Acc0) ->
+    MyRef = make_ref(),
+    Context = {my_context, MyRef},
+    ok = eleveldb:async_put(Ref, Context, K, V, []),
+    receive
+        {Context, ok} ->
+            apply_kv_ops(Rest, Ref, orddict:store(K, V, Acc0));
+        Msg ->
+            error({unexpected_msg, Msg})
+    end;
 apply_kv_ops([{delete, K, _} | Rest], Ref, Acc0) ->
     ok = eleveldb:delete(Ref, K, []),
     apply_kv_ops(Rest, Ref, orddict:store(K, deleted, Acc0)).
