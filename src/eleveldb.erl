@@ -25,6 +25,7 @@
          close/1,
          get/3,
          put/4,
+         async_put/5,
          delete/3,
          write/3,
          fold/4,
@@ -160,6 +161,12 @@ write(Ref, Updates, Opts) ->
     CallerRef = make_ref(),
     async_write(CallerRef, Ref, Updates, Opts),
     ?WAIT_FOR_REPLY(CallerRef).
+
+-spec async_put(db_ref(), reference(), binary(), binary(), write_options()) -> ok.
+async_put(Ref, Context, Key, Value, Opts) ->
+    Updates = [{put, Key, Value}],
+    async_write(Context, Ref, Updates, Opts),
+    ok.
 
 -spec async_write(reference(), db_ref(), write_actions(), write_options()) -> ok.
 async_write(_CallerRef, _Ref, _Updates, _Opts) ->
@@ -477,13 +484,23 @@ values() ->
     eqc_gen:non_empty(list(binary())).
 
 ops(Keys, Values) ->
-    {oneof([put, delete]), oneof(Keys), oneof(Values)}.
+    {oneof([put, async_put, delete]), oneof(Keys), oneof(Values)}.
 
 apply_kv_ops([], _Ref, Acc0) ->
     Acc0;
 apply_kv_ops([{put, K, V} | Rest], Ref, Acc0) ->
     ok = eleveldb:put(Ref, K, V, []),
     apply_kv_ops(Rest, Ref, orddict:store(K, V, Acc0));
+apply_kv_ops([{async_put, K, V} | Rest], Ref, Acc0) ->
+    MyRef = make_ref(),
+    Context = {my_context, MyRef},
+    ok = eleveldb:async_put(Ref, Context, K, V, []),
+    receive
+        {Context, ok} ->
+            apply_kv_ops(Rest, Ref, orddict:store(K, V, Acc0));
+        Msg ->
+            error({unexpected_msg, Msg})
+    end;
 apply_kv_ops([{delete, K, _} | Rest], Ref, Acc0) ->
     ok = eleveldb:delete(Ref, K, []),
     apply_kv_ops(Rest, Ref, orddict:store(K, deleted, Acc0)).
