@@ -152,6 +152,7 @@ ERL_NIF_TERM ATOM_RANGE_SCAN_END;
 ERL_NIF_TERM ATOM_NEEDS_REACK;
 ERL_NIF_TERM ATOM_TIME_SERIES;
 ERL_NIF_TERM ATOM_GLOBAL_DATA_DIR;
+ERL_NIF_TERM ATOM_RANGE_FILTER;
 }   // namespace eleveldb
 
 
@@ -542,6 +543,16 @@ ERL_NIF_TERM parse_range_scan_option(ErlNifEnv* env, ERL_NIF_TERM item,
             unsigned max_batch_bytes;
             if (enif_get_uint(env, option[1], &max_batch_bytes))
                 opts.max_batch_bytes = max_batch_bytes;
+        } else if (option[0] == eleveldb::ATOM_RANGE_FILTER) {
+            const ERL_NIF_TERM* filter;
+            if (enif_get_tuple(env, option[1], &arity, &filter) && 2 == arity) {
+                char comparitor[20];
+                if (enif_get_string(env, filter[0], comparitor, sizeof(comparitor),
+                                    ERL_NIF_LATIN1)) {
+                    printf("ELEVEL COMPARITOR: %s\n", comparitor);
+
+                }
+            }
         }
     }
 
@@ -1573,6 +1584,7 @@ try
     ATOM(eleveldb::ATOM_NEEDS_REACK, "needs_reack");
     ATOM(eleveldb::ATOM_TIME_SERIES, "time_series");
     ATOM(eleveldb::ATOM_GLOBAL_DATA_DIR, "global_data_dir");
+    ATOM(eleveldb::ATOM_RANGE_FILTER, "range_filter");
 #undef ATOM
 
 
