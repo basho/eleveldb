@@ -48,6 +48,8 @@
 #endif
 
 
+#include "filter.h"
+
 namespace eleveldb {
 
 /* Type returned from a work task: */
@@ -454,6 +456,7 @@ struct RangeScanOptions {
   bool start_inclusive;
   bool end_inclusive;
   bool fill_cache;
+  ExpressionNode<bool>* range_filter;
 
   RangeScanOptions()
     : max_unacked_bytes(10 * 1024 * 1024), max_batch_bytes(1 * 1024 * 1024),

@@ -52,6 +52,17 @@ public:
 };
 
 template<typename T>
+class EqOperator: public BinaryExpression<bool, T> {
+public:
+    EqOperator(ExpressionNode<T>* left, ExpressionNode<T>* right): BinaryExpression<bool, T>(left, right) {}
+    
+    virtual bool evaluate() const {
+        return BinaryExpression<bool, T>::left->evaluate() == BinaryExpression<bool, T>::right->evaluate();
+    }
+};
+
+
+template<typename T>
 struct ConstantValue: public ExpressionNode<T> {
     const T value;
     
@@ -89,7 +100,7 @@ struct FieldValue: public ExpressionNode<T> {
 
     inline virtual void set_value(std::string key, void* val) {
         if (key == field) {
-            value = *reinterpret_cast<T*>(val);
+            value = reinterpret_cast<T*>(val);
         }
     }
 };

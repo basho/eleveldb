@@ -34,6 +34,7 @@
 
 #include "eleveldb.h"
 #include "filter.h"
+#include "filter_parser.h"
 
 #include "leveldb/db.h"
 #include "leveldb/comparator.h"
@@ -545,32 +546,9 @@ ERL_NIF_TERM parse_range_scan_option(ErlNifEnv* env, ERL_NIF_TERM item,
             if (enif_get_uint(env, option[1], &max_batch_bytes))
                 opts.max_batch_bytes = max_batch_bytes;
         } else if (option[0] == eleveldb::ATOM_RANGE_FILTER) {
-            const ERL_NIF_TERM* filter;
-            if (enif_get_tuple(env, option[1], &arity, &filter) && 2 == arity) {
-                char comparitor[20];
-                if (enif_get_string(env, filter[0], comparitor, sizeof(comparitor),
-                                    ERL_NIF_LATIN1)) {
-                    printf("ELEVEL COMPARITOR: %s\n", comparitor);
-                    ERL_NIF_TERM head, tail;
-                    tail = filter[1];
-                    while(enif_get_list_cell(env, tail, &head, &tail)) {
-                        printf("In while\n");
-                        const ERL_NIF_TERM* op_val;
-                        if (enif_get_tuple(env, head, &arity, &op_val)) { 
-                            printf("Got op_val\n");
-                            char op[25];
-                            char val[256];
-                            if (enif_get_atom(env, op_val[0], op, sizeof(op), ERL_NIF_LATIN1) &&
-                                enif_get_string(env, op_val[1], val, sizeof(val), ERL_NIF_LATIN1)) {
-                                    printf("Op: %s, Val: %s\n", op, val);
-                            }
-                        }
-                    }
-                }
-            }
+            opts.range_filter = parse_range_filter_opts(env, option[1]);
         }
     }
-
     return eleveldb::ATOM_OK;
 }
 

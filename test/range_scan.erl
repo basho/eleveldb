@@ -52,7 +52,7 @@ test_range_query(Ref) ->
 read_10_items(Ref) ->
     Start = eleveldb:ts_key({?FAMILY, ?SERIES, 1}),
     End = eleveldb:ts_key({?FAMILY, ?SERIES, 10}),
-    Opts = [{range_filter, {"==", <<"val">>}}],
+    Opts = [{range_filter, {"==", [{field, "field_1"}, {const_val, "const_val"}]}}],
     {ok, {MsgRef, AckRef}} = eleveldb:range_scan(Ref, Start, End, Opts),
     receive
         {range_scan_end, MsgRef} ->
