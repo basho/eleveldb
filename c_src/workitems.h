@@ -49,6 +49,7 @@
 
 
 #include "filter.h"
+#include "extractor.h"
 
 namespace eleveldb {
 
@@ -457,6 +458,7 @@ struct RangeScanOptions {
   bool end_inclusive;
   bool fill_cache;
   ExpressionNode<bool>* range_filter;
+  Extractor* extractor;
 
   RangeScanOptions()
     : max_unacked_bytes(10 * 1024 * 1024), max_batch_bytes(1 * 1024 * 1024),

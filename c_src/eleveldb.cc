@@ -33,7 +33,6 @@
 #include <vector>
 
 #include "eleveldb.h"
-#include "filter.h"
 #include "filter_parser.h"
 
 #include "leveldb/db.h"
@@ -546,7 +545,8 @@ ERL_NIF_TERM parse_range_scan_option(ErlNifEnv* env, ERL_NIF_TERM item,
             if (enif_get_uint(env, option[1], &max_batch_bytes))
                 opts.max_batch_bytes = max_batch_bytes;
         } else if (option[0] == eleveldb::ATOM_RANGE_FILTER) {
-            opts.range_filter = parse_range_filter_opts(env, option[1]);
+            opts.extractor = new Extractor();
+            opts.range_filter = parse_range_filter_opts(env, option[1], *(opts.extractor));
             double val = 0.2;
             printf("Setting value\n");
             opts.range_filter->set_value("field_1", &val);
