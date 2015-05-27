@@ -3,14 +3,13 @@
 template<typename T>
 ExpressionNode<T>* parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
     printf("Called the wrong version of parce_constexpr\n");
-    return nullptr;
+    return NULL;
 }
 
-template<> ExpressionNode<double>* parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
-    double val;
-    enif_get_double(env, operand, &val);
-    printf("Returning a new ConstantValue\n");
-    return new ConstantValue<double>(val);
+template<> ExpressionNode<int64_t>* parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+    int val;
+    enif_get_int(env, operand, &val);
+    return new ConstantValue<int64_t>(val);
 }
 
 template<typename T>
@@ -28,7 +27,7 @@ ExpressionNode<T>* parse_expression_node(ErlNifEnv* env, ERL_NIF_TERM root, Extr
             }
         }
     }
-    return nullptr;
+    return NULL;
 }
 
 template<> ExpressionNode<bool>* parse_expression_node<bool>(ErlNifEnv* env, ERL_NIF_TERM root, Extractor& ext) {
@@ -40,9 +39,12 @@ char op[20];
             if (strcmp(op, eleveldb::filter::EQ_OP)==0) {
                 return parse_equals_expr(env, op_args[1], ext);
             }
+            else if (strcmp(op, eleveldb::filter::LTE_OP)==0) {
+                return parse_lte_expr(env, op_args[1], ext);
+            }
         }
     }
-    return nullptr;
+    return NULL;
 }
 
 ExpressionNode<bool>* parse_equals_expr(ErlNifEnv* env, ERL_NIF_TERM operands, Extractor& ext) {
@@ -51,11 +53,24 @@ ExpressionNode<bool>* parse_equals_expr(ErlNifEnv* env, ERL_NIF_TERM operands, E
     if (enif_get_list_length(env, operands, &oplen) && oplen==2) {
         if (enif_get_list_cell(env, rest, &lhs, &rest) &&
                 enif_get_list_cell(env, rest, &rhs, &rest)) {
-            return new EqOperator<double>(parse_expression_node<double>(env, lhs, ext),
-                parse_expression_node<double>(env, rhs, ext));
+            return new EqOperator<int64_t>(parse_expression_node<int64_t>(env, lhs, ext),
+                parse_expression_node<int64_t>(env, rhs, ext));
         }
     }
-    return nullptr;
+    return NULL;
+}
+
+ExpressionNode<bool>* parse_lte_expr(ErlNifEnv* env, ERL_NIF_TERM operands, Extractor& ext) {
+    unsigned int oplen;
+    ERL_NIF_TERM lhs, rhs, rest = operands;
+    if (enif_get_list_length(env, operands, &oplen) && oplen==2) {
+        if (enif_get_list_cell(env, rest, &lhs, &rest) &&
+                enif_get_list_cell(env, rest, &rhs, &rest)) {
+            return new LteOperator<int64_t>(parse_expression_node<int64_t>(env, lhs, ext),
+                parse_expression_node<int64_t>(env, rhs, ext));
+        }
+    }
+    return NULL;
 }
 
 template<typename T>
@@ -65,7 +80,7 @@ ExpressionNode<T>* parse_field_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extrac
         ext.add_field(field_name);
         return new FieldValue<T>(field_name);
     }
-    return nullptr;
+    return NULL;
 }
 
 ExpressionNode<bool>* parse_range_filter_opts(ErlNifEnv* env, ERL_NIF_TERM options, Extractor& ext) {

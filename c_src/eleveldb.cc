@@ -547,12 +547,6 @@ ERL_NIF_TERM parse_range_scan_option(ErlNifEnv* env, ERL_NIF_TERM item,
         } else if (option[0] == eleveldb::ATOM_RANGE_FILTER) {
             opts.extractor = new Extractor();
             opts.range_filter = parse_range_filter_opts(env, option[1], *(opts.extractor));
-            double val = 0.2;
-            printf("Setting value\n");
-            opts.range_filter->set_value("field_1", &val);
-            printf("Evaluating\n");
-            bool result = opts.range_filter->evaluate();
-            printf(result ? "true\n" : "false\n");
         }
     }
     return eleveldb::ATOM_OK;

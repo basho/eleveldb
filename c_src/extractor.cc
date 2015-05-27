@@ -8,6 +8,7 @@ void Extractor::add_field(std::string field) {
 }
 
 void Extractor::extract(const std::string& data, ExpressionNode<bool>* root) {
+    root->clear();
     uint32_t map_size;
     char key[255];
     uint32_t key_length;
@@ -18,35 +19,32 @@ void Extractor::extract(const std::string& data, ExpressionNode<bool>* root) {
     for (int i=0;i<map_size;i++) {
         cmp_read_str(&cmp, key, &key_length);
         if (this->expr_fields.find(key) != this->expr_fields.end()) {
-            extract_and_set_field(key, root);
+            cmp_object_t obj;
+            cmp_read_object(&cmp, &obj);
+            switch (obj.type) {
+                case CMP_TYPE_NIL:
+                    // Don't need to do anything for nil as the expression is already cleared
+                    break;
+                case CMP_TYPE_DOUBLE:
+                     root->set_value(key, (void *)(&obj.as.dbl));
+                     break;
+                case CMP_TYPE_SINT64:
+                     set_int_val(root, key, obj.as.s64);
+                     break;
+                case CMP_TYPE_POSITIVE_FIXNUM:
+                case CMP_TYPE_UINT8:
+                     set_int_val(root, key, obj.as.u8);
+                     break;
+                case CMP_TYPE_UINT16:
+                     set_int_val(root, key, obj.as.u16);
+                     break;
+            }
         }
     }
 }
 
-void Extractor::extract_and_set_field(char *key, ExpressionNode<bool>* root) {
-    void* value;
-    extract_value(&value);
-    root->set_value(key, &value);
+void Extractor::set_int_val(ExpressionNode<bool>* root, const std::string& key, int64_t val) {
+    root->set_value(key, (void*)val);
 }
 
-void Extractor::extract_value(void *val) {
-    cmp_object_t obj;
-
-    if (!cmp_read_object(&cmp, &obj)) {
-        switch (obj.type) {
-            case CMP_TYPE_NIL:
-                 val = (void*)0; // Ugh - C++ < 11, no nullptr
-                 break;
-            case CMP_TYPE_DOUBLE:
-                 *(double*)val = obj.as.dbl;
-                 break;
-            case CMP_TYPE_SINT64:
-                 *(uint64_t*)val = obj.as.s64;
-                 break;
-            }
-    }
-    else {
-        // TODO: What's the right answer for dealing with errors here?
-    }
-}
 

@@ -20,8 +20,7 @@ public:
     void add_field(std::string field);
 
     void extract(const std::string& data, ExpressionNode<bool>* root);
-    void extract_and_set_field(char *key, ExpressionNode<bool>* root);
-    void extract_value(void *val);
+    void set_int_val(ExpressionNode<bool>* root, const std::string& key, int64_t val);
 };
 
 

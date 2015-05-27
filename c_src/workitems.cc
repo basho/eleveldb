@@ -609,32 +609,39 @@ work_result RangeScanTask::operator()()
         // Shove next entry in the batch.
         leveldb::Slice key = iter->key();
         leveldb::Slice value = iter->value();
-        key_buffer.resize(0);
-        translator->TranslateInternalKey(key, &key_buffer);
-        const size_t ksz = key_buffer.size(), vsz = value.size();
-        const size_t ksz_sz = VarintLength(ksz);
-        const size_t vsz_sz = VarintLength(vsz);
-        const size_t esz = ksz + ksz_sz + vsz + vsz_sz;
-        const size_t next_offset = out_offset + esz;
-        if (out_offset == 0)
-            enif_alloc_binary(initial_bin_size, &bin);
-        // If we need more space, allocate it exactly since that means we
-        // reached the batch max anyway and will send it right away.
-        if (next_offset > bin.size)
-            enif_realloc_binary(&bin, next_offset);
-        char * const out = (char*)bin.data + out_offset;
-        EncodeVarint64(out, ksz);
-        memcpy(out + ksz_sz, key_buffer.data(), ksz);
-        EncodeVarint64(out + ksz_sz + ksz, vsz);
-        memcpy(out + ksz_sz + ksz + vsz_sz, value.data(), vsz);
-        out_offset = next_offset;
-        if (out_offset >= options_.max_batch_bytes) {
-            if (out_offset != bin.size)
-                enif_realloc_binary(&bin, out_offset);
-            send_batch(&pid, msg_env, caller_ref_term, &bin);
-            // Maybe block if max reached.
-            sync_obj_->AddBytes(out_offset);
-            out_offset = 0;
+        bool filter_passed = true;
+        if (options_.range_filter!=0) {
+            options_.extractor->extract(value.data(), options_.range_filter);
+            filter_passed = options_.range_filter->evaluate();
+        }
+        if (filter_passed) {
+            key_buffer.resize(0);
+            translator->TranslateInternalKey(key, &key_buffer);
+            const size_t ksz = key_buffer.size(), vsz = value.size();
+            const size_t ksz_sz = VarintLength(ksz);
+            const size_t vsz_sz = VarintLength(vsz);
+            const size_t esz = ksz + ksz_sz + vsz + vsz_sz;
+            const size_t next_offset = out_offset + esz;
+            if (out_offset == 0)
+                enif_alloc_binary(initial_bin_size, &bin);
+            // If we need more space, allocate it exactly since that means we
+            // reached the batch max anyway and will send it right away.
+            if (next_offset > bin.size)
+                enif_realloc_binary(&bin, next_offset);
+            char * const out = (char*)bin.data + out_offset;
+            EncodeVarint64(out, ksz);
+            memcpy(out + ksz_sz, key_buffer.data(), ksz);
+            EncodeVarint64(out + ksz_sz + ksz, vsz);
+            memcpy(out + ksz_sz + ksz + vsz_sz, value.data(), vsz);
+            out_offset = next_offset;
+            if (out_offset >= options_.max_batch_bytes) {
+                if (out_offset != bin.size)
+                    enif_realloc_binary(&bin, out_offset);
+                send_batch(&pid, msg_env, caller_ref_term, &bin);
+                // Maybe block if max reached.
+                sync_obj_->AddBytes(out_offset);
+                out_offset = 0;
+            }
         }
         iter->Next();
     }

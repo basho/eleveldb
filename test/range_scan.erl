@@ -26,7 +26,7 @@ cleanup(Ref) ->
 populate(Ref) ->
     EmptyBatch = append_string(?SERIES, append_string(?FAMILY, <<>>)),
     Batch = lists:foldl(fun(Time, Batch) ->
-                             append_string(<<"val">>, <<Batch/binary, Time:64>>)
+                append_record([{<<"field_1">>, Time}], <<Batch/binary, Time:64>>)
                         end, EmptyBatch, lists:seq(1, 10000)),
     ok = eleveldb:write(Ref, Batch, []).
 
@@ -40,6 +40,9 @@ append_varint(N, Bin) ->
             C = (N rem 128) + 128,
             append_varint(N2, <<Bin/binary, C:8>>)
     end.
+append_record(Record, Bin) ->
+    RecordData = msgpack:pack(Record, [{format, jsx}]),
+    append_string(RecordData, Bin).
 
 append_string(S, Bin) ->
     L = byte_size(S),
@@ -52,7 +55,8 @@ test_range_query(Ref) ->
 read_10_items(Ref) ->
     Start = eleveldb:ts_key({?FAMILY, ?SERIES, 1}),
     End = eleveldb:ts_key({?FAMILY, ?SERIES, 10}),
-    Opts = [{range_filter, {"==", [{field, "field_1"}, {const, 0.2}]}}],
+    Opts = [{range_filter, {"<=", [{field, "field_1"}, {const, 4}]}}],
+    io:format(user, "Starting read_items test~n", []),
     {ok, {MsgRef, AckRef}} = eleveldb:range_scan(Ref, Start, End, Opts),
     receive
         {range_scan_end, MsgRef} ->
@@ -70,6 +74,8 @@ assert_range(Start, End, Batch) ->
     {Val, B2} = eleveldb:parse_string(B1),
     <<Time:64, _/binary>> = Key,
     ?assertEqual(Time, Start),
-    ?assertEqual(Val, <<"val">>),
+    {ok, Unpacked} = msgpack:unpack(Val, [{format, jsx}]),
+    ?assertEqual([{<<"field_1">>,Start}], Unpacked),
+    io:format(user, "passed assert_range~n", []),
     assert_range(Start + 1, End, B2).
 
