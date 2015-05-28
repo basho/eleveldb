@@ -36,13 +36,22 @@ public:
     }
 };
 
+class AndOperator: public BinaryExpression<bool, bool> {
+    public:
+    AndOperator(ExpressionNode<bool>* left, ExpressionNode<bool>* right): BinaryExpression<bool, bool>(left, right) {}
+
+    virtual bool evaluate() const {
+        return left->evaluate() && right->evaluate();
+    }
+};
+
 template<typename T>
 class GteOperator: public BinaryExpression<bool, T> {
 public:
     GteOperator(ExpressionNode<T>* left, ExpressionNode<T>* right): BinaryExpression<bool, T>(left, right) {}
 
     virtual bool evaluate() const {
-        return BinaryExpression<bool, T>::left->evaluate() >= BinaryExpression<bool, T>::right->evaluate();
+        return this->left->evaluate() >= this->right->evaluate();
     }
 };
 
@@ -52,7 +61,7 @@ public:
     LteOperator(ExpressionNode<T>* left, ExpressionNode<T>* right): BinaryExpression<bool, T>(left, right) {}
 
     virtual bool evaluate() const {
-        return BinaryExpression<bool, T>::left->evaluate() <= BinaryExpression<bool, T>::right->evaluate();
+        return this->left->evaluate() <= this->right->evaluate();
     }
 };
 
@@ -67,7 +76,7 @@ public:
             return true;
         }
 
-        return BinaryExpression<bool, T>::left->evaluate() == BinaryExpression<bool, T>::right->evaluate();
+        return this->left->evaluate() == this->right->evaluate();
     }
 
 };

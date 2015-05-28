@@ -13,14 +13,19 @@ void Extractor::extract(const std::string& data, ExpressionNode<bool>* root) {
     char key[255];
     uint32_t key_length;
     cmp_mem_access_ro_init(&cmp, &ma, data.data(), data.size());
-    if (!cmp_read_map(&cmp, &map_size)) {
+    cmp_object_t map;
+    cmp_read_object(&cmp, &map);
+    if (!cmp_object_is_map(&map) || !cmp_object_as_map(&map, &map_size)) {
         return; // TODO: Error Handling
     }
     for (int i=0;i<map_size;i++) {
-        cmp_read_str(&cmp, key, &key_length);
+        if (!cmp_read_str(&cmp, key, &key_length)) {
+            printf("Failed to read key!");
+            return;
+        }
+        cmp_object_t obj;
+        cmp_read_object(&cmp, &obj);
         if (this->expr_fields.find(key) != this->expr_fields.end()) {
-            cmp_object_t obj;
-            cmp_read_object(&cmp, &obj);
             switch (obj.type) {
                 case CMP_TYPE_NIL:
                     // Don't need to do anything for nil as the expression is already cleared

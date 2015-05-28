@@ -10,6 +10,9 @@ namespace eleveldb {
     namespace filter {
         static const char* const EQ_OP = "==";
         static const char* const LTE_OP = "<=";
+        static const char* const GTE_OP = ">=";
+
+        static const char* const AND_OP = "and";
         static const char* const FIELD_OP = "field";
         static const char* const CONST_OP = "const";
     }
@@ -29,4 +32,6 @@ ExpressionNode<T>* parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extrac
 
 ExpressionNode<bool>* parse_equals_expr(ErlNifEnv* env, ERL_NIF_TERM operands, Extractor& ext);
 ExpressionNode<bool>* parse_lte_expr(ErlNifEnv* env, ERL_NIF_TERM operands, Extractor& ext);
+ExpressionNode<bool>* parse_gte_expr(ErlNifEnv* env, ERL_NIF_TERM operands, Extractor& ext);
+ExpressionNode<bool>* parse_and_expr(ErlNifEnv* env, ERL_NIF_TERM operands, Extractor& ext);
 #endif

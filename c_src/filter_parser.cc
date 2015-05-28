@@ -42,6 +42,12 @@ char op[20];
             else if (strcmp(op, eleveldb::filter::LTE_OP)==0) {
                 return parse_lte_expr(env, op_args[1], ext);
             }
+            else if (strcmp(op, eleveldb::filter::GTE_OP)==0) {
+                return parse_gte_expr(env, op_args[1], ext);
+            }
+            else if (strcmp(op, eleveldb::filter::AND_OP)==0) {
+                return parse_and_expr(env, op_args[1], ext);
+            }
         }
     }
     return NULL;
@@ -68,6 +74,32 @@ ExpressionNode<bool>* parse_lte_expr(ErlNifEnv* env, ERL_NIF_TERM operands, Extr
                 enif_get_list_cell(env, rest, &rhs, &rest)) {
             return new LteOperator<int64_t>(parse_expression_node<int64_t>(env, lhs, ext),
                 parse_expression_node<int64_t>(env, rhs, ext));
+        }
+    }
+    return NULL;
+}
+
+ExpressionNode<bool>* parse_gte_expr(ErlNifEnv* env, ERL_NIF_TERM operands, Extractor& ext) {
+    unsigned int oplen;
+    ERL_NIF_TERM lhs, rhs, rest = operands;
+    if (enif_get_list_length(env, operands, &oplen) && oplen==2) {
+        if (enif_get_list_cell(env, rest, &lhs, &rest) &&
+                enif_get_list_cell(env, rest, &rhs, &rest)) {
+            return new GteOperator<int64_t>(parse_expression_node<int64_t>(env, lhs, ext),
+                parse_expression_node<int64_t>(env, rhs, ext));
+        }
+    }
+    return NULL;
+}
+
+ExpressionNode<bool>* parse_and_expr(ErlNifEnv* env, ERL_NIF_TERM operands, Extractor& ext) {
+    unsigned int oplen;
+   ERL_NIF_TERM lhs, rhs, rest = operands;
+    if (enif_get_list_length(env, operands, &oplen) && oplen==2) {
+        if (enif_get_list_cell(env, rest, &lhs, &rest) &&
+                enif_get_list_cell(env, rest, &rhs, &rest)) {
+            return new AndOperator(parse_expression_node<bool>(env, lhs, ext),
+                parse_expression_node<bool>(env, rhs, ext));
         }
     }
     return NULL;
