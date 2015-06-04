@@ -611,7 +611,7 @@ work_result RangeScanTask::operator()()
         leveldb::Slice value = iter->value();
         bool filter_passed = true;
         if (options_.range_filter!=0) {
-            options_.extractor->extract(value.data(), options_.range_filter);
+            options_.extractor->extract(value.data(), value.size(), options_.range_filter);
             filter_passed = options_.range_filter->evaluate();
         }
         if (filter_passed) {
