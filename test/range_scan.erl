@@ -27,7 +27,7 @@ populate(Ref) ->
     EmptyBatch = append_string(?SERIES, append_string(?FAMILY, <<>>)),
     Batch = lists:foldl(fun(Time, Batch) ->
                 append_record([{<<"field_1">>, Time}, {<<"field_2">>, Time}], <<Batch/binary, Time:64>>)
-                        end, EmptyBatch, lists:seq(1, 100000)),
+                        end, EmptyBatch, lists:seq(0, 1000000)),
     ok = eleveldb:write(Ref, Batch, []).
 
 append_varint(N, Bin) ->
@@ -50,41 +50,80 @@ append_string(S, Bin) ->
     <<B2/binary, S/binary>>.
 
 test_range_query(Ref) ->
-    {timeout, 1000,    fun() -> read_10_items(Ref) end }.
+    {timeout, 50000, fun() ->
+        lists:foreach(fun(_X) ->
+            read_items_with_level_filter(Ref, 0, 1000000, 50000, 200000)
+        end, lists:seq(0,9)),
+        lists:foreach(fun(_X) ->
+            read_items_with_erlang_filter(Ref, 0, 1000000, 50000, 200000)
+        end, lists:seq(0,9))
+    end}.
 
-read_10_items(Ref) ->
-    Start = eleveldb:ts_key({?FAMILY, ?SERIES, 7000}),
-    End = eleveldb:ts_key({?FAMILY, ?SERIES, 60000}),
+read_items_with_level_filter(Ref, Start0, End0, F1, F2) ->
+    Start = eleveldb:ts_key({?FAMILY, ?SERIES, Start0}),
+    End = eleveldb:ts_key({?FAMILY, ?SERIES, End0}),
     Opts = [{range_filter, {"and", [
-                {">=", [{field, "field_1"}, {const, 5000}]},
-                {"<=", [{field, "field_2"}, {const, 40000}]}
+                {">=", [{field, "field_1"}, {const, F1}]},
+                {"<=", [{field, "field_2"}, {const, F2}]}
             ]}}],
-    ExpectedRows = 33001,
-    {ok, {MsgRef, AckRef}} = eleveldb:range_scan(Ref, Start, End, Opts),
-    receive_batch(AckRef, MsgRef, ExpectedRows, 0, 7000).
+    ExpectedRows = calc_expected_rows(End0, F2, Start0, F1),
+    time_result("With Level Filtering", fun() ->
+        {ok, {MsgRef, AckRef}} = eleveldb:range_scan(Ref, Start, End, Opts),
+        receive_batch(AckRef, MsgRef, ExpectedRows, 0, 0, lists:max([Start0, F1]), fun(_Row) -> true end)
+        end).
 
-receive_batch(AckRef, MsgRef, ExpectedRows, ActualRows0, StartOffset) ->
+calc_expected_rows(End0, F2, Start0, F1) ->
+    lists:min([End0, F2]) - lists:max([Start0, F1]) + 1.
+
+read_items_with_erlang_filter(Ref, Start0, End0, F1, F2) ->
+    Start = eleveldb:ts_key({?FAMILY, ?SERIES, Start0}),
+    End = eleveldb:ts_key({?FAMILY, ?SERIES, End0}),
+    Opts = [],
+    ExpectedRows = calc_expected_rows(End0, F2, Start0, F1),
+    time_result("With Erlang Filtering", fun() ->
+        {ok, {MsgRef, AckRef}} = eleveldb:range_scan(Ref, Start, End, Opts),
+        receive_batch(AckRef, MsgRef, ExpectedRows, 0, 0, Start0, create_erlang_filter(F1, F2))
+    end).
+
+create_erlang_filter(F1Val, F2Val) ->
+    fun(Row) ->
+        [{<<"field_1">>, F1}, {<<"field_2">>, F2}] = Row,
+        (F1 >= F1Val) and (F2 =< F2Val)
+    end.
+
+time_result(Title, Fun) ->
+    T0 = os:timestamp(),
+    Fun(),
+    T1 = os:timestamp(),
+    io:format(user, "~n~s: ~p microseconds~n", [Title, timer:now_diff(T1, T0)]).
+
+receive_batch(AckRef, MsgRef, ExpectedRows, ActualRows0, RowsProcessed0, StartOffset, RowFilt) ->
     receive
         {range_scan_end, MsgRef} ->
             ?assertEqual(ExpectedRows, ActualRows0),
             ok;
         {range_scan_batch, MsgRef, Batch} ->
             Size = byte_size(Batch),
-            ActualRows = ActualRows0 + process_batch(Batch, ActualRows0, StartOffset, 0),
+            {RowsProcessed, ActualRows} = process_batch(Batch, RowsProcessed0, StartOffset, ActualRows0, RowFilt),
             ok = eleveldb:range_scan_ack(AckRef, Size),
-            receive_batch(AckRef, MsgRef, ExpectedRows, ActualRows, StartOffset)
+            receive_batch(AckRef, MsgRef, ExpectedRows, ActualRows, RowsProcessed, StartOffset, RowFilt)
     end.
 
-process_batch(<<>>, _End, _StartOffset, Count) ->
-    Count;
+process_batch(<<>>, End, _StartOffset, Count, _RowFilt) ->
+    {End, Count};
 
-process_batch(Batch, Start0, StartOffset, Count) ->
+process_batch(Batch, Start0, StartOffset, Count, RowFilt) ->
     Start = Start0 + StartOffset,
     {Key, B1} = eleveldb:parse_string(Batch),
     {Val, B2} = eleveldb:parse_string(B1),
     <<Time:64, _/binary>> = Key,
     ?assertEqual(Start, Time),
     {ok, Unpacked} = msgpack:unpack(Val, [{format, jsx}]),
-    ?assertEqual([{<<"field_1">>,Start},{<<"field_2">>, Start}], Unpacked),
-    process_batch(B2, Start0+1, StartOffset, Count + 1).
+    NewCount = case RowFilt(Unpacked) of
+                   true ->
+                       ?assertEqual([{<<"field_1">>,Start},{<<"field_2">>, Start}], Unpacked),
+                       Count + 1;
+                   _ -> Count
+               end,
+    process_batch(B2, Start0+1, StartOffset, NewCount, RowFilt).
 
