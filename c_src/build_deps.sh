@@ -8,7 +8,7 @@ if [ `uname -s` = 'SunOS' -a "${POSIX_SHELL}" != "true" ]; then
 fi
 unset POSIX_SHELL # clear it so if we invoke other scripts, they run as ksh as well
 
-LEVELDB_VSN="2.0.2"
+LEVELDB_VSN="2.0"
 
 SNAPPY_VSN="1.0.4"
 
@@ -47,6 +47,7 @@ case "$1" in
         export CXXFLAGS="$CXXFLAGS -I $BASEDIR/system/include"
         export LDFLAGS="$LDFLAGS -L$BASEDIR/system/lib"
         export LD_LIBRARY_PATH="$BASEDIR/system/lib:$LD_LIBRARY_PATH"
+        export LEVELDB_VSN="$LEVELDB_VSN"
 
         (cd leveldb && $MAKE check)
 
@@ -71,6 +72,7 @@ case "$1" in
         export CXXFLAGS="$CXXFLAGS -I $BASEDIR/system/include"
         export LDFLAGS="$LDFLAGS -L$BASEDIR/system/lib"
         export LD_LIBRARY_PATH="$BASEDIR/system/lib:$LD_LIBRARY_PATH"
+        export LEVELDB_VSN="$LEVELDB_VSN"
 
         if [ ! -d leveldb ]; then
             git clone git://github.com/basho/leveldb
