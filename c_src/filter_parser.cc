@@ -1,4 +1,5 @@
 #include "filter_parser.h"
+#include <cstring>
 
 template<typename T>
 ExpressionNode<T>* parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
@@ -118,4 +119,3 @@ ExpressionNode<T>* parse_field_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extrac
 ExpressionNode<bool>* parse_range_filter_opts(ErlNifEnv* env, ERL_NIF_TERM options, Extractor& ext) {
     return parse_expression_node<bool>(env, options, ext);
 }
-
