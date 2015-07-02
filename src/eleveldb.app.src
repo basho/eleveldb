@@ -8,11 +8,11 @@
                   stdlib
                  ]},
   {env, [
-         %% what percent of total memory should go to 
+         %% what percent of total memory should go to
          %%  leveldb.  Default is 15% on the basis of
-         %%  a single development machine running 5 
+         %%  a single development machine running 5
          %%  Riak instances would therefore claim 75%.
-         %% REAL users will want this at 75 to 80
+         %% REAL users will want this at 70%.
          {total_leveldb_mem_percent, 15},
 
          %% Use bloom filter support by default

@@ -361,6 +361,32 @@ MoveTask::recycle()
 
 }   // MoveTask::recycle
 
+/**
+ * DestroyTask functions
+ */
+
+DestroyTask::DestroyTask(
+    ErlNifEnv* caller_env,
+    ERL_NIF_TERM& _caller_ref,
+    const std::string& db_name_,
+    leveldb::Options *open_options_)
+    : WorkTask(caller_env, _caller_ref),
+    db_name(db_name_), open_options(open_options_)
+{
+}   // DestroyTask::DestroyTask
+
+
+work_result
+DestroyTask::operator()()
+{
+    leveldb::Status status = leveldb::DestroyDB(db_name, *open_options);
+
+    if(!status.ok())
+        return error_tuple(local_env(), ATOM_ERROR_DB_OPEN, status);
+
+    return work_result(local_env(), ATOM_OK);
+
+}   // DestroyTask::operator()
 
 
 } // namespace eleveldb

@@ -250,13 +250,16 @@ status(Ref, Key) ->
 status_int(_Ref, _Key) ->
     erlang:nif_error({error, not_loaded}).
 
+-spec async_destroy(reference(), string(), open_options()) -> ok.
+async_destroy(_CallerRef, _Name, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
 -spec destroy(string(), open_options()) -> ok | {error, any()}.
 destroy(Name, Opts) ->
-    eleveldb_bump:big(),
-    destroy_int(Name, Opts).
-
-destroy_int(_Name, _Opts) ->
-    erlang:nif_error({erlang, not_loaded}).
+    CallerRef = make_ref(),
+    Opts2 = add_open_defaults(Opts),
+    async_destroy(CallerRef, Name, Opts2),
+    ?WAIT_FOR_REPLY(CallerRef).
 
 repair(Name, Opts) ->
     eleveldb_bump:big(),
