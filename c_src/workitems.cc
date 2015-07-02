@@ -382,9 +382,9 @@ DestroyTask::operator()()
     leveldb::Status status = leveldb::DestroyDB(db_name, *open_options);
 
     if(!status.ok())
-        return error_tuple(local_env(), ATOM_ERROR_DB_OPEN, status);
+        return error_tuple(local_env(), ATOM_ERROR_DB_DESTROY, status);
 
-    return work_result(local_env(), ATOM_OK);
+    return work_result(ATOM_OK);
 
 }   // DestroyTask::operator()
 
