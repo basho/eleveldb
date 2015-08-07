@@ -45,6 +45,11 @@
          parse_string/1,
          is_empty/1]).
 
+%% for testing
+-export([
+	 ts_key_TEST/1
+	]).
+
 -export([option_types/1,
          validate_options/2]).
 
@@ -507,7 +512,15 @@ ts_batch_to_binary({ts_batch, Family, Series, Points}) ->
     B3 = append_string(Series, B2),
     append_points(Points, B3).
 
-ts_key({Family, Series, Time}) ->
+ts_key(List) when is_list(List) ->
+    ts_l2(lists:reverse(List), <<>>).
+
+ts_l2([], Acc) ->
+    Acc;
+ts_l2([H | T], Acc) -> 
+    ts_l2(T, append_string(H, Acc)). 
+
+ts_key_TEST({Family, Series, Time}) ->
     B1 = <<Time:64>>,
     B2 = append_string(Family, B1),
     append_string(Series, B2).
