@@ -43,7 +43,8 @@
          ts_batch_to_binary/1,
          ts_key/1,
          parse_string/1,
-         is_empty/1]).
+         is_empty/1,
+	 encode/2]).
 
 %% for testing
 -export([
@@ -147,6 +148,13 @@ init() ->
 -opaque db_ref() :: binary().
 
 -opaque itr_ref() :: binary().
+
+encode(Val, timestamp) ->
+    <<Val:64>>;
+encode(Val, binary) when is_binary(Val)->
+    Val;
+encode(Val, _) ->
+    term_to_binary(Val).
 
 -spec async_open(reference(), string(), open_options()) -> ok.
 async_open(_CallerRef, _Name, _Opts) ->
