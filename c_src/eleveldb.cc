@@ -81,10 +81,13 @@ static ErlNifFunc nif_funcs[] =
 
     {"async_iterator", 3, eleveldb::async_iterator},
     {"async_iterator", 4, eleveldb::async_iterator},
-
     {"async_iterator_move", 3, eleveldb::async_iterator_move},
-    {"range_scan", 4, eleveldb::range_scan},
-    {"range_scan_ack", 2, eleveldb::range_scan_ack}
+
+    {"streaming_start", 4, eleveldb::streaming_start},
+    {"streaming_ack", 2, eleveldb::streaming_ack},
+    {"streaming_stop", 1, eleveldb::streaming_stop},
+
+    {"current_usec",   0, eleveldb::currentMicroSeconds},
 };
 
 
@@ -139,6 +142,7 @@ ERL_NIF_TERM ATOM_BLOCK_CACHE_THRESHOLD;
 ERL_NIF_TERM ATOM_IS_INTERNAL_DB;
 ERL_NIF_TERM ATOM_LIMITED_DEVELOPER_MEM;
 ERL_NIF_TERM ATOM_ELEVELDB_THREADS;
+ERL_NIF_TERM ATOM_ELEVELDB_STREAM_THREADS;
 ERL_NIF_TERM ATOM_FADVISE_WILLNEED;
 ERL_NIF_TERM ATOM_DELETE_THRESHOLD;
 ERL_NIF_TERM ATOM_TIERED_SLOW_LEVEL;
@@ -154,6 +158,10 @@ ERL_NIF_TERM ATOM_NEEDS_REACK;
 ERL_NIF_TERM ATOM_TIME_SERIES;
 ERL_NIF_TERM ATOM_GLOBAL_DATA_DIR;
 ERL_NIF_TERM ATOM_RANGE_FILTER;
+ERL_NIF_TERM ATOM_STREAMING_BATCH;
+ERL_NIF_TERM ATOM_STREAMING_END;
+ERL_NIF_TERM ATOM_LIMIT;
+ERL_NIF_TERM ATOM_UNDEFINED;
 }   // namespace eleveldb
 
 
@@ -194,6 +202,7 @@ static ERL_NIF_TERM slice_to_binary(ErlNifEnv* env, leveldb::Slice s)
 struct EleveldbOptions
 {
     int m_EleveldbThreads;
+    int m_EleveldbStreamThreads;
     int m_LeveldbImmThreads;
     int m_LeveldbBGWriteThreads;
     int m_LeveldbOverlapThreads;
@@ -207,7 +216,7 @@ struct EleveldbOptions
     std::string m_GlobalDataDir;
 
     EleveldbOptions()
-        : m_EleveldbThreads(71),
+        : m_EleveldbThreads(51), m_EleveldbStreamThreads(20),
           m_LeveldbImmThreads(0), m_LeveldbBGWriteThreads(0),
           m_LeveldbOverlapThreads(0), m_LeveldbGroomingThreads(0),
           m_TotalMemPercent(0), m_TotalMem(0),
@@ -218,6 +227,7 @@ struct EleveldbOptions
     void Dump()
     {
         syslog(LOG_ERR, "         m_EleveldbThreads: %d\n", m_EleveldbThreads);
+        syslog(LOG_ERR, "   m_EleveldbStreamThreads: %d\n", m_EleveldbStreamThreads);
         syslog(LOG_ERR, "       m_LeveldbImmThreads: %d\n", m_LeveldbImmThreads);
         syslog(LOG_ERR, "   m_LeveldbBGWriteThreads: %d\n", m_LeveldbBGWriteThreads);
         syslog(LOG_ERR, "   m_LeveldbOverlapThreads: %d\n", m_LeveldbOverlapThreads);
@@ -240,11 +250,13 @@ class eleveldb_priv_data
 public:
     EleveldbOptions m_Opts;
     eleveldb::eleveldb_thread_pool thread_pool;
+    eleveldb::eleveldb_thread_pool stream_thread_pool;
     leveldb::DataDictionary data_dictionary;
 
     explicit eleveldb_priv_data(EleveldbOptions & Options)
-    : m_Opts(Options), thread_pool(Options.m_EleveldbThreads),
-    data_dictionary(Options.m_GlobalDataDir)
+      : m_Opts(Options), thread_pool(Options.m_EleveldbThreads), 
+	stream_thread_pool(Options.m_EleveldbStreamThreads),
+	data_dictionary(Options.m_GlobalDataDir)
         {}
 
 private:
@@ -310,6 +322,17 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
                 if (temp != 0)
                 {
                     opts.m_EleveldbThreads = temp;
+                }   // if
+            }   // if
+        } 
+        else if (option[0] == eleveldb::ATOM_ELEVELDB_STREAM_THREADS)
+        {
+            unsigned long temp;
+            if (enif_get_ulong(env, option[1], &temp))
+            {
+                if (temp != 0)
+                {
+                    opts.m_EleveldbStreamThreads = temp;
                 }   // if
             }   // if
         } 
@@ -549,6 +572,39 @@ ERL_NIF_TERM parse_range_scan_option(ErlNifEnv* env, ERL_NIF_TERM item,
             opts.range_filter = parse_range_filter_opts(env, option[1], *(opts.extractor));
         }
     }
+    return eleveldb::ATOM_OK;
+}
+
+ERL_NIF_TERM parse_streaming_option(ErlNifEnv* env, ERL_NIF_TERM item,
+                                     eleveldb::RangeScanOptions & opts)
+{
+    int arity;
+    const ERL_NIF_TERM* option;
+    if (enif_get_tuple(env, item, &arity, &option) && 2 == arity)
+    {
+        if (option[0] == eleveldb::ATOM_START_INCLUSIVE)
+            opts.start_inclusive = (option[1] == eleveldb::ATOM_TRUE);
+        else if (option[0] == eleveldb::ATOM_END_INCLUSIVE)
+            opts.end_inclusive = (option[1] == eleveldb::ATOM_TRUE);
+        else if (option[0] == eleveldb::ATOM_FILL_CACHE)
+            opts.fill_cache = (option[1] == eleveldb::ATOM_TRUE);
+        else if (option[0] == eleveldb::ATOM_VERIFY_CHECKSUMS)
+            opts.verify_checksums = (option[1] == eleveldb::ATOM_TRUE);
+        else if (option[0] == eleveldb::ATOM_MAX_UNACKED_BYTES) {
+            unsigned max_unacked_bytes;
+            if (enif_get_uint(env, option[1], &max_unacked_bytes))
+                opts.max_unacked_bytes = max_unacked_bytes;
+        } else if (option[0] == eleveldb::ATOM_MAX_BATCH_BYTES) {
+            unsigned max_batch_bytes;
+            if (enif_get_uint(env, option[1], &max_batch_bytes))
+                opts.max_batch_bytes = max_batch_bytes;
+        } else if (option[0] == eleveldb::ATOM_LIMIT) {
+            unsigned limit;
+            if (enif_get_uint(env, option[1], &limit))
+                opts.limit = limit;
+        }
+    }
+
     return eleveldb::ATOM_OK;
 }
 
@@ -989,101 +1045,6 @@ async_iterator(
 }   // async_iterator
 
 ERL_NIF_TERM
-range_scan_ack(ErlNifEnv * env,
-               int argc,
-               const ERL_NIF_TERM argv[])
-{
-    const ERL_NIF_TERM ref              = argv[0];
-    const ERL_NIF_TERM num_bytes_term   = argv[1];
-    uint32_t num_bytes;
-
-    if (!enif_get_uint(env, num_bytes_term, &num_bytes))
-        return enif_make_badarg(env);
-
-    using eleveldb::RangeScanTask;
-    RangeScanTask::SyncHandle * sync_handle;
-    sync_handle = RangeScanTask::RetrieveSyncHandle(env, ref);
-
-    if (!sync_handle || !sync_handle->sync_obj)
-        return enif_make_badarg(env);
-
-    bool needs_reack = sync_handle->sync_obj->AckBytes(num_bytes);
-    return needs_reack ? eleveldb::ATOM_NEEDS_REACK : eleveldb::ATOM_OK;
-}
-
-ERL_NIF_TERM
-range_scan(ErlNifEnv * env,
-           int argc,
-           const ERL_NIF_TERM argv[])
-{
-    const ERL_NIF_TERM db_ref           = argv[0];
-    const ERL_NIF_TERM start_key_term   = argv[1];
-    const ERL_NIF_TERM end_key_term     = argv[2];
-    const ERL_NIF_TERM options_list     = argv[3];
-
-    ReferencePtr<DbObject> db_ptr;
-    db_ptr.assign(DbObject::RetrieveDbObject(env, db_ref));
-
-    if (NULL == db_ptr.get()
-        || !enif_is_binary(env, start_key_term)
-        || !enif_is_binary(env, end_key_term)
-        || !enif_is_list(env, options_list))
-    {
-        return enif_make_badarg(env);
-    }
-
-    if (NULL == db_ptr->m_Db)
-        return error_einval(env);
-
-    const leveldb::Options & options = db_ptr->m_Db->GetOptions();
-    leveldb::KeyTranslator * key_tx = options.translator;
-
-    ERL_NIF_TERM reply_ref = enif_make_ref(env);
-
-    ErlNifBinary start_key_bin;
-    enif_inspect_binary(env, start_key_term, &start_key_bin);
-    leveldb::Slice start_key_slice((const char *)start_key_bin.data,
-                                   start_key_bin.size);
-    std::string start_key;
-    start_key.resize(key_tx->GetInternalKeySize(start_key_slice));
-    key_tx->TranslateExternalKey(start_key_slice, (char*)start_key.data());
-
-    ErlNifBinary end_key_bin;
-    enif_inspect_binary(env, end_key_term, &end_key_bin);
-    leveldb::Slice end_key_slice((const char *)end_key_bin.data,
-                                 end_key_bin.size);
-    std::string end_key;
-    end_key.resize(key_tx->GetInternalKeySize(end_key_slice));
-    key_tx->TranslateExternalKey(end_key_slice, (char*)end_key.data());
-
-    RangeScanOptions opts;
-    fold(env, options_list, parse_range_scan_option, opts);
-    
-    using eleveldb::RangeScanTask;
-    RangeScanTask::SyncHandle * sync_handle =
-        RangeScanTask::CreateSyncHandle(opts);
-
-    ERL_NIF_TERM sync_ref = enif_make_resource(env, sync_handle);
-
-    RangeScanTask * task =
-        new RangeScanTask(env, reply_ref, db_ptr.get(),
-                          start_key, end_key, opts, sync_handle->sync_obj);
-
-    eleveldb_priv_data& priv =
-        *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-    if (false == priv.thread_pool.submit(task))
-    {
-        delete task; // TODO: May require fancier destruction.
-        // TODO: Add thread pool submit error atom
-        return enif_make_tuple2(env, eleveldb::ATOM_ERROR, reply_ref);
-    }
-
-    return enif_make_tuple2(env, eleveldb::ATOM_OK,
-                           enif_make_tuple2(env, reply_ref, sync_ref));
-}
-
-ERL_NIF_TERM
 async_iterator_move(
     ErlNifEnv* env,
     int argc,
@@ -1340,6 +1301,132 @@ async_iterator_close(
     }   // else
 }   // async_iterator_close
 
+//=======================================================================
+// Streaming version of iterator, from Engel's streaming-folds branch
+//=======================================================================
+
+/**.......................................................................
+ * Erlang client ack receipt of a batch of data from streaming
+ */
+ERL_NIF_TERM
+streaming_ack(ErlNifEnv * env,
+               int argc,
+               const ERL_NIF_TERM argv[])
+{
+    const ERL_NIF_TERM ref              = argv[0];
+    const ERL_NIF_TERM num_bytes_term   = argv[1];
+    uint32_t num_bytes;
+
+    if (!enif_get_uint(env, num_bytes_term, &num_bytes))
+        return enif_make_badarg(env);
+
+    using eleveldb::RangeScanTask;
+    RangeScanTask::SyncHandle * sync_handle;
+    sync_handle = RangeScanTask::RetrieveSyncHandle(env, ref);
+
+    if (!sync_handle || !sync_handle->sync_obj)
+        return enif_make_badarg(env);
+
+    sync_handle->sync_obj->AckBytes(num_bytes);
+
+    return eleveldb::ATOM_OK;
+}
+
+/**.......................................................................
+ * Stop a stream that's currently in progress
+ */
+ERL_NIF_TERM
+streaming_stop(ErlNifEnv * env,
+               int argc,
+               const ERL_NIF_TERM argv[])
+{
+    const ERL_NIF_TERM ref              = argv[0];
+
+    using eleveldb::RangeScanTask;
+    RangeScanTask::SyncHandle * sync_handle;
+    sync_handle = RangeScanTask::RetrieveSyncHandle(env, ref);
+
+    if (!sync_handle)
+        return enif_make_badarg(env);
+
+    RangeScanTask::SyncHandleResourceCleanup(env, sync_handle);
+
+    return eleveldb::ATOM_OK;
+}
+
+/**.......................................................................
+ * Start streaming
+ */
+ERL_NIF_TERM
+streaming_start(ErlNifEnv * env,
+                int argc,
+                const ERL_NIF_TERM argv[])
+{
+    const ERL_NIF_TERM db_ref           = argv[0];
+    const ERL_NIF_TERM start_key_term   = argv[1];
+    const ERL_NIF_TERM end_key_term     = argv[2];
+    const ERL_NIF_TERM options_list     = argv[3];
+
+    ReferencePtr<DbObject> db_ptr;
+    db_ptr.assign(DbObject::RetrieveDbObject(env, db_ref));
+
+    bool has_end_key = enif_is_binary(env, end_key_term);
+
+    if (NULL == db_ptr.get()
+        || !enif_is_binary(env, start_key_term)
+        || (!has_end_key && eleveldb::ATOM_UNDEFINED != end_key_term)
+        || !enif_is_list(env, options_list))
+    {
+        return enif_make_badarg(env);
+    }
+
+    if (NULL == db_ptr->m_Db)
+        return error_einval(env);
+
+    ERL_NIF_TERM reply_ref = enif_make_ref(env);
+
+    ErlNifBinary start_key_bin;
+    enif_inspect_binary(env, start_key_term, &start_key_bin);
+    std::string start_key((const char*)start_key_bin.data, start_key_bin.size);
+
+    std::string * end_key_ptr = NULL;
+    std::string end_key;
+    if (has_end_key) {
+        ErlNifBinary end_key_bin;
+        enif_inspect_binary(env, end_key_term, &end_key_bin);
+        end_key.assign((const char*)end_key_bin.data, end_key_bin.size);
+        end_key_ptr = &end_key;
+    }
+
+    RangeScanOptions opts;
+    fold(env, options_list, parse_streaming_option, opts);
+    
+    using eleveldb::RangeScanTask;
+    RangeScanTask::SyncHandle * sync_handle =
+        RangeScanTask::CreateSyncHandle(opts);
+
+    ERL_NIF_TERM sync_ref = enif_make_resource(env, sync_handle);
+    // Release so it's destroyed on GC.
+    enif_release_resource(sync_handle);
+
+    RangeScanTask * task =
+        new RangeScanTask(env, reply_ref, db_ptr.get(),
+                          start_key, end_key_ptr, opts, sync_handle->sync_obj);
+
+    eleveldb_priv_data& priv =
+        *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+    if (false == priv.stream_thread_pool.submit(task))
+    {
+        delete task; // TODO: May require fancier destruction.
+        // TODO: Add thread pool submit error atom
+        return enif_make_tuple2(env, eleveldb::ATOM_ERROR, reply_ref);
+    }
+
+    return enif_make_tuple2(env, eleveldb::ATOM_OK,
+                           enif_make_tuple2(env, reply_ref, sync_ref));
+}
+
 } // namespace eleveldb
 
 
@@ -1563,6 +1650,7 @@ try
     ATOM(eleveldb::ATOM_IS_INTERNAL_DB, "is_internal_db");
     ATOM(eleveldb::ATOM_LIMITED_DEVELOPER_MEM, "limited_developer_mem");
     ATOM(eleveldb::ATOM_ELEVELDB_THREADS, "eleveldb_threads");
+    ATOM(eleveldb::ATOM_ELEVELDB_STREAM_THREADS, "eleveldb_stream_threads");
     ATOM(eleveldb::ATOM_FADVISE_WILLNEED, "fadvise_willneed");
     ATOM(eleveldb::ATOM_DELETE_THRESHOLD, "delete_threshold");
     ATOM(eleveldb::ATOM_TIERED_SLOW_LEVEL, "tiered_slow_level");
@@ -1578,6 +1666,10 @@ try
     ATOM(eleveldb::ATOM_TIME_SERIES, "time_series");
     ATOM(eleveldb::ATOM_GLOBAL_DATA_DIR, "global_data_dir");
     ATOM(eleveldb::ATOM_RANGE_FILTER, "range_filter");
+    ATOM(eleveldb::ATOM_STREAMING_BATCH, "streaming_batch");
+    ATOM(eleveldb::ATOM_STREAMING_END, "streaming_end");
+    ATOM(eleveldb::ATOM_LIMIT, "limit");
+    ATOM(eleveldb::ATOM_UNDEFINED, "undefined");
 #undef ATOM
 
 
