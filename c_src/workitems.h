@@ -513,6 +513,7 @@ public:
             void AddBytes(uint32_t n);
 
             void AckBytes(uint32_t n);
+            bool AckBytesRet(uint32_t n);
 
             // Should be called when the Erlang handle is garbage collected
             // so no process is there to consume the output.
@@ -565,6 +566,22 @@ protected:
     SyncObject * sync_obj_;
 
 };  // class RangeScanTask
+
+class RangeScanTaskOld : public RangeScanTask {
+ public:
+
+    RangeScanTaskOld(ErlNifEnv * caller_env,
+		     ERL_NIF_TERM caller_ref,
+		     DbObject * db_handle,
+		     const std::string & start_key,
+		     const std::string * end_key,
+		     RangeScanOptions & options,
+		     SyncObject * sync_obj);
+    
+    virtual ~RangeScanTaskOld();
+    virtual work_result operator()();
+
+}; // class RangeScanTaskOld
 
 } // namespace eleveldb
 

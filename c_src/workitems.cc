@@ -509,6 +509,35 @@ void RangeScanTask::SyncObject::AddBytes(uint32_t n)
     }
 }
 
+bool RangeScanTask::SyncObject::AckBytesRet(uint32_t n)
+{
+    uint32_t num_bytes = sub_and_fetch(&num_bytes_, n);
+    bool ret;
+
+    const bool is_reack = n == 0;
+    const bool is_under_max = num_bytes < max_bytes_;
+    const bool was_over_max = num_bytes_ + n >= max_bytes_;
+    const bool went_under_max = is_under_max && was_over_max;
+
+    if (went_under_max || is_reack) {
+        enif_mutex_lock(mutex_);
+        if (producer_sleeping_) {
+            producer_sleeping_ = false;
+            enif_cond_signal(cond_);
+            ret = false;
+        } else {
+            // Producer crossed the threshold, but we caught it before it 
+            // blocked. Pending a cond signal to wake it when it does.
+            pending_signal_ = true;
+            ret = true;
+        }
+        enif_mutex_unlock(mutex_);
+    } else 
+        ret = false;
+
+    return ret;
+}
+
 void RangeScanTask::SyncObject::AckBytes(uint32_t n)
 {
     uint32_t num_bytes = sub_and_fetch(&num_bytes_, n);
@@ -877,5 +906,106 @@ void RangeScanTask::SyncHandleResourceCleanup(ErlNifEnv * env, void * arg)
         handle->sync_obj = NULL;
     }
 }
+
+//=======================================================================
+// Backwards compatibility for range_scan operations
+//=======================================================================
+
+RangeScanTaskOld::RangeScanTaskOld(ErlNifEnv * caller_env,
+				   ERL_NIF_TERM caller_ref,
+				   DbObject * db_handle,
+				   const std::string & start_key,
+				   const std::string * end_key,
+				   RangeScanOptions & options,
+				   SyncObject * sync_obj) :
+  RangeScanTask(caller_env, caller_ref, db_handle, start_key, end_key, options, sync_obj)
+{
+}
+
+RangeScanTaskOld::~RangeScanTaskOld() {};
+
+work_result RangeScanTaskOld::operator()()
+{
+    leveldb::ReadOptions read_options;
+    ErlNifEnv * env = local_env_;
+    ErlNifEnv * msg_env = enif_alloc_env();
+    read_options.fill_cache = options_.fill_cache;
+    leveldb::Iterator * iter = m_DbPtr->m_Db->NewIterator(read_options);
+    const leveldb::Comparator * cmp = m_DbPtr->m_DbOptions->comparator;
+    const leveldb::Slice skey_slice(start_key_);
+    const leveldb::Slice ekey_slice(end_key_);
+    const leveldb::Options & db_options = m_DbPtr->m_Db->GetOptions();
+    leveldb::KeyTranslator * translator = db_options.translator;
+
+    iter->Seek(skey_slice);
+
+    ErlNifPid pid;
+    enif_get_local_pid(env, caller_pid_term, &pid);
+    ErlNifBinary bin;
+    const size_t initial_bin_size = size_t(options_.max_batch_bytes * 1.1);
+    size_t out_offset = 0;
+    std::string key_buffer;
+    key_buffer.reserve(256);
+
+    for (;;) {
+        // If reached end or key past end key.
+        if (!iter->Valid()
+            || cmp->Compare(iter->key(), ekey_slice) >= 0) {
+            // If data in batch
+            if (out_offset) {
+                // Shrink it to final size.
+                if (out_offset != bin.size)
+                    enif_realloc_binary(&bin, out_offset);
+                send_batch(&pid, msg_env, caller_ref_term, &bin);
+            }
+            break;
+        }
+        // Shove next entry in the batch.
+        leveldb::Slice key = iter->key();
+        leveldb::Slice value = iter->value();
+        bool filter_passed = true;
+        if (options_.range_filter!=0) {
+            options_.extractor->extract(value.data(), value.size(), options_.range_filter);
+            filter_passed = options_.range_filter->evaluate();
+        }
+        if (filter_passed) {
+            key_buffer.resize(0);
+            translator->TranslateInternalKey(key, &key_buffer);
+            const size_t ksz = key_buffer.size(), vsz = value.size();
+            const size_t ksz_sz = VarintLength(ksz);
+            const size_t vsz_sz = VarintLength(vsz);
+            const size_t esz = ksz + ksz_sz + vsz + vsz_sz;
+            const size_t next_offset = out_offset + esz;
+            if (out_offset == 0)
+                enif_alloc_binary(initial_bin_size, &bin);
+            // If we need more space, allocate it exactly since that means we
+            // reached the batch max anyway and will send it right away.
+            if (next_offset > bin.size)
+                enif_realloc_binary(&bin, next_offset);
+            char * const out = (char*)bin.data + out_offset;
+            EncodeVarint64(out, ksz);
+            memcpy(out + ksz_sz, key_buffer.data(), ksz);
+            EncodeVarint64(out + ksz_sz + ksz, vsz);
+            memcpy(out + ksz_sz + ksz + vsz_sz, value.data(), vsz);
+            out_offset = next_offset;
+            if (out_offset >= options_.max_batch_bytes) {
+                if (out_offset != bin.size)
+                    enif_realloc_binary(&bin, out_offset);
+                send_batch(&pid, msg_env, caller_ref_term, &bin);
+                // Maybe block if max reached.
+                sync_obj_->AddBytes(out_offset);
+                out_offset = 0;
+            }
+        }
+        iter->Next();
+    }
+
+    ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
+    ERL_NIF_TERM msg =
+        enif_make_tuple2(msg_env, ATOM_RANGE_SCAN_END, ref_copy);
+    enif_send(NULL, &pid, msg_env, msg);
+    enif_free_env(msg_env);
+    return work_result();
+}   // RangeScanTask::operator()
 
 } // namespace eleveldb
