@@ -72,6 +72,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-import(lager,[info/2]).
+
 %% This cannot be a separate function. Code must be inline to trigger
 %% Erlang compiler's use of optimized selective receive.
 -define(WAIT_FOR_REPLY(Ref),
