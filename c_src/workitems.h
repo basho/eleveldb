@@ -457,12 +457,12 @@ struct RangeScanOptions {
   bool start_inclusive;
   bool end_inclusive;
   bool fill_cache;
-  ExpressionNode<bool>* range_filter = 0;
-  Extractor* extractor = 0;
+  ExpressionNode<bool>* range_filter;
+  Extractor* extractor;
 
   RangeScanOptions()
     : max_unacked_bytes(10 * 1024 * 1024), max_batch_bytes(1 * 1024 * 1024),
-    start_inclusive(true), end_inclusive(false), fill_cache(false)
+    start_inclusive(true), end_inclusive(false), fill_cache(false), range_filter(0), extractor(0)
   { }
 };
 

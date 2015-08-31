@@ -109,10 +109,10 @@ struct ConstantValue: public ExpressionNode<T> {
 template<typename T>
 struct FieldValue: public ExpressionNode<T> {
     const std::string field;
-    bool has_val=false;
+    bool has_val;
     T value;
 
-    FieldValue(const std::string fieldName): field(fieldName) {
+    FieldValue(const std::string fieldName): field(fieldName), has_val(false) {
     }
 
     inline virtual bool has_value() {
