@@ -290,7 +290,7 @@ async_iterator_close(_CallerRef, _IRef) ->
 range_scan(_DBRef, _StartKey, _EndKey, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
--spec range_scan_ack(reference(), pos_integer()) -> ok.
+-spec range_scan_ack(reference(), pos_integer()|0) -> ok | needs_reack.
 range_scan_ack(_Ref, _NumBytes) ->
     erlang:nif_error({error, not_loaded}).
 
