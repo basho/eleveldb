@@ -29,6 +29,7 @@
          get/4,
          put/4,
          put/5,
+         async_put/5,
          delete/3,
          delete/4,
          write/3,
@@ -265,6 +266,12 @@ write(Ref, Updates, Opts) ->
     async_write(CallerRef, Ref, Updates, Opts),
     ?WAIT_FOR_REPLY(CallerRef).
 
+-spec async_put(db_ref(), reference(), binary(), binary(), write_options()) -> ok.
+async_put(Ref, Context, Key, Value, Opts) ->
+    Updates = [{put, Key, Value}],
+    async_write(Context, Ref, Updates, Opts),
+    ok.
+
 -spec async_write(reference(), db_ref(), write_actions(), write_options()) -> ok.
 async_write(_CallerRef, _Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
@@ -494,13 +501,16 @@ status(Ref, Key) ->
 status_int(_Ref, _Key) ->
     erlang:nif_error({error, not_loaded}).
 
+-spec async_destroy(reference(), string(), open_options()) -> ok.
+async_destroy(_CallerRef, _Name, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
 -spec destroy(string(), open_options()) -> ok | {error, any()}.
 destroy(Name, Opts) ->
-    eleveldb_bump:big(),
-    destroy_int(Name, Opts).
-
-destroy_int(_Name, _Opts) ->
-    erlang:nif_error({erlang, not_loaded}).
+    CallerRef = make_ref(),
+    Opts2 = add_open_defaults(Opts),
+    async_destroy(CallerRef, Name, Opts2),
+    ?WAIT_FOR_REPLY(CallerRef).
 
 repair(Name, Opts) ->
     eleveldb_bump:big(),
@@ -771,13 +781,23 @@ values() ->
     eqc_gen:non_empty(list(binary())).
 
 ops(Keys, Values) ->
-    {oneof([put, delete]), oneof(Keys), oneof(Values)}.
+    {oneof([put, async_put, delete]), oneof(Keys), oneof(Values)}.
 
 apply_kv_ops([], _Ref, Acc0) ->
     Acc0;
 apply_kv_ops([{put, K, V} | Rest], Ref, Acc0) ->
     ok = eleveldb:put(Ref, K, V, []),
     apply_kv_ops(Rest, Ref, orddict:store(K, V, Acc0));
+apply_kv_ops([{async_put, K, V} | Rest], Ref, Acc0) ->
+    MyRef = make_ref(),
+    Context = {my_context, MyRef},
+    ok = eleveldb:async_put(Ref, Context, K, V, []),
+    receive
+        {Context, ok} ->
+            apply_kv_ops(Rest, Ref, orddict:store(K, V, Acc0));
+        Msg ->
+            error({unexpected_msg, Msg})
+    end;
 apply_kv_ops([{delete, K, _} | Rest], Ref, Acc0) ->
     ok = eleveldb:delete(Ref, K, []),
     apply_kv_ops(Rest, Ref, orddict:store(K, deleted, Acc0)).

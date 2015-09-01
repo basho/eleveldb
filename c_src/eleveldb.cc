@@ -66,7 +66,7 @@ static ErlNifFunc nif_funcs[] =
     {"async_close", 2, eleveldb::async_close},
     {"async_iterator_close", 2, eleveldb::async_iterator_close},
     {"status", 2, eleveldb_status},
-    {"destroy", 2, eleveldb_destroy},
+    {"async_destroy", 3, eleveldb::async_destroy},
     {"repair", 2, eleveldb_repair},
     {"is_empty", 1, eleveldb_is_empty},
 
@@ -1540,6 +1540,42 @@ currentMicroSeconds(
   return enif_make_int64(env, getCurrentMicroSeconds());
 } // currentMicroSeconds
 
+
+ERL_NIF_TERM
+async_destroy(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    char db_name[4096];
+
+    if(!enif_get_string(env, argv[1], db_name, sizeof(db_name), ERL_NIF_LATIN1) ||
+       !enif_is_list(env, argv[2]))
+    {
+        return enif_make_badarg(env);
+    }   // if
+
+    ERL_NIF_TERM caller_ref = argv[0];
+
+    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+
+    leveldb::Options *opts = new leveldb::Options;
+    fold(env, argv[2], parse_open_option, *opts);
+
+    eleveldb::WorkTask *work_item = new eleveldb::DestroyTask(env, caller_ref,
+                                                              db_name, opts);
+
+    if(false == priv.thread_pool.submit(work_item))
+    {
+        delete work_item;
+        return send_reply(env, caller_ref,
+                          enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
+    }
+
+    return eleveldb::ATOM_OK;
+
+}   // async_destroy
+
 } // namespace eleveldb
 
 int64_t getCurrentMicroSeconds()
@@ -1563,6 +1599,9 @@ return static_cast<uint64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
 #endif
 }
 
+/**
+ * HEY YOU ... please make async
+ */
 ERL_NIF_TERM
 eleveldb_status(
     ErlNifEnv* env,
@@ -1604,6 +1643,9 @@ eleveldb_status(
 }   // eleveldb_status
 
 
+/**
+ * HEY YOU ... please make async
+ */
 ERL_NIF_TERM
 eleveldb_repair(
     ErlNifEnv* env,
@@ -1631,40 +1673,6 @@ eleveldb_repair(
         return enif_make_badarg(env);
     }
 }   // eleveldb_repair
-
-/**
- * HEY YOU ... please make async
- */
-ERL_NIF_TERM
-eleveldb_destroy(
-    ErlNifEnv* env,
-    int argc,
-    const ERL_NIF_TERM argv[])
-{
-    char name[4096];
-    if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1) &&
-        enif_is_list(env, argv[1]))
-    {
-        // Parse out the options
-        leveldb::Options opts;
-        fold(env, argv[1], parse_open_option, opts);
-
-        leveldb::Status status = leveldb::DestroyDB(name, opts);
-        if (!status.ok())
-        {
-            return error_tuple(env, eleveldb::ATOM_ERROR_DB_DESTROY, status);
-        }
-        else
-        {
-            return eleveldb::ATOM_OK;
-        }
-    }
-    else
-    {
-        return enif_make_badarg(env);
-    }
-
-}   // eleveldb_destroy
 
 
 ERL_NIF_TERM

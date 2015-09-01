@@ -583,6 +583,31 @@ class RangeScanTaskOld : public RangeScanTask {
 
 }; // class RangeScanTaskOld
 
+/**
+ * Background object for async open of a leveldb instance
+ */
+
+class DestroyTask : public WorkTask
+{
+protected:
+    std::string         db_name;
+    leveldb::Options   *open_options;  // associated with db handle, we don't free it
+
+public:
+    DestroyTask(ErlNifEnv* caller_env, ERL_NIF_TERM& _caller_ref,
+             const std::string& db_name_, leveldb::Options *open_options_);
+
+    virtual ~DestroyTask() {};
+
+    virtual work_result operator()();
+
+private:
+    DestroyTask();
+    DestroyTask(const DestroyTask &);
+    DestroyTask & operator=(const DestroyTask &);
+
+};  // class DestroyTask
+
 } // namespace eleveldb
 
 

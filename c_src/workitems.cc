@@ -474,6 +474,7 @@ RangeScanTask::~RangeScanTask()
     sync_obj_->RefDec();
 }
 
+
 RangeScanTask::SyncObject::SyncObject(const RangeScanOptions & opts)
 : max_bytes_(opts.max_unacked_bytes), 
     low_bytes_(opts.low_bytes),
@@ -573,6 +574,32 @@ void RangeScanTask::SyncObject::MarkConsumerDead() {
 bool RangeScanTask::SyncObject::IsConsumerDead() const {
     return consumer_dead_;
 }
+
+/**
+ * DestroyTask functions
+ */
+
+DestroyTask::DestroyTask(
+    ErlNifEnv* caller_env,
+    ERL_NIF_TERM& _caller_ref,
+    const std::string& db_name_,
+    leveldb::Options *open_options_)
+    : WorkTask(caller_env, _caller_ref),
+    db_name(db_name_), open_options(open_options_)
+{
+}   // DestroyTask::DestroyTask
+
+work_result
+DestroyTask::operator()()
+{
+    leveldb::Status status = leveldb::DestroyDB(db_name, *open_options);
+
+    if(!status.ok())
+        return error_tuple(local_env(), ATOM_ERROR_DB_DESTROY, status);
+
+    return work_result(ATOM_OK);
+
+}   // DestroyTask::operator()
 
 void send_batch(ErlNifPid * pid, ErlNifEnv * msg_env, ERL_NIF_TERM ref_term,
                 ErlNifBinary * bin) {
