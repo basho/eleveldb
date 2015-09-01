@@ -59,6 +59,9 @@ test_range_query(Ref) ->
         end, lists:seq(0,9))
     end}.
 
+get_ts_key(Key) ->
+    eleveldb:ts_key_TEST({?FAMILY, ?SERIES, Key}).
+
 read_items_with_level_filter(Ref, Start0, End0, F1, F2) ->
     Start = eleveldb:ts_key_TEST({?FAMILY, ?SERIES, Start0}),
     End = eleveldb:ts_key_TEST({?FAMILY, ?SERIES, End0}),

@@ -321,7 +321,7 @@ iterator_close(IRef) ->
 async_iterator_close(_CallerRef, _IRef) ->
     erlang:nif_error({error, not_loaded}).
 
--spec range_scan(db_ref(), binary(), binary(), range_scan_options()) ->
+-spec range_scan(db_ref(), binary(), binary()|undefined, range_scan_options()) ->
     {ok, {itr_ref(), reference()}} | {error, any()}.
 range_scan(_DBRef, _StartKey, _EndKey, _Opts) ->
     erlang:nif_error({error, not_loaded}).

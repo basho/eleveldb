@@ -9,7 +9,6 @@ fi
 unset POSIX_SHELL # clear it so if we invoke other scripts, they run as ksh as well
 
 LEVELDB_VSN="feature/streaming-folds-filter"
-
 SNAPPY_VSN="1.0.4"
 
 set -e
