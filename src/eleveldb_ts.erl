@@ -29,8 +29,10 @@ encode_k2([{binary, L}     | T], Bin) when is_list(L) ->
 encode_record(Record) -> 
     msgpack:pack(Record, [{format, jsx}]).
 
-decode_record(Bin) when is_binary(Bin) -> 
-    msgpack:unpack(Bin, [{format, jsx}]).
+decode_record(Bin) when is_binary(Bin) ->
+    {ok, Record} = msgpack:unpack(Bin, [{format, jsx}]),
+    Record.
+
 
 %%
 %% Internal Funs
