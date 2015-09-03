@@ -454,14 +454,18 @@ RangeScanTask::RangeScanTask(ErlNifEnv * caller_env,
                              ERL_NIF_TERM caller_ref,
                              DbObject * db_handle,
                              const std::string & start_key,
-                             const std::string & end_key,
+                             const std::string * end_key,
                              RangeScanOptions & options,
                              SyncObject * sync_obj)
 : WorkTask(caller_env, caller_ref, db_handle),
     options_(options),
-    start_key_(start_key), end_key_(end_key),
+    start_key_(start_key),
+    has_end_key_(bool(end_key)),
     sync_obj_(sync_obj)
 {
+    if (end_key) {
+        end_key_ = *end_key;
+    }
     sync_obj_->RefInc();
 }
 
@@ -470,10 +474,13 @@ RangeScanTask::~RangeScanTask()
     sync_obj_->RefDec();
 }
 
+
 RangeScanTask::SyncObject::SyncObject(const RangeScanOptions & opts)
-: max_bytes_(opts.max_unacked_bytes), num_bytes_(0),
+: max_bytes_(opts.max_unacked_bytes), 
+    low_bytes_(opts.low_bytes),
+    num_bytes_(0),
     producer_sleeping_(false), pending_signal_(false), consumer_dead_(false),
-    mutex_(NULL), cond_(NULL)
+    crossed_under_max_(false), mutex_(NULL), cond_(NULL)
 {
     mutex_ = enif_mutex_create(0);
     cond_ = enif_cond_create(0);
@@ -488,20 +495,22 @@ RangeScanTask::SyncObject::~SyncObject()
 void RangeScanTask::SyncObject::AddBytes(uint32_t n)
 {
     uint32_t num_bytes = add_and_fetch(&num_bytes_, n);
-    // Block if max bytes reached.
+    // Block if buffer full.
     if (num_bytes >= max_bytes_) {
         enif_mutex_lock(mutex_);
-        if (!consumer_dead_) {
+        if (!consumer_dead_ && !pending_signal_) {
             producer_sleeping_ = true;
             while (producer_sleeping_) {
                 enif_cond_wait(cond_, mutex_);
             }
         }
+        if (pending_signal_)
+            pending_signal_ = false;
         enif_mutex_unlock(mutex_);
     }
 }
 
-bool RangeScanTask::SyncObject::AckBytes(uint32_t n)
+bool RangeScanTask::SyncObject::AckBytesRet(uint32_t n)
 {
     uint32_t num_bytes = sub_and_fetch(&num_bytes_, n);
     bool ret;
@@ -530,14 +539,67 @@ bool RangeScanTask::SyncObject::AckBytes(uint32_t n)
     return ret;
 }
 
+void RangeScanTask::SyncObject::AckBytes(uint32_t n)
+{
+    uint32_t num_bytes = sub_and_fetch(&num_bytes_, n);
+
+    if (num_bytes < max_bytes_ && num_bytes_ + n >= max_bytes_)
+        crossed_under_max_ = true;
+
+    // Detect if at some point buffer was full, but now we have
+    // acked enough bytes to go under the low watermark.
+    if (crossed_under_max_ && num_bytes < low_bytes_) {
+        crossed_under_max_ = false;
+        enif_mutex_lock(mutex_);
+        if (producer_sleeping_) {
+            producer_sleeping_ = false;
+            enif_cond_signal(cond_);
+        } else {
+            pending_signal_ = true;
+        }
+        enif_mutex_unlock(mutex_);
+    }
+}
+
 void RangeScanTask::SyncObject::MarkConsumerDead() {
     enif_mutex_lock(mutex_);
     consumer_dead_ = true;
-    if (producer_sleeping_)
+    if (producer_sleeping_) {
+        producer_sleeping_ = false;
         enif_cond_signal(cond_);
+    }
     enif_mutex_unlock(mutex_);
 }
 
+bool RangeScanTask::SyncObject::IsConsumerDead() const {
+    return consumer_dead_;
+}
+
+/**
+ * DestroyTask functions
+ */
+
+DestroyTask::DestroyTask(
+    ErlNifEnv* caller_env,
+    ERL_NIF_TERM& _caller_ref,
+    const std::string& db_name_,
+    leveldb::Options *open_options_)
+    : WorkTask(caller_env, _caller_ref),
+    db_name(db_name_), open_options(open_options_)
+{
+}   // DestroyTask::DestroyTask
+
+work_result
+DestroyTask::operator()()
+{
+    leveldb::Status status = leveldb::DestroyDB(db_name, *open_options);
+
+    if(!status.ok())
+        return error_tuple(local_env(), ATOM_ERROR_DB_DESTROY, status);
+
+    return work_result(ATOM_OK);
+
+}   // DestroyTask::operator()
 
 void send_batch(ErlNifPid * pid, ErlNifEnv * msg_env, ERL_NIF_TERM ref_term,
                 ErlNifBinary * bin) {
@@ -571,6 +633,325 @@ char* EncodeVarint64(char* dst, uint64_t v) {
 }
 
 work_result RangeScanTask::operator()()
+{
+    leveldb::ReadOptions read_options;
+    ErlNifEnv * env = local_env_;
+    ErlNifEnv * msg_env = enif_alloc_env();
+    read_options.fill_cache = options_.fill_cache;
+    read_options.verify_checksums = options_.verify_checksums;
+    leveldb::Iterator * iter = m_DbPtr->m_Db->NewIterator(read_options);
+    const leveldb::Comparator * cmp = m_DbPtr->m_DbOptions->comparator;
+
+    const leveldb::Slice skey_slice(start_key_);
+    const leveldb::Slice ekey_slice(end_key_);
+
+    const leveldb::Options& db_options = m_DbPtr->m_Db->GetOptions();
+    leveldb::KeyTranslator* translator = db_options.translator;
+
+    iter->Seek(skey_slice);
+
+    ErlNifPid pid;
+    enif_get_local_pid(env, caller_pid_term, &pid);
+    ErlNifBinary bin;
+    const size_t initial_bin_size = size_t(options_.max_batch_bytes * 1.1);
+    size_t out_offset = 0;
+    size_t num_read = 0;
+
+    std::string key_buffer;
+    key_buffer.reserve(256);
+
+    //------------------------------------------------------------
+    // Skip if not including first key and first key exists
+    //------------------------------------------------------------
+
+    if (!options_.start_inclusive
+        && iter->Valid()
+        && cmp->Compare(iter->key(), skey_slice) == 0) {
+        iter->Next();
+    }
+
+    while (!sync_obj_->IsConsumerDead()) {
+
+        //------------------------------------------------------------
+        // If reached end (iter invalid) or we've reached the
+        // specified limit on number of items (options_.limit), or the
+        // current key is past end key, send the batch and break out of the loop
+        //------------------------------------------------------------
+  
+        if (!iter->Valid()
+            || (options_.limit > 0 && num_read >= options_.limit)
+            || (has_end_key_ &&
+                (options_.end_inclusive ?
+                 cmp->Compare(iter->key(), ekey_slice) > 0 :
+                 cmp->Compare(iter->key(), ekey_slice) >= 0
+                ))) {
+
+	  // If data are present in the batch (ie, out_offset != 0),
+	  // send the batch now
+
+	    if (out_offset) {
+            
+	      // Shrink it to final size.
+
+                if (out_offset != bin.size)
+                    enif_realloc_binary(&bin, out_offset);
+
+                send_batch(&pid, msg_env, caller_ref_term, &bin);
+                out_offset = 0;
+            }
+
+            break;
+        }
+
+	//------------------------------------------------------------
+	// Else keep going; shove the next entry in the batch, but
+	// only if it passes any user-specified filter
+	// ------------------------------------------------------------
+
+        leveldb::Slice key   = iter->key();
+        leveldb::Slice value = iter->value();
+
+        bool filter_passed = true;
+        if (options_.range_filter!=0) {
+            options_.extractor->extract(value.data(), value.size(), 
+					options_.range_filter);
+            filter_passed = options_.range_filter->evaluate();
+        }
+
+        if (filter_passed) {
+
+            key_buffer.resize(0);
+            translator->TranslateInternalKey(key, &key_buffer);
+
+            const size_t ksz = key_buffer.size();
+	    const size_t vsz = value.size();
+
+            const size_t ksz_sz = VarintLength(ksz);
+            const size_t vsz_sz = VarintLength(vsz);
+
+            const size_t esz = ksz + ksz_sz + vsz + vsz_sz;
+            const size_t next_offset = out_offset + esz;
+
+	  // Allocate the output data array if this is the first data
+	  // (out_offset == 0)
+
+            if (out_offset == 0)
+                enif_alloc_binary(initial_bin_size, &bin);
+
+	    //------------------------------------------------------------
+            // If we need more space, allocate it exactly since that means we
+            // reached the batch max anyway and will send it right away
+	    //------------------------------------------------------------
+
+            if (next_offset > bin.size)
+                enif_realloc_binary(&bin, next_offset);
+
+            char * const out = (char*)bin.data + out_offset;
+
+            EncodeVarint64(out, ksz);
+            memcpy(out + ksz_sz, key_buffer.data(), ksz);
+
+            EncodeVarint64(out + ksz_sz + ksz, vsz);
+            memcpy(out + ksz_sz + ksz + vsz_sz, value.data(), vsz);
+
+            out_offset = next_offset;
+	    
+	    // If we've reached the maximum number of bytes to include in
+	    // the batch, possibly shrink the binary and send it
+
+            if (out_offset >= options_.max_batch_bytes) {
+
+                if (out_offset != bin.size)
+                    enif_realloc_binary(&bin, out_offset);
+
+                send_batch(&pid, msg_env, caller_ref_term, &bin);
+
+                // Maybe block if max reached.
+
+                sync_obj_->AddBytes(out_offset);
+
+                out_offset = 0;
+	    }
+
+	    // Increment the number of keys read and step to the next key
+
+	    ++num_read;
+	}
+
+        iter->Next();
+    }
+
+    //------------------------------------------------------------
+    // If exiting work loop, send a streaming_end message to any
+    // waiting erlang threads
+    //------------------------------------------------------------
+
+    if (!sync_obj_->IsConsumerDead()) {
+        ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
+        ERL_NIF_TERM msg =
+            enif_make_tuple2(msg_env, ATOM_STREAMING_END, ref_copy);
+        enif_send(NULL, &pid, msg_env, msg);
+    }
+
+    if (out_offset)
+        enif_release_binary(&bin);
+
+    enif_free_env(msg_env);
+    return work_result();
+
+}   // RangeScanTask::operator()
+
+#if 0
+work_result RangeScanTask::operator()()
+{
+    leveldb::ReadOptions read_options;
+    ErlNifEnv * env = local_env_;
+    ErlNifEnv * msg_env = enif_alloc_env();
+    read_options.fill_cache = options_.fill_cache;
+    read_options.verify_checksums = options_.verify_checksums;
+    leveldb::Iterator * iter = m_DbPtr->m_Db->NewIterator(read_options);
+    const leveldb::Comparator * cmp = m_DbPtr->m_DbOptions->comparator;
+    const leveldb::Slice skey_slice(start_key_);
+    const leveldb::Slice ekey_slice(end_key_);
+    const leveldb::Options & db_options = m_DbPtr->m_Db->GetOptions();
+    leveldb::KeyTranslator * translator = db_options.translator;
+
+    iter->Seek(skey_slice);
+
+    ErlNifPid pid;
+    enif_get_local_pid(env, caller_pid_term, &pid);
+    ErlNifBinary bin;
+    const size_t initial_bin_size = size_t(options_.max_batch_bytes * 1.1);
+    size_t out_offset = 0;
+    size_t num_read = 0;
+
+    std::string key_buffer;
+    key_buffer.reserve(256);
+
+    for (;;) {
+        // If reached end or key past end key.
+        if (!iter->Valid()
+            || cmp->Compare(iter->key(), ekey_slice) >= 0) {
+            // If data in batch
+            if (out_offset) {
+                // Shrink it to final size.
+                if (out_offset != bin.size)
+                    enif_realloc_binary(&bin, out_offset);
+                send_batch(&pid, msg_env, caller_ref_term, &bin);
+            }
+            break;
+        }
+        // Shove next entry in the batch.
+        leveldb::Slice key = iter->key();
+        leveldb::Slice value = iter->value();
+        bool filter_passed = true;
+        if (options_.range_filter!=0) {
+            options_.extractor->extract(value.data(), value.size(), options_.range_filter);
+            filter_passed = options_.range_filter->evaluate();
+        }
+        if (filter_passed) {
+            key_buffer.resize(0);
+            translator->TranslateInternalKey(key, &key_buffer);
+            const size_t ksz = key_buffer.size(), vsz = value.size();
+            const size_t ksz_sz = VarintLength(ksz);
+            const size_t vsz_sz = VarintLength(vsz);
+            const size_t esz = ksz + ksz_sz + vsz + vsz_sz;
+            const size_t next_offset = out_offset + esz;
+            if (out_offset == 0)
+                enif_alloc_binary(initial_bin_size, &bin);
+            // If we need more space, allocate it exactly since that means we
+            // reached the batch max anyway and will send it right away.
+            if (next_offset > bin.size)
+                enif_realloc_binary(&bin, next_offset);
+            char * const out = (char*)bin.data + out_offset;
+            EncodeVarint64(out, ksz);
+            memcpy(out + ksz_sz, key_buffer.data(), ksz);
+            EncodeVarint64(out + ksz_sz + ksz, vsz);
+            memcpy(out + ksz_sz + ksz + vsz_sz, value.data(), vsz);
+            out_offset = next_offset;
+            if (out_offset >= options_.max_batch_bytes) {
+                if (out_offset != bin.size)
+                    enif_realloc_binary(&bin, out_offset);
+                send_batch(&pid, msg_env, caller_ref_term, &bin);
+                // Maybe block if max reached.
+                sync_obj_->AddBytes(out_offset);
+                out_offset = 0;
+            }
+        }
+        iter->Next();
+    }
+
+    ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
+    ERL_NIF_TERM msg =
+        enif_make_tuple2(msg_env, ATOM_RANGE_SCAN_END, ref_copy);
+    enif_send(NULL, &pid, msg_env, msg);
+    enif_free_env(msg_env);
+    return work_result();
+}   // RangeScanTask::operator()
+#endif
+
+ErlNifResourceType * RangeScanTask::sync_handle_resource_ = NULL;
+
+void RangeScanTask::CreateSyncHandleType(ErlNifEnv * env)
+{
+    ErlNifResourceFlags flags = (ErlNifResourceFlags)(ERL_NIF_RT_CREATE
+                                                      | ERL_NIF_RT_TAKEOVER);
+    sync_handle_resource_ =
+        enif_open_resource_type(env, NULL, "eleveldb_range_scan_sync_handle",
+                                &RangeScanTask::SyncHandleResourceCleanup,
+                                flags, NULL);
+    return;
+}
+
+RangeScanTask::SyncHandle *
+RangeScanTask::CreateSyncHandle(const RangeScanOptions & options)
+{
+    SyncObject * sync_obj = new SyncObject(options);
+    sync_obj->RefInc();
+    SyncHandle * handle =
+        (SyncHandle*)enif_alloc_resource(sync_handle_resource_,
+                                         sizeof(SyncHandle));
+    handle->sync_obj = sync_obj;
+    return handle;
+}
+
+RangeScanTask::SyncHandle *
+RangeScanTask::RetrieveSyncHandle(ErlNifEnv * env, ERL_NIF_TERM term)
+{
+    void * resource_ptr;
+    if (enif_get_resource(env, term, sync_handle_resource_, &resource_ptr))
+        return (SyncHandle *)resource_ptr;
+    return NULL;
+}
+
+void RangeScanTask::SyncHandleResourceCleanup(ErlNifEnv * env, void * arg)
+{
+    SyncHandle * handle = (SyncHandle*)arg;
+    if (handle->sync_obj) {
+        handle->sync_obj->MarkConsumerDead();
+        handle->sync_obj->RefDec();
+        handle->sync_obj = NULL;
+    }
+}
+
+//=======================================================================
+// Backwards compatibility for range_scan operations
+//=======================================================================
+
+RangeScanTaskOld::RangeScanTaskOld(ErlNifEnv * caller_env,
+				   ERL_NIF_TERM caller_ref,
+				   DbObject * db_handle,
+				   const std::string & start_key,
+				   const std::string * end_key,
+				   RangeScanOptions & options,
+				   SyncObject * sync_obj) :
+  RangeScanTask(caller_env, caller_ref, db_handle, start_key, end_key, options, sync_obj)
+{
+}
+
+RangeScanTaskOld::~RangeScanTaskOld() {};
+
+work_result RangeScanTaskOld::operator()()
 {
     leveldb::ReadOptions read_options;
     ErlNifEnv * env = local_env_;
@@ -653,49 +1034,5 @@ work_result RangeScanTask::operator()()
     enif_free_env(msg_env);
     return work_result();
 }   // RangeScanTask::operator()
-
-ErlNifResourceType * RangeScanTask::sync_handle_resource_ = NULL;
-
-void RangeScanTask::CreateSyncHandleType(ErlNifEnv * env)
-{
-    ErlNifResourceFlags flags = (ErlNifResourceFlags)(ERL_NIF_RT_CREATE
-                                                      | ERL_NIF_RT_TAKEOVER);
-    sync_handle_resource_ =
-        enif_open_resource_type(env, NULL, "eleveldb_range_scan_sync_handle",
-                                &RangeScanTask::SyncHandleResourceCleanup,
-                                flags, NULL);
-    return;
-}
-
-RangeScanTask::SyncHandle *
-RangeScanTask::CreateSyncHandle(const RangeScanOptions & options)
-{
-    SyncObject * sync_obj = new SyncObject(options);
-    sync_obj->RefInc();
-    SyncHandle * handle =
-        (SyncHandle*)enif_alloc_resource(sync_handle_resource_,
-                                         sizeof(SyncHandle));
-    handle->sync_obj = sync_obj;
-    return handle;
-}
-
-RangeScanTask::SyncHandle *
-RangeScanTask::RetrieveSyncHandle(ErlNifEnv * env, ERL_NIF_TERM term)
-{
-    void * resource_ptr;
-    if (enif_get_resource(env, term, sync_handle_resource_, &resource_ptr))
-        return (SyncHandle *)resource_ptr;
-    return NULL;
-}
-
-void RangeScanTask::SyncHandleResourceCleanup(ErlNifEnv * env, void * arg)
-{
-    SyncHandle * handle = (SyncHandle*)arg;
-    if (handle->sync_obj) {
-        handle->sync_obj->MarkConsumerDead();
-        handle->sync_obj->RefDec();
-        handle->sync_obj = NULL;
-    }
-}
 
 } // namespace eleveldb
