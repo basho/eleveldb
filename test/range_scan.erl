@@ -59,9 +59,12 @@ test_range_query(Ref) ->
         end, lists:seq(0,9))
     end}.
 
+get_ts_key(Key) ->
+    eleveldb:ts_key_TEST({?FAMILY, ?SERIES, Key}).
+
 read_items_with_level_filter(Ref, Start0, End0, F1, F2) ->
-    Start = eleveldb:ts_key({?FAMILY, ?SERIES, Start0}),
-    End = eleveldb:ts_key({?FAMILY, ?SERIES, End0}),
+    Start = eleveldb:ts_key_TEST({?FAMILY, ?SERIES, Start0}),
+    End = eleveldb:ts_key_TEST({?FAMILY, ?SERIES, End0}),
     Opts = [{range_filter, {"and", [
                 {">=", [{field, "field_1"}, {const, F1}]},
                 {"<=", [{field, "field_2"}, {const, F2}]}
@@ -76,8 +79,8 @@ calc_expected_rows(End0, F2, Start0, F1) ->
     lists:min([End0, F2]) - lists:max([Start0, F1]) + 1.
 
 read_items_with_erlang_filter(Ref, Start0, End0, F1, F2) ->
-    Start = eleveldb:ts_key({?FAMILY, ?SERIES, Start0}),
-    End = eleveldb:ts_key({?FAMILY, ?SERIES, End0}),
+    Start = eleveldb:ts_key_TEST({?FAMILY, ?SERIES, Start0}),
+    End = eleveldb:ts_key_TEST({?FAMILY, ?SERIES, End0}),
     Opts = [],
     ExpectedRows = calc_expected_rows(End0, F2, Start0, F1),
     time_result("With Erlang Filtering", fun() ->

@@ -35,6 +35,7 @@
          write/3,
          write/4,
          fold/4,
+         foldtest1/4,
          fold_keys/4,
          status/2,
          destroy/2,
@@ -44,7 +45,14 @@
          ts_batch_to_binary/1,
          ts_key/1,
          parse_string/1,
-         is_empty/1]).
+         is_empty/1,
+	 encode/2,
+	 current_usec/0]).
+
+%% for testing
+-export([
+	 ts_key_TEST/1
+	]).
 
 -export([option_types/1,
          validate_options/2]).
@@ -56,6 +64,9 @@
          range_scan/4,
          range_scan_ack/2,
          range_scan_fold/6]).
+
+-export([emlfold1/4,
+	 emlfold2/1]).
 
 -export_type([db_ref/0,
               itr_ref/0]).
@@ -124,6 +135,13 @@ init() ->
                          {tiered_fast_prefix, string()} |
                          {tiered_slow_prefix, string()}].
 
+-type read_option() :: {verify_checksums, boolean()} |
+                       {fill_cache, boolean()}.
+
+-type itr_option() :: {iterator_refresh, boolean()}.
+
+-type itr_options() :: [read_option() | itr_option()].
+
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()} |
                          {iterator_refresh, boolean()}].
@@ -140,11 +158,36 @@ init() ->
                                {max_batch_size, pos_integer()} |
                                {max_unacked_bytes, pos_integer()}].
 
+-type streaming_option() :: {max_batch_bytes, pos_integer()} |
+                            {max_unacked_bytes, pos_integer()}.
+
+-type streaming_options() :: [streaming_option()].
+
+-type fold_method() :: iterator | streaming.
+
+-type fold_options() :: [read_option() |
+                         {fold_method, fold_method()} |
+                         {first_key, binary()} |
+                         {last_key, binary() | undefined} |
+                         {start_inclusive, boolean()} |
+                         {end_inclusive, boolean()} |
+                         {limit, pos_integer()} |
+                         streaming_option()].
+
 -type iterator_action() :: first | last | next | prev | prefetch | binary().
 
 -opaque db_ref() :: binary().
 
 -opaque itr_ref() :: binary().
+
+-type stream_ref() :: {reference(), binary()}.
+
+encode(Val, timestamp) ->
+    <<Val:64>>;
+encode(Val, binary) when is_binary(Val)->
+    Val;
+encode(Val, _) ->
+    term_to_binary(Val).
 
 -spec async_open(reference(), string(), open_options()) -> ok.
 async_open(_CallerRef, _Name, _Opts) ->
@@ -235,21 +278,21 @@ async_put(Ref, Context, Key, Value, Opts) ->
 async_write(_CallerRef, _Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
--spec async_iterator(reference(), db_ref(), read_options()) -> ok.
+-spec async_iterator(reference(), db_ref(), itr_options()) -> ok.
 async_iterator(_CallerRef, _Ref, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
--spec async_iterator(reference(), db_ref(), read_options(), keys_only) -> ok.
+-spec async_iterator(reference(), db_ref(), itr_options(), keys_only) -> ok.
 async_iterator(_CallerRef, _Ref, _Opts, keys_only) ->
     erlang:nif_error({error, not_loaded}).
 
--spec iterator(db_ref(), read_options()) -> {ok, itr_ref()}.
+-spec iterator(db_ref(), itr_options()) -> {ok, itr_ref()}.
 iterator(Ref, Opts) ->
     CallerRef = make_ref(),
     async_iterator(CallerRef, Ref, Opts),
     ?WAIT_FOR_REPLY(CallerRef).
 
--spec iterator(db_ref(), read_options(), keys_only) -> {ok, itr_ref()}.
+-spec iterator(db_ref(), itr_options(), keys_only) -> {ok, itr_ref()}.
 iterator(Ref, Opts, keys_only) ->
     CallerRef = make_ref(),
     async_iterator(CallerRef, Ref, Opts, keys_only),
@@ -287,13 +330,27 @@ iterator_close(IRef) ->
 async_iterator_close(_CallerRef, _IRef) ->
     erlang:nif_error({error, not_loaded}).
 
--spec range_scan(db_ref(), binary(), binary(), range_scan_options()) ->
+-spec range_scan(db_ref(), binary(), binary()|undefined, range_scan_options()) ->
     {ok, {itr_ref(), reference()}} | {error, any()}.
 range_scan(_DBRef, _StartKey, _EndKey, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec range_scan_ack(reference(), pos_integer()|0) -> ok | needs_reack.
 range_scan_ack(_Ref, _NumBytes) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec streaming_start(db_ref(), binary(), binary() | undefined,
+                      streaming_options()) ->
+    {ok, stream_ref()} | {error, any()}.
+streaming_start(_DBRef, _StartKey, _EndKey, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec streaming_ack(binary(), pos_integer()) -> ok.
+streaming_ack(_AckRef, _NumBytes) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec streaming_stop(binary()) -> ok.
+streaming_stop(_AckRef) ->
     erlang:nif_error({error, not_loaded}).
 
 -type fold_fun() :: fun(({Key::binary(), Value::binary()}, any()) -> any()).
@@ -330,6 +387,38 @@ do_range_scan_fold(MsgRef, AckRef, Fun, Acc) ->
             lager:info("Range scan got unexpected message: ~p\n", [Msg])
     end.
 
+do_streaming_batch(<<>>, _Fun, Acc) ->
+    Acc;
+do_streaming_batch(Bin, Fun, Acc) ->
+    {K, Bin2} = parse_string(Bin),
+    {V, Bin3} = parse_string(Bin2),
+    Acc2 = Fun({K, V}, Acc),
+    do_streaming_batch(Bin3, Fun, Acc2).
+
+do_streaming_fold(StreamRef = {MsgRef, AckRef}, Fun, Acc) ->
+    receive
+        {streaming_end, MsgRef} ->
+            Acc;
+        {streaming_batch, MsgRef, Batch} ->
+            Size = byte_size(Batch),
+            Acc2 = do_streaming_batch(Batch, Fun, Acc),
+            _ = streaming_ack(AckRef, Size),
+            do_streaming_fold(StreamRef, Fun, Acc2)
+    end.
+
+do_streaming_fold_test1(StreamRef = {MsgRef, AckRef}, Fun, Acc) ->
+    receive
+        {streaming_end, MsgRef} ->
+            Acc;
+        {streaming_batch, MsgRef, Batch} ->
+            Size = byte_size(Batch),
+            _ = streaming_ack(AckRef, Size),
+            do_streaming_fold(StreamRef, Fun, Acc)
+    end.
+
+current_usec() ->
+    erlang:nif_error({error, not_loaded}).
+
 parse_string(Bin) ->
     parse_string(0, 0, Bin).
 
@@ -343,10 +432,59 @@ parse_string(Size, Shift, <<0:1, N:7, Bin/binary>>) ->
 
 %% Fold over the keys and values in the database
 %% will throw an exception if the database is closed while the fold runs
--spec fold(db_ref(), fold_fun(), any(), read_options()) -> any().
+-spec fold(db_ref(), fold_fun(), any(), fold_options()) -> any().
 fold(Ref, Fun, Acc0, Opts) ->
+    case proplists:get_value(fold_method, Opts, iterator) of
+        iterator ->
+	    {ok, Itr} = iterator(Ref, Opts),
+            do_itr_fold(Itr, Fun, Acc0, Opts);
+        streaming ->
+            SKey = proplists:get_value(first_key, Opts, <<>>),
+            EKey = proplists:get_value(last_key, Opts),
+	    io:format("SKey = ~n"),
+	    io:format(SKey),
+	    io:format("~n"),
+	    io:format("EKey = ~n"),
+	    io:format(EKey),
+	    io:format("~n"),
+            {ok, StreamRef} = streaming_start(Ref, SKey, EKey, Opts),
+            {_, AckRef} = StreamRef,
+            try
+                do_streaming_fold(StreamRef, Fun, Acc0)
+            after
+                %% Close early, do not wait for garbage collection.
+                streaming_stop(AckRef)
+            end
+    end.
+
+-spec foldtest1(db_ref(), fold_fun(), any(), fold_options()) -> any().
+foldtest1(Ref, Fun, Acc0, Opts) ->
+    case proplists:get_value(fold_method, Opts, iterator) of
+        iterator ->
+	    {ok, Itr} = iterator(Ref, Opts),
+            do_itr_fold(Itr, Fun, Acc0, Opts);
+        streaming ->
+            SKey = proplists:get_value(first_key, Opts, <<>>),
+            EKey = proplists:get_value(last_key, Opts),
+            {ok, StreamRef} = streaming_start(Ref, SKey, EKey, Opts),
+            {_, AckRef} = StreamRef,
+            try
+                do_streaming_fold_test1(StreamRef, Fun, Acc0)
+            after
+                %% Close early, do not wait for garbage collection.
+                streaming_stop(AckRef)
+            end
+    end.
+
+emlfold1(Ref, _, _, Opts) ->
     {ok, Itr} = iterator(Ref, Opts),
-    do_fold(Itr, Fun, Acc0, Opts).
+    Start = proplists:get_value(first_key, Opts, first),
+    true = is_binary(Start) or (Start == first),
+    iterator_move(Itr, Start).
+
+emlfold2(Ref) ->
+    {ok, Itr} = iterator(Ref, []),
+    iterator_move(Itr, first).
 
 -type fold_keys_fun() :: fun((Key::binary(), any()) -> any()).
 
@@ -355,7 +493,7 @@ fold(Ref, Fun, Acc0, Opts) ->
 -spec fold_keys(db_ref(), fold_keys_fun(), any(), read_options()) -> any().
 fold_keys(Ref, Fun, Acc0, Opts) ->
     {ok, Itr} = iterator(Ref, Opts, keys_only),
-    do_fold(Itr, Fun, Acc0, Opts).
+    do_itr_fold(Itr, Fun, Acc0, Opts).
 
 -spec status(db_ref(), Key::binary()) -> {ok, binary()} | error.
 status(Ref, Key) ->
@@ -459,7 +597,7 @@ add_open_defaults(Opts) ->
     end.
 
 
-do_fold(Itr, Fun, Acc0, Opts) ->
+do_itr_fold(Itr, Fun, Acc0, Opts) ->
     try
         %% Extract {first_key, binary()} and seek to that key as a starting
         %% point for the iteration. The folding function should use throw if it
@@ -519,7 +657,15 @@ ts_batch_to_binary({ts_batch, Family, Series, Points}) ->
     B3 = append_string(Series, B2),
     append_points(Points, B3).
 
-ts_key({Family, Series, Time}) ->
+ts_key(List) when is_list(List) ->
+    ts_l2(lists:reverse(List), <<>>).
+
+ts_l2([], Acc) ->
+    Acc;
+ts_l2([H | T], Acc) -> 
+    ts_l2(T, append_string(H, Acc)). 
+
+ts_key_TEST({Family, Series, Time}) ->
     B1 = <<Time:64>>,
     B2 = append_string(Family, B1),
     append_string(Series, B2).
