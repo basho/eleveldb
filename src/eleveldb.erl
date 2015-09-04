@@ -2,7 +2,7 @@
 %%
 %%  eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 %%
-%% Copyright (c) 2010-2012 Basho Technologies, Inc. All Rights Reserved.
+%% Copyright (c) 2010-2015 Basho Technologies, Inc. All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -46,13 +46,13 @@
          ts_key/1,
          parse_string/1,
          is_empty/1,
-	 encode/2,
-	 current_usec/0]).
+         encode/2,
+         current_usec/0]).
 
 %% for testing
 -export([
-	 ts_key_TEST/1
-	]).
+         ts_key_TEST/1
+        ]).
 
 -export([option_types/1,
          validate_options/2]).
@@ -66,7 +66,7 @@
          range_scan_fold/6]).
 
 -export([emlfold1/4,
-	 emlfold2/1]).
+         emlfold2/1]).
 
 -export_type([db_ref/0,
               itr_ref/0]).
@@ -224,7 +224,7 @@ close_family(Dbh, Name) ->
     CallerRef = make_ref(),
     async_close_family(CallerRef, Dbh, Name),
     ?WAIT_FOR_REPLY(CallerRef).
- 
+
 async_get(_CallerRef, _Dbh, _Family, _Key, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
@@ -235,9 +235,9 @@ get(Dbh, Family, Key, Opts) ->
 
 async_write(_CallerRef, _Ref, _Family, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
-    
+
 put(Ref, Family, Key, Value, Opts) -> write(Ref, Family, [{put, Key, Value}], Opts).
-    
+
 delete(Ref, Family, Key, Opts) -> write(Ref, Family, [{delete, Key}], Opts).
 
 write(Ref, Family, Updates, Opts) ->
@@ -245,7 +245,7 @@ write(Ref, Family, Updates, Opts) ->
     async_write(CallerRef, Ref, Family, Updates, Opts),
     ?WAIT_FOR_REPLY(CallerRef).
 
-    
+
 -spec async_get(reference(), db_ref(), binary(), read_options()) -> ok.
 async_get(_CallerRef, _Dbh, _Key, _Opts) ->
     erlang:nif_error({error, not_loaded}).
@@ -436,17 +436,17 @@ parse_string(Size, Shift, <<0:1, N:7, Bin/binary>>) ->
 fold(Ref, Fun, Acc0, Opts) ->
     case proplists:get_value(fold_method, Opts, iterator) of
         iterator ->
-	    {ok, Itr} = iterator(Ref, Opts),
+            {ok, Itr} = iterator(Ref, Opts),
             do_itr_fold(Itr, Fun, Acc0, Opts);
         streaming ->
             SKey = proplists:get_value(first_key, Opts, <<>>),
             EKey = proplists:get_value(last_key, Opts),
-	    io:format("SKey = ~n"),
-	    io:format(SKey),
-	    io:format("~n"),
-	    io:format("EKey = ~n"),
-	    io:format(EKey),
-	    io:format("~n"),
+            io:format("SKey = ~n"),
+            io:format(SKey),
+            io:format("~n"),
+            io:format("EKey = ~n"),
+            io:format(EKey),
+            io:format("~n"),
             {ok, StreamRef} = streaming_start(Ref, SKey, EKey, Opts),
             {_, AckRef} = StreamRef,
             try
@@ -461,7 +461,7 @@ fold(Ref, Fun, Acc0, Opts) ->
 foldtest1(Ref, Fun, Acc0, Opts) ->
     case proplists:get_value(fold_method, Opts, iterator) of
         iterator ->
-	    {ok, Itr} = iterator(Ref, Opts),
+            {ok, Itr} = iterator(Ref, Opts),
             do_itr_fold(Itr, Fun, Acc0, Opts);
         streaming ->
             SKey = proplists:get_value(first_key, Opts, <<>>),
@@ -662,8 +662,8 @@ ts_key(List) when is_list(List) ->
 
 ts_l2([], Acc) ->
     Acc;
-ts_l2([H | T], Acc) -> 
-    ts_l2(T, append_string(H, Acc)). 
+ts_l2([H | T], Acc) ->
+    ts_l2(T, append_string(H, Acc)).
 
 ts_key_TEST({Family, Series, Time}) ->
     B1 = <<Time:64>>,
@@ -741,19 +741,19 @@ compression_test_Z() ->
                                                    {compression, true}]),
     [ok = ?MODULE:put(Ref1, <<I:64/unsigned>>, CompressibleData, [{sync, true}]) ||
         I <- lists:seq(1,10)],
-	%% Check both of the LOG files created to see if the compression option was correctly
-	%% passed down
-	MatchCompressOption =
-		fun(File, Expected) ->
-				{ok, Contents} = file:read_file(File),
-				case re:run(Contents, "Options.compression: " ++ Expected) of
-					{match, _} -> match;
-					nomatch -> nomatch
-				end
-		end,
-	Log0Option = MatchCompressOption("/tmp/eleveldb.compress.0/LOG", "0"),
-	Log1Option = MatchCompressOption("/tmp/eleveldb.compress.1/LOG", "1"),
-	?assert(Log0Option =:= match andalso Log1Option =:= match).
+        %% Check both of the LOG files created to see if the compression option was correctly
+        %% passed down
+        MatchCompressOption =
+                fun(File, Expected) ->
+                                {ok, Contents} = file:read_file(File),
+                                case re:run(Contents, "Options.compression: " ++ Expected) of
+                                        {match, _} -> match;
+                                        nomatch -> nomatch
+                                end
+                end,
+        Log0Option = MatchCompressOption("/tmp/eleveldb.compress.0/LOG", "0"),
+        Log1Option = MatchCompressOption("/tmp/eleveldb.compress.1/LOG", "1"),
+        ?assert(Log0Option =:= match andalso Log1Option =:= match).
 
 
 close_test() -> [{close_test_Z(), l} || l <- lists:seq(1, 20)].

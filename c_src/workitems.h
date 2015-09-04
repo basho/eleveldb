@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2014 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2015 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -119,7 +119,7 @@ public:
     OpenTask(ErlNifEnv* caller_env, ERL_NIF_TERM& _caller_ref,
              const std::string& db_name_, leveldb::Options *open_options_);
 
-    virtual ~OpenTask() {};
+    virtual ~OpenTask() {}
 
     virtual work_result operator()();
 
@@ -216,9 +216,9 @@ public:
 
     BinaryValue(ErlNifEnv* env, ERL_NIF_TERM& value_bin)
     : m_env(env), m_value_bin(value_bin)
-    {};
+    {}
 
-    virtual ~BinaryValue() {};
+    virtual ~BinaryValue() {}
 
     BinaryValue & assign(const char* data, size_t size)
     {
@@ -345,7 +345,7 @@ public:
             local_env_=NULL;
             enif_self(_caller_env, &local_pid);
         }
-    virtual ~MoveTask() {};
+    virtual ~MoveTask() {}
 
     virtual work_result operator()();
 
@@ -480,11 +480,11 @@ struct RangeScanOptions {
   Extractor* extractor;
 
   RangeScanOptions()
-    : max_unacked_bytes(10 * 1024 * 1024), 
+    : max_unacked_bytes(10 * 1024 * 1024),
     low_bytes(2 * 1024 * 1024),
     max_batch_bytes(1 * 1024 * 1024),
     limit(0),
-    start_inclusive(true), end_inclusive(false), 
+    start_inclusive(true), end_inclusive(false),
     fill_cache(false), verify_checksums(true), range_filter(0), extractor(0)
   { }
 };
@@ -527,7 +527,7 @@ public:
             volatile uint32_t num_bytes_;
             bool producer_sleeping_;
             // Set if producer filled up but consumer acked before
-            // producer went to sleep. Producer should abort going to 
+            // producer went to sleep. Producer should abort going to
             // sleep upon seeing this set.
             volatile bool pending_signal_;
             volatile bool consumer_dead_;
@@ -571,12 +571,12 @@ class RangeScanTaskOld : public RangeScanTask {
  public:
 
     RangeScanTaskOld(ErlNifEnv * caller_env,
-		     ERL_NIF_TERM caller_ref,
-		     DbObject * db_handle,
-		     const std::string & start_key,
-		     const std::string * end_key,
-		     RangeScanOptions & options,
-		     SyncObject * sync_obj);
+                     ERL_NIF_TERM caller_ref,
+                     DbObject * db_handle,
+                     const std::string & start_key,
+                     const std::string * end_key,
+                     RangeScanOptions & options,
+                     SyncObject * sync_obj);
 
     virtual ~RangeScanTaskOld();
     virtual work_result operator()();
@@ -597,7 +597,7 @@ public:
     DestroyTask(ErlNifEnv* caller_env, ERL_NIF_TERM& _caller_ref,
              const std::string& db_name_, leveldb::Options *open_options_);
 
-    virtual ~DestroyTask() {};
+    virtual ~DestroyTask() {}
 
     virtual work_result operator()();
 

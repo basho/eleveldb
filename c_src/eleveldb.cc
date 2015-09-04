@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2014 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2015 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -259,9 +259,9 @@ public:
     leveldb::DataDictionary data_dictionary;
 
     explicit eleveldb_priv_data(EleveldbOptions & Options)
-      : m_Opts(Options), thread_pool(Options.m_EleveldbThreads), 
-	stream_thread_pool(Options.m_EleveldbStreamThreads),
-	data_dictionary(Options.m_GlobalDataDir)
+      : m_Opts(Options), thread_pool(Options.m_EleveldbThreads),
+        stream_thread_pool(Options.m_EleveldbStreamThreads),
+        data_dictionary(Options.m_GlobalDataDir)
         {}
 
 private:
@@ -329,7 +329,7 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
                     opts.m_EleveldbThreads = temp;
                 }   // if
             }   // if
-        } 
+        }
         else if (option[0] == eleveldb::ATOM_ELEVELDB_STREAM_THREADS)
         {
             unsigned long temp;
@@ -340,7 +340,7 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
                     opts.m_EleveldbStreamThreads = temp;
                 }   // if
             }   // if
-        } 
+        }
         else if (option[0] == eleveldb::ATOM_FADVISE_WILLNEED)
         {
             opts.m_FadviseWillNeed = (option[1] == eleveldb::ATOM_TRUE);
@@ -394,7 +394,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         }
         else if (option[0] == eleveldb::ATOM_BLOCK_CACHE_THRESHOLD)
         {
-	    unsigned long memory_sz;
+            unsigned long memory_sz;
             if (enif_get_ulong(env, option[1], &memory_sz))
             {
                 if (memory_sz != 0)
@@ -1205,7 +1205,7 @@ async_iterator_move(
             if(!enif_inspect_binary(env, action_or_target, &key))
             {
                 itr_ptr->ReleaseReuseMove();
-		itr_ptr->reuse_move=NULL;
+                itr_ptr->reuse_move=NULL;
                 return enif_make_tuple2(env, ATOM_EINVAL, caller_ref);
             }   // if
 
@@ -1217,7 +1217,7 @@ async_iterator_move(
         if(false == priv.thread_pool.submit(move_item))
         {
             itr_ptr->ReleaseReuseMove();
-	    itr_ptr->reuse_move=NULL;
+            itr_ptr->reuse_move=NULL;
             return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
         }   // if
     }   // if
@@ -1382,7 +1382,7 @@ range_scan(ErlNifEnv * env,
 
     RangeScanOptions opts;
     fold(env, options_list, parse_range_scan_option, opts);
-    
+
     eleveldb::RangeScanTask::SyncHandle * sync_handle =
       eleveldb::RangeScanTask::CreateSyncHandle(opts);
 
@@ -1390,7 +1390,7 @@ range_scan(ErlNifEnv * env,
 
     RangeScanTaskOld * task =
       new RangeScanTaskOld(env, reply_ref, db_ptr.get(),
-			   start_key, &end_key, opts, sync_handle->sync_obj);
+                           start_key, &end_key, opts, sync_handle->sync_obj);
 
     eleveldb_priv_data& priv =
         *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
@@ -1505,7 +1505,7 @@ streaming_start(ErlNifEnv * env,
 
     RangeScanOptions opts;
     fold(env, options_list, parse_streaming_option, opts);
-    
+
     using eleveldb::RangeScanTask;
     RangeScanTask::SyncHandle * sync_handle =
         RangeScanTask::CreateSyncHandle(opts);
@@ -1585,8 +1585,8 @@ int64_t getCurrentMicroSeconds()
 
 struct timespec ts;
 
-// this is rumored to be faster that gettimeofday(), and sometimes        
-// shift less ... someday use CLOCK_MONOTONIC_RAW                         
+// this is rumored to be faster that gettimeofday(), and sometimes
+// shift less ... someday use CLOCK_MONOTONIC_RAW
 
  clock_gettime(CLOCK_MONOTONIC, &ts);
  return static_cast<uint64_t>(ts.tv_sec) * 1000000 + ts.tv_nsec/1000;
