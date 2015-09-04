@@ -74,7 +74,7 @@ simple_encode_record_test() ->
 
 simple_decode_record_test() ->
     Rec = <<130,167,102,105,101,108,100,95,49,123,167,102,105,101,108,100,95,50,149,97,98,100,99,101>>,
-    {ok, Got} = decode_record(Rec),
+    Got = decode_record(Rec),
     Exp = [{<<"field_1">>, 123}, {<<"field_2">>, "abdce"}],
     ?assertEqual(Exp, Got).
     
