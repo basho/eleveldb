@@ -31,9 +31,7 @@
     #include "workitems.h"
 #endif
 
-#ifndef __ELEVELDB_DETAIL_HPP
-    #include "detail.hpp"
-#endif
+#include "leveldb/atomics.h"
 
 namespace eleveldb {
 
@@ -92,7 +90,7 @@ eleveldb_thread_pool::FindWaitingThread(
          {
              // perform expensive compare and swap to potentially
              //  claim worker thread (this is an exclusive claim to the worker)
-             ret_flag = eleveldb::compare_and_swap(&threads[index]->m_Available, 1, 0);
+             ret_flag = leveldb::compare_and_swap(&threads[index]->m_Available, 1, 0);
 
              // the compare/swap only succeeds if worker thread is sitting on
              //  pthread_cond_wait ... or is about to be there but is holding
@@ -139,7 +137,7 @@ eleveldb_thread_pool::FindWaitingThread(
          {
              // no waiting threads, put on backlog queue
              lock();
-             eleveldb::inc_and_fetch(&work_queue_atomic);
+             leveldb::inc_and_fetch(&work_queue_atomic);
              work_queue.push_back(item);
              unlock();
 
@@ -357,7 +355,7 @@ void *eleveldb_write_thread_worker(void *args)
                 {
                     submission=h.work_queue.front();
                     h.work_queue.pop_front();
-                    eleveldb::dec_and_fetch(&h.work_queue_atomic);
+                    leveldb::dec_and_fetch(&h.work_queue_atomic);
                     h.perf()->Inc(leveldb::ePerfElevelDequeued);
                 }   // if
 

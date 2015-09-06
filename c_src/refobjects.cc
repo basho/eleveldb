@@ -19,9 +19,6 @@
 // under the License.
 //
 // -------------------------------------------------------------------
-#ifndef __ELEVELDB_DETAIL_HPP
-    #include "detail.hpp"
-#endif
 
 #ifndef INCL_REFOBJECTS_H
     #include "refobjects.h"
@@ -31,6 +28,7 @@
     #include "workitems.h"
 #endif
 
+#include "leveldb/atomics.h"
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
 
@@ -58,7 +56,7 @@ uint32_t
 RefObject::RefInc()
 {
 
-    return(eleveldb::inc_and_fetch(&m_RefCount));
+    return(leveldb::inc_and_fetch(&m_RefCount));
 
 }   // RefObject::RefInc
 
@@ -68,7 +66,7 @@ RefObject::RefDec()
 {
     uint32_t current_refs;
 
-    current_refs=eleveldb::dec_and_fetch(&m_RefCount);
+    current_refs=leveldb::dec_and_fetch(&m_RefCount);
     if (0==current_refs)
         delete this;
 
@@ -116,11 +114,11 @@ ErlRefObject::ClaimCloseFromCThread()
     //  This reduces number of times C code might look into Erlang heap memory
     //  that has garbage collected
     erlang_ptr=m_ErlangThisPtr;
-    if (compare_and_swap((void**)&m_ErlangThisPtr, (void *)erlang_ptr, (void *)NULL)
+    if (leveldb::compare_and_swap((void**)&m_ErlangThisPtr, (void *)erlang_ptr, (void *)NULL)
         && NULL!=erlang_ptr)
     {
         // now test if this C thread preceded Erlang in claiming the close operation
-        ret_flag=compare_and_swap((void **)erlang_ptr, (void *)this,(void *) NULL);
+        ret_flag=leveldb::compare_and_swap((void **)erlang_ptr, (void *)this,(void *) NULL);
     }   // if
 
     return(ret_flag);
@@ -160,7 +158,7 @@ ErlRefObject::RefDec()
     uint32_t cur_count;
 
     pthread_mutex_lock(&m_CloseMutex);
-    cur_count=eleveldb::dec_and_fetch(&m_RefCount);
+    cur_count=leveldb::dec_and_fetch(&m_RefCount);
 
     if (cur_count<2 && 1==m_CloseRequested)
     {
@@ -295,7 +293,7 @@ DbObject::DbObjectResourceCleanup(
     db_ptr=*erl_ptr;
 
     // is Erlang first to initiate close?
-    if (compare_and_swap(erl_ptr, db_ptr, (DbObject *)NULL)
+    if (leveldb::compare_and_swap(erl_ptr, db_ptr, (DbObject *)NULL)
         && NULL!=db_ptr)
     {
         db_ptr->InitiateCloseRequest();
@@ -368,7 +366,7 @@ DbObject::Shutdown()
         if (again)
         {
             // follow protocol, only one thread calls Initiate
-//            if (compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr, (ItrObject *)NULL))
+//            if (leveldb::compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr, (ItrObject *)NULL))
             if (itr_ptr->ClaimCloseFromCThread())
                 itr_ptr->ItrObject::InitiateCloseRequest();
         }   // if
@@ -517,7 +515,7 @@ ItrObject::ItrObjectResourceCleanup(
     itr_ptr=*erl_ptr;
 
     // is Erlang first to initiate close?
-    if (compare_and_swap(erl_ptr, itr_ptr, (ItrObject *)NULL)
+    if (leveldb::compare_and_swap(erl_ptr, itr_ptr, (ItrObject *)NULL)
         && NULL!=itr_ptr)
     {
         itr_ptr->InitiateCloseRequest();
@@ -587,7 +585,7 @@ ItrObject::ReleaseReuseMove()
     // move pointer off ItrObject first, then decrement ...
     //  otherwise there is potential for infinite loop
     ptr=(MoveTask *)reuse_move;
-    if (compare_and_swap(&reuse_move, ptr, (MoveTask *)NULL)
+    if (leveldb::compare_and_swap(&reuse_move, ptr, (MoveTask *)NULL)
         && NULL!=ptr)
     {
         ptr->RefDec();

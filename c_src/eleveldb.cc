@@ -56,7 +56,7 @@
 
 #include "work_result.hpp"
 
-#include "detail.hpp"
+#include "leveldb/atomics.h"
 
 static ErlNifFunc nif_funcs[] =
 {
@@ -827,7 +827,7 @@ async_iterator_move(
     // case #2
     // before we launch a background job for "next iteration", see if there is a
     //  prefetch waiting for us
-    else if (eleveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
+    else if (leveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
     {
         // nope, no prefetch ... await a message to erlang queue
         ret_term = enif_make_copy(env, itr_ptr->itr_ref);

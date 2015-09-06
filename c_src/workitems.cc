@@ -22,14 +22,11 @@
 
 #include <syslog.h>
 
-#ifndef __ELEVELDB_DETAIL_HPP
-    #include "detail.hpp"
-#endif
-
 #ifndef INCL_WORKITEMS_H
     #include "workitems.h"
 #endif
 
+#include "leveldb/atomics.h"
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
 #include "leveldb/perf_count.h"
@@ -110,7 +107,7 @@ WorkTask::~WorkTask()
     // this is likely overkill in the present code, but seemed
     //  important at one time and leaving for safety
     env_ptr=local_env_;
-    if (compare_and_swap(&local_env_, env_ptr, (ErlNifEnv *)NULL)
+    if (leveldb::compare_and_swap(&local_env_, env_ptr, (ErlNifEnv *)NULL)
         && NULL!=env_ptr)
     {
         enif_free_env(env_ptr);
@@ -277,7 +274,7 @@ MoveTask::operator()()
     //              action, m_ItrWrap->m_StillUse, m_ItrWrap->m_HandoffAtomic);
 
     // who got back first, us or the erlang loop
-    if (compare_and_swap(&m_ItrWrap->m_HandoffAtomic, 0, 1))
+    if (leveldb::compare_and_swap(&m_ItrWrap->m_HandoffAtomic, 0, 1))
     {
         // this is prefetch of next iteration.  It returned faster than actual
         //  request to retrieve it.  Stop and wait for erlang to catch up.
