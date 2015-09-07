@@ -161,7 +161,7 @@ eleveldb_thread_pool::FindWaitingThread(
   // not clear that this works or is testable
  bool eleveldb_thread_pool::resize_thread_pool(const size_t n)
  {
-     eleveldb::MutexLock l(thread_resize_pool_mutex);
+     leveldb::MutexLock l(&thread_resize_pool_mutex);
 
     if(0 == n)
      return false;
@@ -211,7 +211,7 @@ eleveldb_thread_pool::~eleveldb_thread_pool()
 //  may not work at this time ...
 bool eleveldb_thread_pool::grow_thread_pool(const size_t nthreads)
 {
-    eleveldb::MutexLock l(threads_lock);
+    leveldb::MutexLock l(&threads_lock);
     ThreadData * new_thread;
 
     if(0 >= nthreads)
@@ -282,7 +282,7 @@ bool eleveldb_thread_pool::drain_thread_pool()
     shutdown = true;
     enif_cond_broadcast(work_queue_pending);
 
-    eleveldb::MutexLock l(threads_lock);
+    leveldb::MutexLock l(&threads_lock);
 #if 0
     while(!threads.empty())
     {

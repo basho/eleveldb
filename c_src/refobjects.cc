@@ -40,9 +40,8 @@ namespace eleveldb {
  */
 
 RefObject::RefObject()
-    : m_RefCount(0)
 {
-        leveldb::gPerfCounters->Inc(leveldb::ePerfElevelRefCreate);
+    leveldb::gPerfCounters->Inc(leveldb::ePerfElevelRefCreate);
 }   // RefObject::RefObject
 
 
@@ -50,29 +49,6 @@ RefObject::~RefObject()
 {
     leveldb::gPerfCounters->Inc(leveldb::ePerfElevelRefDelete);
 }   // RefObject::~RefObject
-
-
-uint32_t
-RefObject::RefInc()
-{
-
-    return(leveldb::inc_and_fetch(&m_RefCount));
-
-}   // RefObject::RefInc
-
-
-uint32_t
-RefObject::RefDec()
-{
-    uint32_t current_refs;
-
-    current_refs=leveldb::dec_and_fetch(&m_RefCount);
-    if (0==current_refs)
-        delete this;
-
-    return(current_refs);
-
-}   // RefObject::RefDec
 
 
 /**
@@ -351,7 +327,7 @@ DbObject::Shutdown()
 
         // lock the ItrList
         {
-            MutexLock lock(m_ItrMutex);
+            leveldb::MutexLock lock(&m_ItrMutex);
 
             if (!m_ItrList.empty())
             {
@@ -382,7 +358,7 @@ DbObject::AddReference(
     ItrObject * ItrPtr)
 {
     bool ret_flag;
-    MutexLock lock(m_ItrMutex);
+    leveldb::MutexLock lock(&m_ItrMutex);
 
     ret_flag=(0==m_CloseRequested);
 
@@ -398,7 +374,7 @@ void
 DbObject::RemoveReference(
     ItrObject * ItrPtr)
 {
-    MutexLock lock(m_ItrMutex);
+    leveldb::MutexLock lock(&m_ItrMutex);
 
     m_ItrList.remove(ItrPtr);
 

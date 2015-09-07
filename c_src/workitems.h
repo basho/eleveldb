@@ -27,11 +27,9 @@
 
 #include "leveldb/db.h"
 #include "leveldb/write_batch.h"
-
-
-#ifndef INCL_MUTEX_H
-    #include "mutex.h"
-#endif
+#define LEVELDB_PLATFORM_POSIX
+#include "port/port.h"
+#include "util/mutexlock.h"
 
 #ifndef __WORK_RESULT_HPP
     #include "work_result.hpp"

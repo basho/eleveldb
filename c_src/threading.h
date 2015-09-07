@@ -25,10 +25,9 @@
 #include <deque>
 #include <vector>
 #include "leveldb/perf_count.h"
-
-#ifndef INCL_MUTEX_H
-    #include "mutex.h"
-#endif
+#define LEVELDB_PLATFORM_POSIX
+#include "port/port.h"
+#include "util/mutexlock.h"
 
 #ifndef INCL_ELEVELDB_H
     #include "eleveldb.h"
@@ -60,8 +59,8 @@ protected:
 
 private:
     thread_pool_t  threads;
-    eleveldb::Mutex threads_lock;       // protect resizing of the thread pool
-    eleveldb::Mutex thread_resize_pool_mutex;
+    leveldb::port::Mutex threads_lock;       // protect resizing of the thread pool
+    leveldb::port::Mutex thread_resize_pool_mutex;
 
     work_queue_t   work_queue;
     ErlNifCond*    work_queue_pending; // flags job present in the work queue

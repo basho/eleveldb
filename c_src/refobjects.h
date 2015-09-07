@@ -29,6 +29,7 @@
 #include "leveldb/db.h"
 #include "leveldb/write_batch.h"
 #include "leveldb/perf_count.h"
+#include "util/refobject_base.h"
 
 #ifndef INCL_THREADING_H
     #include "threading.h"
@@ -49,21 +50,12 @@ namespace eleveldb {
  * Base class for any object that offers RefInc / RefDec interface
  */
 
-class RefObject
+class RefObject : public leveldb::RefObjectBase
 {
-public:
-
-protected:
-    volatile uint32_t m_RefCount;     //!< simple count of reference, auto delete at zero
-
 public:
     RefObject();
 
     virtual ~RefObject();
-
-    virtual uint32_t RefInc();
-
-    virtual uint32_t RefDec();
 
 private:
     RefObject(const RefObject&);              // nocopy
@@ -181,7 +173,7 @@ public:
 
     leveldb::Options * m_DbOptions;
 
-    Mutex m_ItrMutex;                         //!< mutex protecting m_ItrList
+    leveldb::port::Mutex m_ItrMutex;                         //!< mutex protecting m_ItrList
     std::list<class ItrObject *> m_ItrList;   //!< ItrObjects holding ref count to this
 
 protected:
