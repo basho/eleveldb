@@ -1,7 +1,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2014 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2015 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -30,10 +30,8 @@
 #include "leveldb/write_batch.h"
 #include "leveldb/perf_count.h"
 #include "util/refobject_base.h"
-
-#ifndef INCL_THREADING_H
-    #include "threading.h"
-#endif
+#define LEVELDB_PLATFORM_POSIX
+#include "port/port.h"
 
 #ifndef __WORK_RESULT_HPP
     #include "work_result.hpp"

@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2014 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2015 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -30,6 +30,7 @@
 #define LEVELDB_PLATFORM_POSIX
 #include "port/port.h"
 #include "util/mutexlock.h"
+#include "util/thread_tasks.h"
 
 #ifndef __WORK_RESULT_HPP
     #include "work_result.hpp"
@@ -43,7 +44,6 @@
     #include "refobjects.h"
 #endif
 
-
 namespace eleveldb {
 
 /* Type returned from a work task: */
@@ -54,11 +54,9 @@ typedef basho::async_nif::work_result   work_result;
 /**
  * Virtual base class for async NIF work items:
  */
-class WorkTask : public RefObject
+class WorkTask : public leveldb::ThreadTask
 {
-public:
-
-protected:
+ protected:
     ReferencePtr<DbObject> m_DbPtr;             //!< access to database, and holds reference
 
     ErlNifEnv      *local_env_;
@@ -66,34 +64,34 @@ protected:
     ERL_NIF_TERM   caller_pid_term;
     bool           terms_set;
 
-    bool resubmit_work;           //!< true if this work item is loaded for prefetch
-
     ErlNifPid local_pid;   // maintain for task lifetime (JFW)
 
  public:
-
     WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref);
 
     WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref, DbObject * DbPtr);
 
     virtual ~WorkTask();
 
-    virtual void prepare_recycle();
-    virtual void recycle();
+    // this is the method called from the thread pool's worker thread; it
+    // calls DoWork(), implemented in the subclass, and returns the result
+    // of the work to the caller
+    virtual void operator()();
 
     virtual ErlNifEnv *local_env()         { return local_env_; }
 
     // call local_env() since the virtual creates the data in MoveTask
     const ERL_NIF_TERM& caller_ref()       { local_env(); return caller_ref_term; }
     const ERL_NIF_TERM& pid()              { local_env(); return caller_pid_term; }
-    bool resubmit() const {return(resubmit_work);}
 
-    virtual work_result operator()()     = 0;
+ protected:
+    // this is the method that does the real work for this task
+    virtual work_result DoWork() = 0;
 
-private:
- WorkTask();
- WorkTask(const WorkTask &);
- WorkTask & operator=(const WorkTask &);
+ private:
+    WorkTask();
+    WorkTask(const WorkTask &);
+    WorkTask & operator=(const WorkTask &);
 
 };  // class WorkTask
 
@@ -114,7 +112,8 @@ public:
 
     virtual ~OpenTask() {};
 
-    virtual work_result operator()();
+protected:
+    virtual work_result DoWork();
 
 private:
     OpenTask();
@@ -152,7 +151,8 @@ public:
         delete options;
     }
 
-    virtual work_result operator()()
+protected:
+    virtual work_result DoWork()
     {
         leveldb::Status status = m_DbPtr->m_Db->Write(*options, batch);
 
@@ -223,7 +223,8 @@ public:
     {
     }
 
-    virtual work_result operator()()
+protected:
+    virtual work_result DoWork()
     {
         ERL_NIF_TERM value_bin;
         BinaryValue value(local_env(), value_bin);
@@ -266,7 +267,8 @@ public:
     {
     }
 
-    virtual work_result operator()()
+protected:
+    virtual work_result DoWork()
     {
         ItrObject * itr_ptr;
         void * itr_ptr_ptr;
@@ -288,7 +290,7 @@ public:
         enif_release_resource(itr_ptr_ptr);
 
         return work_result(local_env(), ATOM_OK, result);
-    }   // operator()
+    }
 
 };  // class IterTask
 
@@ -332,12 +334,12 @@ public:
         }
     virtual ~MoveTask() {};
 
-    virtual work_result operator()();
-
     virtual ErlNifEnv *local_env();
 
-    virtual void prepare_recycle();
     virtual void recycle();
+
+protected:
+    virtual work_result DoWork();
 
 };  // class MoveTask
 
@@ -361,7 +363,8 @@ public:
     {
     }
 
-    virtual work_result operator()()
+protected:
+    virtual work_result DoWork()
     {
         DbObject * db_ptr;
 
@@ -409,7 +412,8 @@ public:
     {
     }
 
-    virtual work_result operator()()
+protected:
+    virtual work_result DoWork()
     {
         ItrObject * itr_ptr;
 
@@ -426,12 +430,10 @@ public:
             itr_ptr=NULL;
 
             return(work_result(ATOM_OK));
-//            return(work_result());  // no message
         }   // if
         else
         {
             return work_result(local_env(), ATOM_ERROR, ATOM_BADARG);
-//            return(work_result());  // no message
         }   // else
     }
 
@@ -454,7 +456,8 @@ public:
 
     virtual ~DestroyTask() {};
 
-    virtual work_result operator()();
+protected:
+    virtual work_result DoWork();
 
 private:
     DestroyTask();
