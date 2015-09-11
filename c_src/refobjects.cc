@@ -56,25 +56,15 @@ RefObject::~RefObject()
  */
 
 ErlRefObject::ErlRefObject()
-    : m_ErlangThisPtr(NULL), m_CloseRequested(0)
+    : m_ErlangThisPtr(NULL), m_CloseRequested(0),
+      m_CloseMutex(true), // true => creates a mutex that can be locked recursively
+      m_CloseCond(&m_CloseMutex)
 {
-    pthread_mutexattr_t attr;
-
-    pthread_mutexattr_init(&attr);
-    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(&m_CloseMutex, &attr);
-    pthread_cond_init(&m_CloseCond, NULL);
-    pthread_mutexattr_destroy(&attr);
-
 }   // ErlRefObject::ErlRefObject
 
 
 ErlRefObject::~ErlRefObject()
 {
-    pthread_cond_destroy(&m_CloseCond);
-    pthread_mutex_destroy(&m_CloseMutex);
-
-
 }   // ErlRefObject::~ErlRefObject
 
 
@@ -110,15 +100,16 @@ ErlRefObject::InitiateCloseRequest()
     Shutdown();
 
     // WAIT for shutdown to complete
-    pthread_mutex_lock(&m_CloseMutex);
-
-    // one ref from construction, one ref from broadcast in RefDec below
-    //  (only wait if RefDec has not signaled)
-    if (1<m_RefCount && 1==m_CloseRequested)
     {
-        pthread_cond_wait(&m_CloseCond, &m_CloseMutex);
-    }   // while
-    pthread_mutex_unlock(&m_CloseMutex);
+        leveldb::MutexLock lock(&m_CloseMutex);
+
+        // one ref from construction, one ref from broadcast in RefDec below
+        //  (only wait if RefDec has not signaled)
+        if (1<m_RefCount && 1==m_CloseRequested)
+        {
+            m_CloseCond.Wait();
+        }
+    } // unlock m_CloseMutex
 
     m_CloseRequested=3;
     RefDec();
@@ -133,33 +124,35 @@ ErlRefObject::RefDec()
 {
     uint32_t cur_count;
 
-    pthread_mutex_lock(&m_CloseMutex);
-    cur_count=leveldb::dec_and_fetch(&m_RefCount);
-
-    if (cur_count<2 && 1==m_CloseRequested)
     {
-        bool flag;
+        leveldb::MutexLock lock(&m_CloseMutex);
 
-        // state 2 is sign that all secondary references have cleared
-        m_CloseRequested=2;
+        cur_count=leveldb::dec_and_fetch(&m_RefCount);
 
-        // is there really more than one ref count now?
-        flag=(0<m_RefCount);
-        if (flag)
+        if (cur_count<2 && 1==m_CloseRequested)
         {
-            RefObject::RefInc();
-            pthread_cond_broadcast(&m_CloseCond);
-        }   // if
+            bool flag;
 
-        // this "flag" and ref count dance is to ensure
-        //  that the mutex unlock is called on all threads
-        //  before destruction.
-        if (flag)
-            RefObject::RefDec();
-        else
-            cur_count=0;
-    }   // if
-    pthread_mutex_unlock(&m_CloseMutex);
+            // state 2 is sign that all secondary references have cleared
+            m_CloseRequested=2;
+
+            // is there really more than one ref count now?
+            flag=(0<m_RefCount);
+            if (flag)
+            {
+                RefObject::RefInc();
+                m_CloseCond.SignalAll();
+            }   // if
+
+            // this "flag" and ref count dance is to ensure
+            //  that the mutex unlock is called on all threads
+            //  before destruction.
+            if (flag)
+                RefObject::RefDec();
+            else
+                cur_count=0;
+        }   // if
+    } // unlock m_CloseMutex
 
     if (0==cur_count)
     {

@@ -78,10 +78,8 @@ public:
     // 3 final RefDec and destructor executing
     volatile uint32_t m_CloseRequested;
 
-    // It would be nice if leveldb's port::* container objects could be
-    //  be used here.  But requires detailed work relating to build_config.mk
-    pthread_mutex_t m_CloseMutex;        //!< for condition wait
-    pthread_cond_t  m_CloseCond;         //!< for notification of user's finish
+    leveldb::port::Mutex   m_CloseMutex;        //!< for condition wait
+    leveldb::port::CondVar m_CloseCond;         //!< for notification of user's finish
 
 protected:
 
