@@ -394,7 +394,7 @@ streamFoldTestOpts(Opts, FoldFun) ->
     Ref = open(),
     Acc = eleveldb:fold(Ref, FoldFun, [], Opts),
     ok = eleveldb:close(Ref),
-    Acc.
+    lists:reverse(Acc).
 
 streamFoldTest(Filter, PutKeyFun) ->
     clearDb(),
@@ -408,12 +408,12 @@ streamFoldTest(Filter, PutKeyFun) ->
 % Build a list of returned keys
 
     FF = fun({K,V}, Acc) -> 
-		 Acc ++ [getKeyVal(K,V)]
+		 [getKeyVal(K,V) | Acc]
 	 end,
 
     Acc = eleveldb:fold(Ref, FF, [], Opts),
     ok = eleveldb:close(Ref),
-    Acc.
+    lists:reverse(Acc).
 
 get_field(Field, List) ->
     lists:keyfind(Field, 1, List).
@@ -728,7 +728,7 @@ scanAll_test() ->
     putKeysObj(N),
     Opts=[{fold_method, streaming}],
     FoldFun = fun({K,V}, Acc) -> 
-		      Acc ++ [getKeyVal(K,V)]
+		      [getKeyVal(K,V) | Acc]
 	      end,
     Keys = streamFoldTestOpts(Opts, FoldFun),
     Len = length(Keys),
@@ -746,7 +746,7 @@ scanSome_test() ->
 	  {end_inclusive,  true}],
 
     FoldFun = fun({K,_V}, Acc) -> 
-		      Acc ++ [K]
+		      [K | Acc]
 	      end,
 
     Keys = streamFoldTestOpts(Opts, FoldFun),
@@ -764,7 +764,7 @@ scanNoStart_test() ->
 	  {start_key, <<"key001">>}],
 
     FoldFun = fun({K,_V}, Acc) -> 
-		      Acc ++ [K]
+		      [K | Acc]
 	      end,
 
     Keys = streamFoldTestOpts(Opts, FoldFun),
@@ -782,7 +782,7 @@ scanNoStartOrEnd_test() ->
 	  {end_key,   <<"key100">>}],
 
     FoldFun = fun({K,_V}, Acc) -> 
-		      Acc ++ [K]
+		      [K | Acc]
 	      end,
 
     Keys = streamFoldTestOpts(Opts, FoldFun),
@@ -807,7 +807,7 @@ noEncodingOptions_test() ->
 	      {range_filter, Filter}],
 	
 	FoldFun = fun({K,_V}, Acc) -> 
-			  Acc ++ [K]
+			  [K | Acc]
 		  end,
 	
 	Keys = streamFoldTestOpts(Opts, FoldFun),
@@ -838,7 +838,7 @@ badEncodingOptions_test() ->
 	      {encoding, unknown}],
 	
 	FoldFun = fun({K,_V}, Acc) -> 
-			  Acc ++ [K]
+			  [K | Acc]
 		  end,
 	
 	Keys = streamFoldTestOpts(Opts, FoldFun),
