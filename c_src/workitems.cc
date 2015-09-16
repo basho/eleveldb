@@ -23,6 +23,7 @@
 #include <syslog.h>
 
 #include "detail.hpp"
+#include "filter_parser.h"
 #include "workitems.h"
 
 #include "leveldb/cache.h"
@@ -30,6 +31,8 @@
 #include "leveldb/perf_count.h"
 #include "leveldb/comparator.h"
 #include "leveldb/translator.h"
+
+#include <iomanip>
 
 // error_tuple duplicated in workitems.cc and eleveldb.cc ... how to fix?
 static ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Status& status)
@@ -131,9 +134,6 @@ WorkTask::recycle()
 {
     // does not work by default
 }   // WorkTask::recycle
-
-
-
 
 /**
  * OpenTask functions
@@ -501,6 +501,26 @@ RangeScanTask::~RangeScanTask()
     sync_obj_->RefDec();
 }
 
+void RangeScanTask::sendMsg(ErlNifEnv * msg_env, ERL_NIF_TERM atom, ErlNifPid pid)
+{
+    if(!sync_obj_->IsConsumerDead()) {
+        ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
+        ERL_NIF_TERM msg      = enif_make_tuple2(msg_env, atom, ref_copy);
+
+        enif_send(NULL, &pid, msg_env, msg);
+    }
+}
+
+void RangeScanTask::sendMsg(ErlNifEnv * msg_env, ERL_NIF_TERM atom, ErlNifPid pid, std::string msg)
+{
+    if(!sync_obj_->IsConsumerDead()) {
+        ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
+	ERL_NIF_TERM msg_str  = enif_make_string(msg_env, msg.c_str(), ERL_NIF_LATIN1);
+        ERL_NIF_TERM msg      = enif_make_tuple3(msg_env, atom, ref_copy, msg_str);
+
+        enif_send(NULL, &pid, msg_env, msg);
+    }
+}
 
 RangeScanTask::SyncObject::SyncObject(const RangeScanOptions & opts)
 : max_bytes_(opts.max_unacked_bytes), 
@@ -603,13 +623,14 @@ bool RangeScanTask::SyncObject::IsConsumerDead() const {
 }
 
 
-void send_batch(ErlNifPid * pid, ErlNifEnv * msg_env, ERL_NIF_TERM ref_term,
+
+void send_streaming_batch(ErlNifPid * pid, ErlNifEnv * msg_env, ERL_NIF_TERM ref_term,
                 ErlNifBinary * bin) {
     // Binary now owned. No need to release it.
     ERL_NIF_TERM bin_term = enif_make_binary(msg_env, bin);
     ERL_NIF_TERM local_ref = enif_make_copy(msg_env, ref_term);
     ERL_NIF_TERM msg =
-        enif_make_tuple3(msg_env, ATOM_RANGE_SCAN_BATCH, local_ref, bin_term);
+        enif_make_tuple3(msg_env, ATOM_STREAMING_BATCH, local_ref, bin_term);
     enif_send(NULL, pid, msg_env, msg);
     enif_clear_env(msg_env);
 }
@@ -634,6 +655,9 @@ char* EncodeVarint64(char* dst, uint64_t v) {
   return reinterpret_cast<char*>(ptr);
 }
 
+/**.......................................................................
+ * Perform range-scan work, with optional filtering
+ */
 work_result RangeScanTask::operator()()
 {
     leveldb::ReadOptions read_options;
@@ -654,6 +678,7 @@ work_result RangeScanTask::operator()()
 
     ErlNifPid pid;
     enif_get_local_pid(env, caller_pid_term, &pid);
+
     ErlNifBinary bin;
     const size_t initial_bin_size = size_t(options_.max_batch_bytes * 1.1);
     size_t out_offset = 0;
@@ -661,6 +686,21 @@ work_result RangeScanTask::operator()()
 
     std::string key_buffer;
     key_buffer.reserve(256);
+
+    //------------------------------------------------------------ 
+    // The code allows for individual filter conditions to be bad, ie,
+    // conditions that reference fields that don't exist, or compare
+    // field values to constants of the wrong type.
+    //
+    // If throwIfBadFilter is set to true, these are treated as fatal
+    // errors, halting execution of the loop.
+    // 
+    // If on the other hand, throwIfBadFilter is set to false, bad
+    // filter conditions are ignored (always true), and the rest of
+    // the filter will be evaluated anyway
+    //------------------------------------------------------------
+
+    bool throwIfBadFilter = true;
 
     //------------------------------------------------------------
     // Skip if not including first key and first key exists
@@ -698,7 +738,7 @@ work_result RangeScanTask::operator()()
                 if (out_offset != bin.size)
                     enif_realloc_binary(&bin, out_offset);
 
-                send_batch(&pid, msg_env, caller_ref_term, &bin);
+                send_streaming_batch(&pid, msg_env, caller_ref_term, &bin);
                 out_offset = 0;
             }
 
@@ -714,14 +754,66 @@ work_result RangeScanTask::operator()()
         leveldb::Slice value = iter->value();
 
         bool filter_passed = true;
-        if (options_.range_filter!=0) {
-            options_.extractor->extract(value.data(), value.size(), 
-					options_.range_filter);
-            filter_passed = options_.range_filter->evaluate();
+
+	//------------------------------------------------------------
+	// If we are using a filter, evaluate it here
+	//------------------------------------------------------------
+
+        if(options_.useRangeFilter_) {
+
+	  try {
+
+	    //------------------------------------------------------------
+	    // If the filter has not yet been parsed, check the data
+	    // types of all fields in this key, then parse the filter,
+	    // so we know which templatized versions of the
+	    // ExpressionNodes to use
+	    //------------------------------------------------------------
+
+	    if(!options_.extractor_->typesParsed_) {
+	      options_.extractor_->parseRiakObjectTypes(value.data(), value.size());
+
+	      options_.range_filter_ = 
+		parse_range_filter_opts(options_.env_, 
+                                        options_.rangeFilterSpec_, *(options_.extractor_),
+                                        throwIfBadFilter);
+	    }
+
+	    //------------------------------------------------------------
+	    // Now extract relevant fields of this object prior to
+	    // evaluating the filter. We check if the range filter is
+	    // non-NULL, because passing a filter specification that
+	    // refers to invalid fields can result in a NULL
+	    // expression tree.  In this case, we don't bother
+	    // extracting the data or evaluating the filter
+	    //------------------------------------------------------------
+
+            if(options_.range_filter_) {
+                options_.extractor_->extractRiakObject(value.data(), value.size(), options_.range_filter_);
+            }
+            
+            //------------------------------------------------------------
+            // Now evaluate the filter, but only if we have a valid filter
+            //------------------------------------------------------------
+            
+            if(options_.range_filter_) {
+                filter_passed = options_.range_filter_->evaluate();
+            }
+            
+	  } catch(std::runtime_error& err) {
+              std::ostringstream os;
+              char buf[key.size()+1];
+              strncpy(buf, key.data(), key.size());
+              buf[key.size()] = '\0';
+              os << err.what() << std::endl << "While processing key: " << buf;
+              sendMsg(msg_env, ATOM_STREAMING_ERROR, pid, os.str());
+              return work_result(local_env(), ATOM_ERROR, ATOM_STREAMING_ERROR);
+	  }
+
         }
 
         if (filter_passed) {
-
+	  
             key_buffer.resize(0);
             translator->TranslateInternalKey(key, &key_buffer);
 
@@ -734,10 +826,10 @@ work_result RangeScanTask::operator()()
             const size_t esz = ksz + ksz_sz + vsz + vsz_sz;
             const size_t next_offset = out_offset + esz;
 
-	  // Allocate the output data array if this is the first data
-	  // (out_offset == 0)
+            // Allocate the output data array if this is the first data
+	    // (i.e., if out_offset == 0)
 
-            if (out_offset == 0)
+            if(out_offset == 0)
                 enif_alloc_binary(initial_bin_size, &bin);
 
 	    //------------------------------------------------------------
@@ -745,7 +837,7 @@ work_result RangeScanTask::operator()()
             // reached the batch max anyway and will send it right away
 	    //------------------------------------------------------------
 
-            if (next_offset > bin.size)
+            if(next_offset > bin.size)
                 enif_realloc_binary(&bin, next_offset);
 
             char * const out = (char*)bin.data + out_offset;
@@ -758,15 +850,17 @@ work_result RangeScanTask::operator()()
 
             out_offset = next_offset;
 	    
+	    //------------------------------------------------------------
 	    // If we've reached the maximum number of bytes to include in
 	    // the batch, possibly shrink the binary and send it
+	    //------------------------------------------------------------
 
-            if (out_offset >= options_.max_batch_bytes) {
+            if(out_offset >= options_.max_batch_bytes) {
 
-                if (out_offset != bin.size)
+                if(out_offset != bin.size)
                     enif_realloc_binary(&bin, out_offset);
 
-                send_batch(&pid, msg_env, caller_ref_term, &bin);
+                send_streaming_batch(&pid, msg_env, caller_ref_term, &bin);
 
                 // Maybe block if max reached.
 
@@ -775,122 +869,34 @@ work_result RangeScanTask::operator()()
                 out_offset = 0;
 	    }
 
-	    // Increment the number of keys read and step to the next key
+	    //------------------------------------------------------------
+	    // Increment the number of keys read and step to the next
+	    // key
+	    //------------------------------------------------------------
 
 	    ++num_read;
+	} else {
+            //	  COUT("Filter DIDN'T pass");
 	}
 
         iter->Next();
     }
 
     //------------------------------------------------------------
-    // If exiting work loop, send a streaming_end message to any
+    // If exiting the work loop, send a streaming_end message to any
     // waiting erlang threads
     //------------------------------------------------------------
 
-    if (!sync_obj_->IsConsumerDead()) {
-        ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
-        ERL_NIF_TERM msg =
-            enif_make_tuple2(msg_env, ATOM_STREAMING_END, ref_copy);
-        enif_send(NULL, &pid, msg_env, msg);
-    }
+    sendMsg(msg_env, ATOM_STREAMING_END, pid);
 
-    if (out_offset)
+    if(out_offset)
         enif_release_binary(&bin);
 
     enif_free_env(msg_env);
+
     return work_result();
 
 }   // RangeScanTask::operator()
-
-#if 0
-work_result RangeScanTask::operator()()
-{
-    leveldb::ReadOptions read_options;
-    ErlNifEnv * env = local_env_;
-    ErlNifEnv * msg_env = enif_alloc_env();
-    read_options.fill_cache = options_.fill_cache;
-    read_options.verify_checksums = options_.verify_checksums;
-    leveldb::Iterator * iter = m_DbPtr->m_Db->NewIterator(read_options);
-    const leveldb::Comparator * cmp = m_DbPtr->m_DbOptions->comparator;
-    const leveldb::Slice skey_slice(start_key_);
-    const leveldb::Slice ekey_slice(end_key_);
-    const leveldb::Options & db_options = m_DbPtr->m_Db->GetOptions();
-    leveldb::KeyTranslator * translator = db_options.translator;
-
-    iter->Seek(skey_slice);
-
-    ErlNifPid pid;
-    enif_get_local_pid(env, caller_pid_term, &pid);
-    ErlNifBinary bin;
-    const size_t initial_bin_size = size_t(options_.max_batch_bytes * 1.1);
-    size_t out_offset = 0;
-    size_t num_read = 0;
-
-    std::string key_buffer;
-    key_buffer.reserve(256);
-
-    for (;;) {
-        // If reached end or key past end key.
-        if (!iter->Valid()
-            || cmp->Compare(iter->key(), ekey_slice) >= 0) {
-            // If data in batch
-            if (out_offset) {
-                // Shrink it to final size.
-                if (out_offset != bin.size)
-                    enif_realloc_binary(&bin, out_offset);
-                send_batch(&pid, msg_env, caller_ref_term, &bin);
-            }
-            break;
-        }
-        // Shove next entry in the batch.
-        leveldb::Slice key = iter->key();
-        leveldb::Slice value = iter->value();
-        bool filter_passed = true;
-        if (options_.range_filter!=0) {
-            options_.extractor->extract(value.data(), value.size(), options_.range_filter);
-            filter_passed = options_.range_filter->evaluate();
-        }
-        if (filter_passed) {
-            key_buffer.resize(0);
-            translator->TranslateInternalKey(key, &key_buffer);
-            const size_t ksz = key_buffer.size(), vsz = value.size();
-            const size_t ksz_sz = VarintLength(ksz);
-            const size_t vsz_sz = VarintLength(vsz);
-            const size_t esz = ksz + ksz_sz + vsz + vsz_sz;
-            const size_t next_offset = out_offset + esz;
-            if (out_offset == 0)
-                enif_alloc_binary(initial_bin_size, &bin);
-            // If we need more space, allocate it exactly since that means we
-            // reached the batch max anyway and will send it right away.
-            if (next_offset > bin.size)
-                enif_realloc_binary(&bin, next_offset);
-            char * const out = (char*)bin.data + out_offset;
-            EncodeVarint64(out, ksz);
-            memcpy(out + ksz_sz, key_buffer.data(), ksz);
-            EncodeVarint64(out + ksz_sz + ksz, vsz);
-            memcpy(out + ksz_sz + ksz + vsz_sz, value.data(), vsz);
-            out_offset = next_offset;
-            if (out_offset >= options_.max_batch_bytes) {
-                if (out_offset != bin.size)
-                    enif_realloc_binary(&bin, out_offset);
-                send_batch(&pid, msg_env, caller_ref_term, &bin);
-                // Maybe block if max reached.
-                sync_obj_->AddBytes(out_offset);
-                out_offset = 0;
-            }
-        }
-        iter->Next();
-    }
-
-    ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
-    ERL_NIF_TERM msg =
-        enif_make_tuple2(msg_env, ATOM_RANGE_SCAN_END, ref_copy);
-    enif_send(NULL, &pid, msg_env, msg);
-    enif_free_env(msg_env);
-    return work_result();
-}   // RangeScanTask::operator()
-#endif
 
 ErlNifResourceType * RangeScanTask::sync_handle_resource_ = NULL;
 
@@ -935,106 +941,5 @@ void RangeScanTask::SyncHandleResourceCleanup(ErlNifEnv * env, void * arg)
         handle->sync_obj = NULL;
     }
 }
-
-//=======================================================================
-// Backwards compatibility for range_scan operations
-//=======================================================================
-
-RangeScanTaskOld::RangeScanTaskOld(ErlNifEnv * caller_env,
-				   ERL_NIF_TERM caller_ref,
-				   DbObject * db_handle,
-				   const std::string & start_key,
-				   const std::string * end_key,
-				   RangeScanOptions & options,
-				   SyncObject * sync_obj) :
-  RangeScanTask(caller_env, caller_ref, db_handle, start_key, end_key, options, sync_obj)
-{
-}
-
-RangeScanTaskOld::~RangeScanTaskOld() {};
-
-work_result RangeScanTaskOld::operator()()
-{
-    leveldb::ReadOptions read_options;
-    ErlNifEnv * env = local_env_;
-    ErlNifEnv * msg_env = enif_alloc_env();
-    read_options.fill_cache = options_.fill_cache;
-    leveldb::Iterator * iter = m_DbPtr->m_Db->NewIterator(read_options);
-    const leveldb::Comparator * cmp = m_DbPtr->m_DbOptions->comparator;
-    const leveldb::Slice skey_slice(start_key_);
-    const leveldb::Slice ekey_slice(end_key_);
-    const leveldb::Options & db_options = m_DbPtr->m_Db->GetOptions();
-    leveldb::KeyTranslator * translator = db_options.translator;
-
-    iter->Seek(skey_slice);
-
-    ErlNifPid pid;
-    enif_get_local_pid(env, caller_pid_term, &pid);
-    ErlNifBinary bin;
-    const size_t initial_bin_size = size_t(options_.max_batch_bytes * 1.1);
-    size_t out_offset = 0;
-    std::string key_buffer;
-    key_buffer.reserve(256);
-
-    for (;;) {
-        // If reached end or key past end key.
-        if (!iter->Valid()
-            || cmp->Compare(iter->key(), ekey_slice) >= 0) {
-            // If data in batch
-            if (out_offset) {
-                // Shrink it to final size.
-                if (out_offset != bin.size)
-                    enif_realloc_binary(&bin, out_offset);
-                send_batch(&pid, msg_env, caller_ref_term, &bin);
-            }
-            break;
-        }
-        // Shove next entry in the batch.
-        leveldb::Slice key = iter->key();
-        leveldb::Slice value = iter->value();
-        bool filter_passed = true;
-        if (options_.range_filter!=0) {
-            options_.extractor->extract(value.data(), value.size(), options_.range_filter);
-            filter_passed = options_.range_filter->evaluate();
-        }
-        if (filter_passed) {
-            key_buffer.resize(0);
-            translator->TranslateInternalKey(key, &key_buffer);
-            const size_t ksz = key_buffer.size(), vsz = value.size();
-            const size_t ksz_sz = VarintLength(ksz);
-            const size_t vsz_sz = VarintLength(vsz);
-            const size_t esz = ksz + ksz_sz + vsz + vsz_sz;
-            const size_t next_offset = out_offset + esz;
-            if (out_offset == 0)
-                enif_alloc_binary(initial_bin_size, &bin);
-            // If we need more space, allocate it exactly since that means we
-            // reached the batch max anyway and will send it right away.
-            if (next_offset > bin.size)
-                enif_realloc_binary(&bin, next_offset);
-            char * const out = (char*)bin.data + out_offset;
-            EncodeVarint64(out, ksz);
-            memcpy(out + ksz_sz, key_buffer.data(), ksz);
-            EncodeVarint64(out + ksz_sz + ksz, vsz);
-            memcpy(out + ksz_sz + ksz + vsz_sz, value.data(), vsz);
-            out_offset = next_offset;
-            if (out_offset >= options_.max_batch_bytes) {
-                if (out_offset != bin.size)
-                    enif_realloc_binary(&bin, out_offset);
-                send_batch(&pid, msg_env, caller_ref_term, &bin);
-                // Maybe block if max reached.
-                sync_obj_->AddBytes(out_offset);
-                out_offset = 0;
-            }
-        }
-        iter->Next();
-    }
-
-    ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
-    ERL_NIF_TERM msg =
-        enif_make_tuple2(msg_env, ATOM_RANGE_SCAN_END, ref_copy);
-    enif_send(NULL, &pid, msg_env, msg);
-    enif_free_env(msg_env);
-    return work_result();
-}   // RangeScanTask::operator()
 
 } // namespace eleveldb

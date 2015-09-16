@@ -46,8 +46,10 @@
          ts_key/1,
          parse_string/1,
          is_empty/1,
-         encode/2,
-         current_usec/0]).
+	 encode/2,
+	 current_usec/0,
+	 msgpacktest/1,
+	 eniftest/1]).
 
 %% for testing
 -export([
@@ -60,10 +62,7 @@
 -export([iterator/2,
          iterator/3,
          iterator_move/2,
-         iterator_close/1,
-         range_scan/4,
-         range_scan_ack/2,
-         range_scan_fold/6]).
+         iterator_close/1]).
 
 -export([emlfold1/4,
          emlfold2/1]).
@@ -152,20 +151,18 @@ init() ->
                           {delete, Key::binary()} |
                           clear] | binary().
 
--type range_scan_options() :: [{start_inclusive, boolean()} |
-                               {end_inclusive, boolean()} |
-                               {fill_cache, boolean()} |
-                               {max_batch_size, pos_integer()} |
-                               {max_unacked_bytes, pos_integer()}].
-
 -type streaming_option() :: {max_batch_bytes, pos_integer()} |
-                            {max_unacked_bytes, pos_integer()}.
+                            {max_unacked_bytes, pos_integer() |
+			    {fill_cache, boolean()}}.
 
 -type streaming_options() :: [streaming_option()].
 
 -type fold_method() :: iterator | streaming.
 
+-type encoding() :: erlang | msgpack.
+
 -type fold_options() :: [read_option() |
+			 {encoding, encoding()} |
                          {fold_method, fold_method()} |
                          {first_key, binary()} |
                          {last_key, binary() | undefined} |
@@ -330,15 +327,6 @@ iterator_close(IRef) ->
 async_iterator_close(_CallerRef, _IRef) ->
     erlang:nif_error({error, not_loaded}).
 
--spec range_scan(db_ref(), binary(), binary()|undefined, range_scan_options()) ->
-    {ok, {itr_ref(), reference()}} | {error, any()}.
-range_scan(_DBRef, _StartKey, _EndKey, _Opts) ->
-    erlang:nif_error({error, not_loaded}).
-
--spec range_scan_ack(reference(), pos_integer()|0) -> ok | needs_reack.
-range_scan_ack(_Ref, _NumBytes) ->
-    erlang:nif_error({error, not_loaded}).
-
 -spec streaming_start(db_ref(), binary(), binary() | undefined,
                       streaming_options()) ->
     {ok, stream_ref()} | {error, any()}.
@@ -355,38 +343,6 @@ streaming_stop(_AckRef) ->
 
 -type fold_fun() :: fun(({Key::binary(), Value::binary()}, any()) -> any()).
 
-range_scan_fold(Ref, Fun, Acc0, SKey, EKey, Opts) ->
-    {ok, {MsgRef, AckRef}} = range_scan(Ref, SKey, EKey, Opts),
-    do_range_scan_fold(MsgRef, AckRef, Fun, Acc0).
-
-do_range_scan_batch(<<>>, _Fun, Acc) ->
-    Acc;
-do_range_scan_batch(Bin, Fun, Acc) ->
-    {K, Bin2} = parse_string(Bin),
-    {V, Bin3} = parse_string(Bin2),
-    Acc2 = Fun({K, V}, Acc),
-    do_range_scan_batch(Bin3, Fun, Acc2).
-
-do_range_scan_ack(MsgRef, AckRef, Size, Fun, Acc) ->
-    case range_scan_ack(AckRef, Size) of
-        ok ->
-            do_range_scan_fold(MsgRef, AckRef, Fun, Acc);
-        needs_reack ->
-            do_range_scan_ack(MsgRef, AckRef, 0, Fun, Acc)
-    end.
-
-do_range_scan_fold(MsgRef, AckRef, Fun, Acc) ->
-    receive
-        {range_scan_end, MsgRef} ->
-            Acc;
-        {range_scan_batch, MsgRef, Batch} ->
-            Size = byte_size(Batch),
-            Acc2 = do_range_scan_batch(Batch, Fun, Acc),
-            do_range_scan_ack(MsgRef, AckRef, Size, Fun, Acc2);
-        Msg ->
-            lager:info("Range scan got unexpected message: ~p\n", [Msg])
-    end.
-
 do_streaming_batch(<<>>, _Fun, Acc) ->
     Acc;
 do_streaming_batch(Bin, Fun, Acc) ->
@@ -397,6 +353,9 @@ do_streaming_batch(Bin, Fun, Acc) ->
 
 do_streaming_fold(StreamRef = {MsgRef, AckRef}, Fun, Acc) ->
     receive
+        {streaming_error, MsgRef, ErrMsg} ->
+	    io:format("\rGot an error message: ~s~n", [ErrMsg]),
+            Acc;
         {streaming_end, MsgRef} ->
             Acc;
         {streaming_batch, MsgRef, Batch} ->
@@ -419,6 +378,12 @@ do_streaming_fold_test1(StreamRef = {MsgRef, AckRef}, Fun, Acc) ->
 current_usec() ->
     erlang:nif_error({error, not_loaded}).
 
+eniftest(_) ->
+    erlang:nif_error({error, not_loaded}).
+
+msgpacktest(_) ->
+    erlang:nif_error({error, not_loaded}).
+
 parse_string(Bin) ->
     parse_string(0, 0, Bin).
 
@@ -431,7 +396,11 @@ parse_string(Size, Shift, <<0:1, N:7, Bin/binary>>) ->
     {String, Rest}.
 
 %% Fold over the keys and values in the database
+%%
 %% will throw an exception if the database is closed while the fold runs
+%%
+%% will also throw an exception if there is an error parsing a
+%% range_filter passed as part of the streaming options
 -spec fold(db_ref(), fold_fun(), any(), fold_options()) -> any().
 fold(Ref, Fun, Acc0, Opts) ->
     case proplists:get_value(fold_method, Opts, iterator) of
@@ -441,12 +410,6 @@ fold(Ref, Fun, Acc0, Opts) ->
         streaming ->
             SKey = proplists:get_value(first_key, Opts, <<>>),
             EKey = proplists:get_value(last_key, Opts),
-            io:format("SKey = ~n"),
-            io:format(SKey),
-            io:format("~n"),
-            io:format("EKey = ~n"),
-            io:format(EKey),
-            io:format("~n"),
             {ok, StreamRef} = streaming_start(Ref, SKey, EKey, Opts),
             {_, AckRef} = StreamRef,
             try
