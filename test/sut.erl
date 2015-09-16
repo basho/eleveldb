@@ -572,9 +572,9 @@ anyOps_test() ->
     EvalFn = fun sut:defaultEvalFn/1,
     eqOpsOnly({F, {Val, CompVal}, any, PutFn, EvalFn}) and (anyCompOps({F, {Val, CompVal}, any, PutFn, EvalFn}) == false).
 
-normalOps_test() ->
-    io:format("normalOps_test~n"),
-    intOps_test() and binaryOps_test() and boolOps_test() and floatOps_test() and anyOps_test() and timestampOps_test().
+%normalOps_test() ->
+%    io:format("normalOps_test~n"),
+%    intOps_test() and binaryOps_test() and boolOps_test() and floatOps_test() and anyOps_test() and timestampOps_test().
 
 %%=======================================================================
 %% Test malformed keys
@@ -636,9 +636,9 @@ badAny_test() ->
     PutFn  = fun sut:putKeyNormalOps/1,
     neqOps({F, {Val, CompVal}, any, PutFn, fun({N,_}) -> N == 3 end}).
 
-abnormalOps_test() ->
-    io:format("abnormalOps_test~n"),
-    badInt_test() and badBinary_test() and badFloat_test() and badBool_test() and badTimestamp_test() and badAny_test().
+%abnormalOps_test() ->
+%    io:format("abnormalOps_test~n"),
+%    badInt_test() and badBinary_test() and badFloat_test() and badBool_test() and badTimestamp_test() and badAny_test().
 
 %%=======================================================================
 %% Test various exceptional conditions
@@ -690,12 +690,12 @@ filterRefInvalidType_test() ->
     EvalFn = fun abnormalEvalFn/1,
     gtOps({F, {Val}, map, PutFn, EvalFn}).
 
-variousExceptionalOps_test() ->
-    missingKey_test() and filterRefMissingKey_test() and filterRefWrongType_test() and filterRefInvalidType_test().
+%variousExceptionalOps_test() ->
+%    missingKey_test() and filterRefMissingKey_test() and filterRefWrongType_test() and filterRefInvalidType_test().
 
 %%=======================================================================
 %% All test defined in this file
 %%=======================================================================
 
-all_test() ->
-    normalOps_test() and abnormalOps_test() and variousExceptionalOps_test().
+%all_test() ->
+%    normalOps_test() and abnormalOps_test() and variousExceptionalOps_test().
