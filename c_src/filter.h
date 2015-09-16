@@ -36,7 +36,7 @@ public:
 
     virtual TResult evaluate() const = 0;
     virtual void    clear()     = 0;
-    virtual bool    has_value() const;
+    virtual bool    has_value() const {return false;};
 
     virtual void    set_value(std::string key,     void* val, 
                               DataType::Type type, size_t size=0) = 0;
@@ -514,7 +514,7 @@ struct FieldValue<std::string>: public ExpressionNode<std::string> {
     }
 
     inline virtual std::string evaluate() const {
-        throwIfNoValue();
+        FieldValue<std::string>::throwIfNoValue();
         return value_;
     }
 
@@ -577,7 +577,7 @@ struct FieldValue<unsigned char*>: public ExpressionNode<unsigned char*> {
     }
 
     inline virtual unsigned char* evaluate() const {
-        throwIfNoValue();
+        FieldValue<unsigned char*>::throwIfNoValue();
         return value_;
     }
 
