@@ -6,6 +6,8 @@
 #include <cmath>
 #include <iomanip>
 
+#include <climits>
+
 using namespace std;
 
 using namespace eleveldb;
@@ -185,7 +187,7 @@ CmpUtil::parseMap(const char* data, size_t size)
     // Iterate over the map, ispecting field names
     //------------------------------------------------------------
 
-    for(int i=0; i < map_size; i++) {
+    for(unsigned int i=0; i < map_size; i++) {
 
         //------------------------------------------------------------
         // First read the field key
@@ -566,7 +568,7 @@ size_t CmpUtil::mapSize(cmp_mem_access_t* ma, cmp_ctx_t* cmp, cmp_object_t* map)
     // Iterate over the map, which consists of pairs of objects
     //------------------------------------------------------------
 
-    for(int i=0; i < map_size; i++) {
+    for(unsigned int i=0; i < map_size; i++) {
 
         //------------------------------------------------------------
         // Read each object in the pair
@@ -605,7 +607,7 @@ size_t CmpUtil::arraySize(cmp_mem_access_t* ma, cmp_ctx_t* cmp, cmp_object_t* ar
     // Iterate over the arr, which consists of pairs of objects
     //------------------------------------------------------------
 
-    for(int i=0; i < arr_size; i++) {
+    for(unsigned int i=0; i < arr_size; i++) {
 
         //------------------------------------------------------------
         // Read each object in turn

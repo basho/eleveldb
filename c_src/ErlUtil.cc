@@ -3,8 +3,11 @@
 #include "cmp.h"
 #include "cmp_mem_access.h"
 
-#include <cmath>
 #include <cctype>
+#include <climits>
+#include <cmath>
+
+#include <arpa/inet.h>
 
 using namespace std;
 
@@ -437,7 +440,7 @@ std::vector<ERL_NIF_TERM> ErlUtil::getTupleCells(ErlNifEnv* env, ERL_NIF_TERM te
 
     std::vector<ERL_NIF_TERM> cells(arity);
 
-    for(unsigned iCell=0; iCell < arity; iCell++)
+    for(int iCell=0; iCell < arity; iCell++)
         cells[iCell] = array[iCell];
 
     return cells;
@@ -516,9 +519,6 @@ void ErlUtil::decodeRiakObject(ERL_NIF_TERM obj, ERL_NIF_TERM encoding)
     COUT("Binary has size: " << bin.size << " Encoding = " << encoding);
 #endif
 
-    //    <<?MAGIC:8/integer, ?V1_VERS:8/integer, VclockLen:32/integer, VclockBin/binary, SibCount:32/ \
-    //	 integer, SibsBin/binary>>
-
     unsigned char* ptr = bin.data;
 
     unsigned char magic = (*ptr++);
@@ -580,7 +580,7 @@ void ErlUtil::parseSiblingDataMsgpack(unsigned char* ptr, unsigned len)
     // Iterate over the object, looking for fields
     //------------------------------------------------------------
 
-    for(int i=0; i < map_size; i++) {
+    for(unsigned int i=0; i < map_size; i++) {
 
         //------------------------------------------------------------
         // First read the field key
