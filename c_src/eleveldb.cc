@@ -35,6 +35,9 @@
 #include "eleveldb.h"
 #include "filter_parser.h"
 
+#include "CmpUtil.h"
+#include "ErlUtil.h"
+
 #include "leveldb/db.h"
 #include "leveldb/comparator.h"
 #include "leveldb/env.h"
@@ -83,14 +86,13 @@ static ErlNifFunc nif_funcs[] =
     {"async_iterator", 4, eleveldb::async_iterator},
     {"async_iterator_move", 3, eleveldb::async_iterator_move},
 
-    {"range_scan", 4, eleveldb::range_scan},
-    {"range_scan_ack", 2, eleveldb::range_scan_ack},
-
     {"streaming_start", 4, eleveldb::streaming_start},
     {"streaming_ack", 2, eleveldb::streaming_ack},
     {"streaming_stop", 1, eleveldb::streaming_stop},
 
     {"current_usec",   0, eleveldb::currentMicroSeconds},
+    {"msgpacktest",    1, eleveldb::msgpacktest},
+    {"eniftest",       1, eleveldb::eniftest},
 };
 
 
@@ -155,18 +157,19 @@ ERL_NIF_TERM ATOM_START_INCLUSIVE;
 ERL_NIF_TERM ATOM_END_INCLUSIVE;
 ERL_NIF_TERM ATOM_MAX_UNACKED_BYTES;
 ERL_NIF_TERM ATOM_MAX_BATCH_BYTES;
-ERL_NIF_TERM ATOM_RANGE_SCAN_BATCH;
-ERL_NIF_TERM ATOM_RANGE_SCAN_END;
 ERL_NIF_TERM ATOM_NEEDS_REACK;
 ERL_NIF_TERM ATOM_TIME_SERIES;
 ERL_NIF_TERM ATOM_GLOBAL_DATA_DIR;
 ERL_NIF_TERM ATOM_RANGE_FILTER;
 ERL_NIF_TERM ATOM_STREAMING_BATCH;
 ERL_NIF_TERM ATOM_STREAMING_END;
+ERL_NIF_TERM ATOM_STREAMING_ERROR;
 ERL_NIF_TERM ATOM_LIMIT;
 ERL_NIF_TERM ATOM_UNDEFINED;
+ERL_NIF_TERM ATOM_ENCODING;
+ERL_NIF_TERM ATOM_ERLANG_ENCODING;
+ERL_NIF_TERM ATOM_MSGPACK_ENCODING;
 }   // namespace eleveldb
-
 
 using std::nothrow;
 
@@ -551,35 +554,6 @@ ERL_NIF_TERM parse_read_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::ReadO
     return eleveldb::ATOM_OK;
 }
 
-ERL_NIF_TERM parse_range_scan_option(ErlNifEnv* env, ERL_NIF_TERM item,
-                                     eleveldb::RangeScanOptions & opts)
-{
-    int arity;
-    const ERL_NIF_TERM* option;
-    if (enif_get_tuple(env, item, &arity, &option) && 2 == arity)
-    {
-        if (option[0] == eleveldb::ATOM_START_INCLUSIVE)
-            opts.start_inclusive = (option[1] == eleveldb::ATOM_TRUE);
-        else if (option[0] == eleveldb::ATOM_END_INCLUSIVE)
-            opts.end_inclusive = (option[1] == eleveldb::ATOM_TRUE);
-        else if (option[0] == eleveldb::ATOM_FILL_CACHE)
-            opts.fill_cache = (option[1] == eleveldb::ATOM_TRUE);
-        else if (option[0] == eleveldb::ATOM_MAX_UNACKED_BYTES) {
-            unsigned max_unacked_bytes;
-            if (enif_get_uint(env, option[1], &max_unacked_bytes))
-                opts.max_unacked_bytes = max_unacked_bytes;
-        } else if (option[0] == eleveldb::ATOM_MAX_BATCH_BYTES) {
-            unsigned max_batch_bytes;
-            if (enif_get_uint(env, option[1], &max_batch_bytes))
-                opts.max_batch_bytes = max_batch_bytes;
-        } else if (option[0] == eleveldb::ATOM_RANGE_FILTER) {
-            opts.extractor = new Extractor();
-            opts.range_filter = parse_range_filter_opts(env, option[1], *(opts.extractor));
-        }
-    }
-    return eleveldb::ATOM_OK;
-}
-
 ERL_NIF_TERM parse_streaming_option(ErlNifEnv* env, ERL_NIF_TERM item,
                                      eleveldb::RangeScanOptions & opts)
 {
@@ -607,6 +581,26 @@ ERL_NIF_TERM parse_streaming_option(ErlNifEnv* env, ERL_NIF_TERM item,
             unsigned limit;
             if (enif_get_uint(env, option[1], &limit))
                 opts.limit = limit;
+
+	    //------------------------------------------------------------
+	    // ATOM_ENCODING specifies which extractor to use
+	    //------------------------------------------------------------
+
+        } else if (option[0] == eleveldb::ATOM_ENCODING) {
+            opts.encodingType_ = Encoding::typeOf(ErlUtil::getString(env, option[1]), true);
+
+	    //------------------------------------------------------------
+	    // ATOM_RANGE_FILTER specifies a filter.  Defer parsing
+	    // this until we read the first key
+	    //------------------------------------------------------------
+
+        } else if (option[0] == eleveldb::ATOM_RANGE_FILTER) {
+
+	    // Store the rangefilter spec and environment to parse later
+
+	    opts.useRangeFilter_  = true;
+            opts.rangeFilterSpec_ = option[1];
+            opts.env_             = env;
         }
     }
 
@@ -1307,106 +1301,7 @@ async_iterator_close(
 }   // async_iterator_close
 
 //=======================================================================
-// Range scan iteration, to compare with streaming version
-//=======================================================================
-
-ERL_NIF_TERM
-range_scan_ack(ErlNifEnv * env,
-               int argc,
-               const ERL_NIF_TERM argv[])
-{
-    const ERL_NIF_TERM ref              = argv[0];
-    const ERL_NIF_TERM num_bytes_term   = argv[1];
-    uint32_t num_bytes;
-
-    if (!enif_get_uint(env, num_bytes_term, &num_bytes))
-        return enif_make_badarg(env);
-
-    using eleveldb::RangeScanTask;
-    RangeScanTask::SyncHandle * sync_handle;
-    sync_handle = RangeScanTask::RetrieveSyncHandle(env, ref);
-
-    if (!sync_handle || !sync_handle->sync_obj)
-        return enif_make_badarg(env);
-
-    bool needs_reack = sync_handle->sync_obj->AckBytesRet(num_bytes);
-    return needs_reack ? eleveldb::ATOM_NEEDS_REACK : eleveldb::ATOM_OK;
-}
-
-ERL_NIF_TERM
-range_scan(ErlNifEnv * env,
-           int argc,
-           const ERL_NIF_TERM argv[])
-{
-    const ERL_NIF_TERM db_ref           = argv[0];
-    const ERL_NIF_TERM start_key_term   = argv[1];
-    const ERL_NIF_TERM end_key_term     = argv[2];
-    const ERL_NIF_TERM options_list     = argv[3];
-
-    ReferencePtr<DbObject> db_ptr;
-    db_ptr.assign(DbObject::RetrieveDbObject(env, db_ref));
-
-    if (NULL == db_ptr.get()
-        || !enif_is_binary(env, start_key_term)
-        || !enif_is_binary(env, end_key_term)
-        || !enif_is_list(env, options_list))
-    {
-        return enif_make_badarg(env);
-    }
-
-    if (NULL == db_ptr->m_Db)
-        return error_einval(env);
-
-    const leveldb::Options & options = db_ptr->m_Db->GetOptions();
-    leveldb::KeyTranslator * key_tx = options.translator;
-
-    ERL_NIF_TERM reply_ref = enif_make_ref(env);
-
-    ErlNifBinary start_key_bin;
-    enif_inspect_binary(env, start_key_term, &start_key_bin);
-    leveldb::Slice start_key_slice((const char *)start_key_bin.data,
-                                   start_key_bin.size);
-    std::string start_key;
-    start_key.resize(key_tx->GetInternalKeySize(start_key_slice));
-    key_tx->TranslateExternalKey(start_key_slice, (char*)start_key.data());
-
-    ErlNifBinary end_key_bin;
-    enif_inspect_binary(env, end_key_term, &end_key_bin);
-    leveldb::Slice end_key_slice((const char *)end_key_bin.data,
-                                 end_key_bin.size);
-
-    std::string end_key;
-    end_key.resize(key_tx->GetInternalKeySize(end_key_slice));
-    key_tx->TranslateExternalKey(end_key_slice, (char*)end_key.data());
-
-    RangeScanOptions opts;
-    fold(env, options_list, parse_range_scan_option, opts);
-    
-    eleveldb::RangeScanTask::SyncHandle * sync_handle =
-      eleveldb::RangeScanTask::CreateSyncHandle(opts);
-
-    ERL_NIF_TERM sync_ref = enif_make_resource(env, sync_handle);
-
-    RangeScanTaskOld * task =
-      new RangeScanTaskOld(env, reply_ref, db_ptr.get(),
-			   start_key, &end_key, opts, sync_handle->sync_obj);
-
-    eleveldb_priv_data& priv =
-        *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-    if (false == priv.thread_pool.submit(task))
-    {
-        delete task; // TODO: May require fancier destruction.
-        // TODO: Add thread pool submit error atom
-        return enif_make_tuple2(env, eleveldb::ATOM_ERROR, reply_ref);
-    }
-
-    return enif_make_tuple2(env, eleveldb::ATOM_OK,
-                           enif_make_tuple2(env, reply_ref, sync_ref));
-}
-
-//=======================================================================
-// Streaming version of iterator, from Engel's streaming-folds branch
+// Streaming version of iterator -- replaces range_scan functionality
 //=======================================================================
 
 /**.......................................................................
@@ -1503,7 +1398,16 @@ streaming_start(ErlNifEnv * env,
     }
 
     RangeScanOptions opts;
-    fold(env, options_list, parse_streaming_option, opts);
+
+    try {
+
+        fold(env, options_list, parse_streaming_option, opts);
+        opts.checkOptions();
+
+    } catch(std::runtime_error& err) {
+	ERL_NIF_TERM msg_str  = enif_make_string(env, err.what(), ERL_NIF_LATIN1);
+        return enif_make_tuple3(env, eleveldb::ATOM_ERROR, reply_ref, msg_str);
+    }
     
     using eleveldb::RangeScanTask;
     RangeScanTask::SyncHandle * sync_handle =
@@ -1524,11 +1428,13 @@ streaming_start(ErlNifEnv * env,
     {
         delete task; // TODO: May require fancier destruction.
         // TODO: Add thread pool submit error atom
-        return enif_make_tuple2(env, eleveldb::ATOM_ERROR, reply_ref);
+	ERL_NIF_TERM msg_str  = enif_make_string(env, "Error submitting task to the thread pool", ERL_NIF_LATIN1);
+        return enif_make_tuple3(env, eleveldb::ATOM_ERROR, reply_ref, msg_str);
     }
 
     return enif_make_tuple2(env, eleveldb::ATOM_OK,
                            enif_make_tuple2(env, reply_ref, sync_ref));
+
 } // streaming_start
 
 ERL_NIF_TERM
@@ -1539,6 +1445,40 @@ currentMicroSeconds(
 {
   return enif_make_int64(env, getCurrentMicroSeconds());
 } // currentMicroSeconds
+
+ERL_NIF_TERM
+msgpacktest(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+  try {
+
+      ExtractorMsgpack ext;
+      ErlNifBinary bin;
+      
+      enif_inspect_binary(env, argv[0], &bin);
+
+      std::map<std::string, DataType::Type> keyValMap = CmpUtil::parseMap((const char*)bin.data, bin.size);
+      CmpUtil::printMap(keyValMap);
+
+  } catch(std::runtime_error err) {
+      return enif_make_atom(env, err.what());
+  }
+  
+  return enif_make_atom(env, "ok");
+}
+
+ERL_NIF_TERM
+eniftest(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    ErlUtil erlUtil;
+    COUT(erlUtil.formatTerm(env, argv[0]));
+    return enif_make_atom(env, "ok");
+}
 
 
 ERL_NIF_TERM
@@ -1801,16 +1741,18 @@ try
     ATOM(eleveldb::ATOM_END_INCLUSIVE, "end_inclusive");
     ATOM(eleveldb::ATOM_MAX_UNACKED_BYTES, "max_unacked_bytes");
     ATOM(eleveldb::ATOM_MAX_BATCH_BYTES, "max_batch_bytes");
-    ATOM(eleveldb::ATOM_RANGE_SCAN_BATCH, "range_scan_batch");
-    ATOM(eleveldb::ATOM_RANGE_SCAN_END, "range_scan_end");
     ATOM(eleveldb::ATOM_NEEDS_REACK, "needs_reack");
     ATOM(eleveldb::ATOM_TIME_SERIES, "time_series");
     ATOM(eleveldb::ATOM_GLOBAL_DATA_DIR, "global_data_dir");
     ATOM(eleveldb::ATOM_RANGE_FILTER, "range_filter");
     ATOM(eleveldb::ATOM_STREAMING_BATCH, "streaming_batch");
-    ATOM(eleveldb::ATOM_STREAMING_END, "streaming_end");
+    ATOM(eleveldb::ATOM_STREAMING_END,   "streaming_end");
+    ATOM(eleveldb::ATOM_STREAMING_ERROR, "streaming_error");
     ATOM(eleveldb::ATOM_LIMIT, "limit");
     ATOM(eleveldb::ATOM_UNDEFINED, "undefined");
+    ATOM(eleveldb::ATOM_ENCODING, "encoding");
+    ATOM(eleveldb::ATOM_ERLANG_ENCODING,  Encoding::encodingAtom(Encoding::ERLANG).c_str());
+    ATOM(eleveldb::ATOM_MSGPACK_ENCODING, Encoding::encodingAtom(Encoding::MSGPACK).c_str());
 #undef ATOM
 
 

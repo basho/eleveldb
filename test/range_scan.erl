@@ -19,6 +19,13 @@ setup() ->
     populate(Ref),
     Ref.
 
+setup(N) ->
+    {ok, Ref} = eleveldb:open("/tmp/eleveldb.range_scan.test",
+                              [{create_if_missing, true},
+                               {time_series, true}]),
+    populate(Ref, N),
+    Ref.
+
 cleanup(Ref) ->
     ok = eleveldb:close(Ref),
     os:cmd("rm -rf /tmp/eleveldb.range_scan.test").
@@ -28,6 +35,13 @@ populate(Ref) ->
     Batch = lists:foldl(fun(Time, Batch) ->
                 append_record([{<<"field_1">>, Time}, {<<"field_2">>, Time}], <<Batch/binary, Time:64>>)
                         end, EmptyBatch, lists:seq(0, 1000000)),
+    ok = eleveldb:write(Ref, Batch, []).
+
+populate(Ref, N) ->
+    EmptyBatch = append_string(?SERIES, append_string(?FAMILY, <<>>)),
+    Batch = lists:foldl(fun(Time, Batch) ->
+                append_record([{<<"field_1">>, Time}, {<<"field_2">>, Time}], <<Batch/binary, Time:64>>)
+                        end, EmptyBatch, lists:seq(0, N)),
     ok = eleveldb:write(Ref, Batch, []).
 
 append_varint(N, Bin) ->
@@ -52,19 +66,30 @@ append_string(S, Bin) ->
 test_range_query(Ref) ->
     {timeout, 50000, fun() ->
         lists:foreach(fun(_X) ->
-            read_items_with_level_filter(Ref, 0, 1000000, 50000, 200000)
+            read_items_with_level_filter(Ref, 0, 10, 50000, 200000)
         end, lists:seq(0,9)),
         lists:foreach(fun(_X) ->
             read_items_with_erlang_filter(Ref, 0, 1000000, 50000, 200000)
         end, lists:seq(0,9))
     end}.
 
+test_single_range_query(N) ->
+    Ref = setup(N),
+    read_items_with_level_filter(Ref, 0, 1000000, 50000, 200000),
+    cleanup(Ref).
+
 get_ts_key(Key) ->
     eleveldb:ts_key_TEST({?FAMILY, ?SERIES, Key}).
 
+print_ts_key(Key) ->
+    <<Time:64, Rest/binary>> = Key,
+    io:format("~B ~ts~n", [Time, Rest]).
+
 read_items_with_level_filter(Ref, Start0, End0, F1, F2) ->
     Start = eleveldb:ts_key_TEST({?FAMILY, ?SERIES, Start0}),
-    End = eleveldb:ts_key_TEST({?FAMILY, ?SERIES, End0}),
+    End   = eleveldb:ts_key_TEST({?FAMILY, ?SERIES, End0}),
+    print_ts_key(Start),
+    print_ts_key(End),
     Opts = [{range_filter, {"and", [
                 {">=", [{field, "field_1"}, {const, F1}]},
                 {"<=", [{field, "field_2"}, {const, F2}]}

@@ -1,121 +1,493 @@
 #include "filter_parser.h"
+#include "workitems.h"
+
+#include "DataType.h"
+#include "ErlUtil.h"
+
 #include <cstring>
 
-template<typename T>
-ExpressionNode<T>* parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
-    printf("Called the wrong version of parce_constexpr\n");
+//------------------------------------------------------------
+// Get a new binary operator of the requested type.  If either the
+// left or right expressions don't evaulate to a valid expression,
+// return NULL for the binary operator.  This will have the effect of
+// ignoring the condition in the filter evaluation.
+//
+// This can happen, for example, if someone tries to pass a filter
+// like:
+//
+//      {"<", [{field, "field1"}, {const, 0}]},
+//
+// where 'field1' refers to a string field.  (in this case, we will
+// try to inspect the value 0 as a binary, which will fail since it is
+// sent to the NIF as an integer,
+//------------------------------------------------------------
+
+#define NEW_BIN(ClassName, operandType, dataType)                       \
+    {                                                                   \
+        ExpressionNode<operandType>* leftExp  = parse_expression_node<operandType>(env, args[1], ext, throwIfInvalid); \
+        ExpressionNode<operandType>* rightExp = parse_expression_node<operandType>(env, args[2], ext, throwIfInvalid); \
+                                                                        \
+        if(leftExp == 0 || rightExp == 0) {                             \
+            return NULL;                                                \
+        } else {                                                        \
+            ClassName<operandType>* ptr = new ClassName<operandType>(leftExp, rightExp, dataType); \
+            return ptr;                                                 \
+        }                                                               \
+    }                                                                   \
+
+//------------------------------------------------------------
+// Allocate a binary operator of the correct type for the operands.
+// If either argument refers to a field we don't know about, return
+// NULL.  This will cause any enclosing comparator (i.e., AND, OR) to
+// ignore the condition
+//------------------------------------------------------------
+
+#define SWITCH_TYPE(ClassName) {                                      \
+        switch(type) {                                                \
+        case DataType::UINT8:                                         \
+            NEW_BIN(ClassName, uint8_t,        type);                 \
+            break;                                                    \
+        case DataType::UINT64:                                        \
+            NEW_BIN(ClassName, uint64_t,       type);                 \
+            break;                                                    \
+        case DataType::INT64:                                          \
+            NEW_BIN(ClassName, int64_t,        type);                  \
+            break;                                                      \
+        case DataType::DOUBLE:                                          \
+            NEW_BIN(ClassName, double,         type);                   \
+            break;                                                      \
+        case DataType::STRING:                                          \
+            NEW_BIN(ClassName, std::string,    type);                   \
+            break;                                                      \
+        case DataType::UCHAR_PTR:                                       \
+            NEW_BIN(ClassName, unsigned char*, DataType::UCHAR_PTR);    \
+            break;                                                      \
+        default:                                                        \
+            if(throwIfInvalid) {                                        \
+                ThrowRuntimeError("Unsupported type: " << type);        \
+            }                                                           \
+            return NULL;                                                \
+            break;                                                      \
+        };                                                              \
+    }
+
+//=======================================================================
+// Templates for expression parsing
+//=======================================================================
+
+template<typename T> ExpressionNode<T>* 
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+    ThrowRuntimeError("Called an unsupported version of parse_const_expr");
     return NULL;
 }
 
-template<> ExpressionNode<int64_t>* parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
-    int val;
-    enif_get_int(env, operand, &val);
+template<> ExpressionNode<uint8_t>* 
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+    int val = eleveldb::ErlUtil::getValAsUint8(env, operand);
+    return new ConstantValue<uint8_t>(val);
+}
+
+template<> ExpressionNode<int>* 
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+    int val = eleveldb::ErlUtil::getValAsInt32(env, operand);
+    return new ConstantValue<int>(val);
+}
+
+template<> ExpressionNode<unsigned int>* 
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+    unsigned int val = eleveldb::ErlUtil::getValAsUint32(env, operand);
+    return new ConstantValue<unsigned int>(val);
+}
+
+template<> ExpressionNode<int64_t>* 
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+    int64_t val = eleveldb::ErlUtil::getValAsInt64(env, operand);
     return new ConstantValue<int64_t>(val);
 }
 
-template<typename T>
-ExpressionNode<T>* parse_expression_node(ErlNifEnv* env, ERL_NIF_TERM root, Extractor& ext) {
-    char op[20];
-    const ERL_NIF_TERM* op_args;
-    int arity;
-    if (enif_get_tuple(env, root, &arity, &op_args) && arity==2) {
-        if (enif_get_atom(env, op_args[0], op, sizeof(op), ERL_NIF_LATIN1)) {
-            if (strcmp(op, eleveldb::filter::CONST_OP)==0) {
-                return parse_const_expr<T>(env, op_args[1], ext);
+template<> ExpressionNode<uint64_t>* 
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+    uint64_t val = eleveldb::ErlUtil::getValAsUint64(env, operand);
+    return new ConstantValue<uint64_t>(val);
+}
+
+template<> ExpressionNode<double>* 
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+    double val = eleveldb::ErlUtil::getValAsDouble(env, operand);
+    return new ConstantValue<double>(val);
+}
+
+template<> ExpressionNode<std::string>* 
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+    eleveldb::ErlUtil erlUtil(env, operand);
+    return new ConstantValue<std::string>(erlUtil.getString());
+}
+
+template<> ExpressionNode<unsigned char*>* 
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+    eleveldb::ErlUtil erlUtil(env, operand);
+    size_t size = 0;
+    unsigned char* ptr = erlUtil.getBinary(size);
+    return new ConstantValue<unsigned char*>(ptr, size);
+}
+
+template<typename T> ExpressionNode<T>* 
+parse_expression_node(ErlNifEnv* env, ERL_NIF_TERM root, Extractor& ext, bool throwIfInvalid) {
+
+    try {
+
+        std::vector<ERL_NIF_TERM> opArgs = ErlUtil::getTupleCells(env, root);
+
+        //------------------------------------------------------------
+        // This tuple should be at least 2 items long, ie:
+        // 
+        // {field, Name}, {field, Name, type} or
+        // {const, Val},  {const, Val,  type}
+        //
+        //------------------------------------------------------------
+
+        if(opArgs.size() >= 2) {
+            
+            std::string op = ErlUtil::getAtom(env, opArgs[0]);
+            
+            if(op == eleveldb::filter::CONST_OP) {
+                ExpressionNode<T>* ptr = parse_const_expr<T>(env, opArgs[1], ext);
+                return ptr;
             }
-            if (strcmp(op, eleveldb::filter::FIELD_OP)==0) {
-                return parse_field_expr<T>(env, op_args[1], ext);
+            
+            if(op == eleveldb::filter::FIELD_OP) {
+                ExpressionNode<T>* ptr = parse_field_expr<T>(env, opArgs[1], ext);
+                return ptr;
+            }
+
+            if(throwIfInvalid)
+                ThrowRuntimeError("Unrecognized operator '" << op << "' while parsing: '" 
+                                  << ErlUtil::formatTupleVec(env, opArgs) << "'");
+
+        }
+
+        if(throwIfInvalid)
+            ThrowRuntimeError("Malformed tuple: " << ErlUtil::formatTupleVec(env, opArgs));
+
+    } catch(std::runtime_error& err) {
+        if(throwIfInvalid)
+            throw err;
+    }
+
+
+    return NULL;
+}
+
+//=======================================================================
+// Parse an expression
+//=======================================================================
+
+template<> ExpressionNode<bool>* 
+parse_expression_node<bool>(ErlNifEnv* env, ERL_NIF_TERM root, Extractor& ext, bool throwIfInvalid) {
+
+    try {
+
+        std::vector<ERL_NIF_TERM> opArgs = ErlUtil::getTupleCells(env, root);
+
+        if(opArgs.size() == 3) {
+
+            std::string op = ErlUtil::getString(env, opArgs[0]);
+
+            if(op == eleveldb::filter::EQ_OP || 
+               op == eleveldb::filter::EQEQ_OP) {
+                return parse_equals_expr(env, opArgs, ext, throwIfInvalid);
+	    } else if(op == eleveldb::filter::NEQ_OP) {
+                return parse_nequals_expr(env, opArgs, ext, throwIfInvalid);
+            } else if(op == eleveldb::filter::LT_OP) {
+                return parse_lt_expr(env, opArgs, ext, throwIfInvalid);
+            } else if(op == eleveldb::filter::LTE_OP ||
+                      op == eleveldb::filter::ELT_OP) {
+                return parse_lte_expr(env, opArgs, ext, throwIfInvalid);
+            } else if(op == eleveldb::filter::GT_OP) {
+                return parse_gt_expr(env, opArgs, ext, throwIfInvalid);
+            } else if(op == eleveldb::filter::GTE_OP) {
+                return parse_gte_expr(env, opArgs, ext, throwIfInvalid);
+            } else if(op == eleveldb::filter::AND_OP ||
+                      op == eleveldb::filter::AND__OP) {
+                return parse_and_expr(env, opArgs, ext, throwIfInvalid);
+            } else if(op == eleveldb::filter::OR_OP ||
+                      op == eleveldb::filter::OR__OP) {
+                return parse_or_expr(env, opArgs, ext, throwIfInvalid);
+            }
+
+            if(throwIfInvalid)
+                ThrowRuntimeError("Unrecognized operator '" << op << "' while parsing: '" 
+                                  << ErlUtil::formatTupleVec(env, opArgs) << "'");
+
+        }
+
+        if(throwIfInvalid)
+            ThrowRuntimeError("Malformed tuple: " << ErlUtil::formatTupleVec(env, opArgs));
+
+    } catch(std::runtime_error& err) {
+        if(throwIfInvalid)
+            throw err;
+    }
+
+    return NULL;
+}
+
+//=======================================================================
+// Parse an == expression
+//=======================================================================
+
+ExpressionNode<bool>*
+parse_equals_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+    if(args.size() == 3) {
+        DataType::Type type = ext.cTypeOf(env, args[1], args[2], throwIfInvalid);
+        SWITCH_TYPE(EqOperator);
+    }
+
+    if(throwIfInvalid)
+        ThrowRuntimeError("Malformed tuple: " << ErlUtil::formatTupleVec(env, args));
+
+    return NULL;
+}
+
+//=======================================================================
+// Parse a != expression
+//=======================================================================
+
+ExpressionNode<bool>* 
+parse_nequals_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+    if(args.size() == 3) {
+        DataType::Type type = ext.cTypeOf(env, args[1], args[2], throwIfInvalid);
+        SWITCH_TYPE(NeqOperator);
+    }
+
+    if(throwIfInvalid)
+        ThrowRuntimeError("Malformed tuple: " << ErlUtil::formatTupleVec(env, args));
+
+    return NULL;
+}
+
+//=======================================================================
+// Parse a < expression
+//=======================================================================
+
+ExpressionNode<bool>* 
+parse_lt_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+    if(args.size() == 3) {
+        DataType::Type type = ext.cTypeOf(env, args[1], args[2], throwIfInvalid);
+        
+        // Operation < not supported for booleans or binary types
+        
+        if(type == DataType::UINT8 || type == DataType::UCHAR_PTR) {
+            if(throwIfInvalid) {
+                ThrowRuntimeError("Operation '" << ErlUtil::formatTerm(env, args[0]) << "' not supported for type: " << type);
+            } else {
+                return NULL;
             }
         }
+        
+        SWITCH_TYPE(LtOperator);
     }
+
+    if(throwIfInvalid)
+        ThrowRuntimeError("Malformed tuple: " << ErlUtil::formatTupleVec(env, args));
+
     return NULL;
 }
 
-template<> ExpressionNode<bool>* parse_expression_node<bool>(ErlNifEnv* env, ERL_NIF_TERM root, Extractor& ext) {
-char op[20];
-    const ERL_NIF_TERM* op_args;
-    int arity;
-    if (enif_get_tuple(env, root, &arity, &op_args) && arity==2) {
-        if (enif_get_string(env, op_args[0], op, sizeof(op), ERL_NIF_LATIN1)) {
-            if (strcmp(op, eleveldb::filter::EQ_OP)==0) {
-                return parse_equals_expr(env, op_args[1], ext);
+//=======================================================================
+// Parse a <= expression
+//=======================================================================
+
+ExpressionNode<bool>* 
+parse_lte_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+    if(args.size() == 3) {
+        DataType::Type type = ext.cTypeOf(env, args[1], args[2], throwIfInvalid);
+
+        // Operation <= not supported for booleans or binary types
+
+        if(type == DataType::UINT8 || type == DataType::UCHAR_PTR) {
+            if(throwIfInvalid) {
+                ThrowRuntimeError("Operation '" << ErlUtil::formatTerm(env, args[0]) << "' not supported for type: " << type);
+            } else {
+                return NULL;
             }
-            else if (strcmp(op, eleveldb::filter::LTE_OP)==0) {
-                return parse_lte_expr(env, op_args[1], ext);
+        }
+        
+        SWITCH_TYPE(LteOperator);
+    }
+
+    if(throwIfInvalid)
+        ThrowRuntimeError("Malformed tuple: " << ErlUtil::formatTupleVec(env, args));
+
+    return NULL;
+}
+
+//=======================================================================
+// Parse a > expression
+//=======================================================================
+
+ExpressionNode<bool>* 
+parse_gt_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+    if(args.size() == 3) {
+        DataType::Type type = ext.cTypeOf(env, args[1], args[2], throwIfInvalid);
+        
+        // Operation > not supported for booleans or binary types
+        
+        if(type == DataType::UINT8 || type == DataType::UCHAR_PTR) {
+            if(throwIfInvalid) {
+                ThrowRuntimeError("Operation '" << ErlUtil::formatTerm(env, args[0]) << "' not supported for type: " << type);
+            } else {
+                return NULL;
             }
-            else if (strcmp(op, eleveldb::filter::GTE_OP)==0) {
-                return parse_gte_expr(env, op_args[1], ext);
+        }
+
+        SWITCH_TYPE(GtOperator);
+    }
+
+    if(throwIfInvalid)
+        ThrowRuntimeError("Malformed tuple: " << ErlUtil::formatTupleVec(env, args));
+
+    return NULL;
+}
+
+//=======================================================================
+// Parse a >= expression
+//=======================================================================
+
+ExpressionNode<bool>* 
+parse_gte_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+    if(args.size() == 3) {
+        DataType::Type type = ext.cTypeOf(env, args[1], args[2], throwIfInvalid);
+        
+        // Operation >= not supported for booleans or binary types
+        
+        if(type == DataType::UINT8 || type == DataType::UCHAR_PTR) {
+            if(throwIfInvalid) {
+                ThrowRuntimeError("Operation '" << ErlUtil::formatTerm(env, args[0]) << "' not supported for type: " << type);
+            } else {
+                return NULL;
             }
-            else if (strcmp(op, eleveldb::filter::AND_OP)==0) {
-                return parse_and_expr(env, op_args[1], ext);
-            }
+        }
+        
+        SWITCH_TYPE(GteOperator);
+    }
+
+    if(throwIfInvalid)
+        ThrowRuntimeError("Malformed tuple: " << ErlUtil::formatTupleVec(env, args));
+
+    return NULL;
+}
+
+//=======================================================================
+// Parse an AND expression
+//=======================================================================
+
+ExpressionNode<bool>* 
+parse_and_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+    if(args.size() == 3) {
+        
+        ExpressionNode<bool>* left  = parse_expression_node<bool>(env, args[1], ext, throwIfInvalid);
+        ExpressionNode<bool>* right = parse_expression_node<bool>(env, args[2], ext, throwIfInvalid);
+        
+        // If both expressions are non-NULL, return the
+        // AndOperator
+        
+        if(left && right) {
+            return new AndOperator(left, right);                
+            
+            // Else replace the AND operation with whichever
+            // condition is non-NULL.  This is tantamount to
+            // simply not evaluating a condition that refers to a
+            // field we don't know about.
+            //  
+            // NB: we don't throw here, even if throwIfInvalid is true,
+            // since in that case parse_expression_node will already
+            // have thrown rather than return a NULL
+            
+        } else {
+            
+            if(left)
+                return left;
+            if(right)
+                return right;
         }
     }
+
+    if(throwIfInvalid)
+        ThrowRuntimeError("Malformed tuple: " << ErlUtil::formatTupleVec(env, args));
+
+    // Else return NULL
+
     return NULL;
 }
 
-ExpressionNode<bool>* parse_equals_expr(ErlNifEnv* env, ERL_NIF_TERM operands, Extractor& ext) {
-    unsigned int oplen;
-    ERL_NIF_TERM lhs, rhs, rest = operands;
-    if (enif_get_list_length(env, operands, &oplen) && oplen==2) {
-        if (enif_get_list_cell(env, rest, &lhs, &rest) &&
-                enif_get_list_cell(env, rest, &rhs, &rest)) {
-            return new EqOperator<int64_t>(parse_expression_node<int64_t>(env, lhs, ext),
-                parse_expression_node<int64_t>(env, rhs, ext));
+//=======================================================================
+// Parse an OR expression
+//=======================================================================
+
+ExpressionNode<bool>* 
+parse_or_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+    if(args.size() == 3) {
+        
+        ExpressionNode<bool>* left  = parse_expression_node<bool>(env, args[1], ext, throwIfInvalid);
+        ExpressionNode<bool>* right = parse_expression_node<bool>(env, args[2], ext, throwIfInvalid);
+        
+        // If both expressions are non-NULL, return the
+        // OrOperator as requested
+        
+        if(left && right) {
+            return new OrOperator(left, right);                
+            
+            // Else replace the OR operation with whichever
+            // condition is non-NULL.  This is tantamount to simply
+            // not evaluating a condition that refers to a field
+            // we don't know about.  
+            //  
+            // NB: we don't throw here, even if throwIfInvalid is true,
+            // since in that case parse_expression_node will already
+            // have thrown rather than return a NULL
+            
+        } else {
+            
+            if(left)
+                return left;
+            if(right)
+                return right;
         }
     }
+
+    if(throwIfInvalid)
+        ThrowRuntimeError("Malformed tuple: " << ErlUtil::formatTupleVec(env, args));
+
+    // Else return NULL
+
     return NULL;
 }
 
-ExpressionNode<bool>* parse_lte_expr(ErlNifEnv* env, ERL_NIF_TERM operands, Extractor& ext) {
-    unsigned int oplen;
-    ERL_NIF_TERM lhs, rhs, rest = operands;
-    if (enif_get_list_length(env, operands, &oplen) && oplen==2) {
-        if (enif_get_list_cell(env, rest, &lhs, &rest) &&
-                enif_get_list_cell(env, rest, &rhs, &rest)) {
-            return new LteOperator<int64_t>(parse_expression_node<int64_t>(env, lhs, ext),
-                parse_expression_node<int64_t>(env, rhs, ext));
-        }
+//=======================================================================
+// Parse an expression that is the value of a field
+//=======================================================================
+
+template<typename T> ExpressionNode<T>* 
+parse_field_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+
+    try {
+
+        std::string fieldName = eleveldb::ErlUtil::getString(env, operand);
+        ext.add_field(fieldName);
+        return new FieldValue<T>(fieldName, ext.cTypeOf(fieldName));
+
+    } catch(...) {
     }
+
     return NULL;
 }
 
-ExpressionNode<bool>* parse_gte_expr(ErlNifEnv* env, ERL_NIF_TERM operands, Extractor& ext) {
-    unsigned int oplen;
-    ERL_NIF_TERM lhs, rhs, rest = operands;
-    if (enif_get_list_length(env, operands, &oplen) && oplen==2) {
-        if (enif_get_list_cell(env, rest, &lhs, &rest) &&
-                enif_get_list_cell(env, rest, &rhs, &rest)) {
-            return new GteOperator<int64_t>(parse_expression_node<int64_t>(env, lhs, ext),
-                parse_expression_node<int64_t>(env, rhs, ext));
-        }
-    }
-    return NULL;
-}
+//=======================================================================
+// Top-level call to parse range-filter
+//=======================================================================
 
-ExpressionNode<bool>* parse_and_expr(ErlNifEnv* env, ERL_NIF_TERM operands, Extractor& ext) {
-    unsigned int oplen;
-   ERL_NIF_TERM lhs, rhs, rest = operands;
-    if (enif_get_list_length(env, operands, &oplen) && oplen==2) {
-        if (enif_get_list_cell(env, rest, &lhs, &rest) &&
-                enif_get_list_cell(env, rest, &rhs, &rest)) {
-            return new AndOperator(parse_expression_node<bool>(env, lhs, ext),
-                parse_expression_node<bool>(env, rhs, ext));
-        }
-    }
-    return NULL;
-}
-
-template<typename T>
-ExpressionNode<T>* parse_field_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
-    char field_name[255];
-    if (enif_get_string(env, operand, field_name, sizeof(field_name), ERL_NIF_LATIN1)) {
-        ext.add_field(field_name);
-        return new FieldValue<T>(field_name);
-    }
-    return NULL;
-}
-
-ExpressionNode<bool>* parse_range_filter_opts(ErlNifEnv* env, ERL_NIF_TERM options, Extractor& ext) {
-    return parse_expression_node<bool>(env, options, ext);
+ExpressionNode<bool>* 
+parse_range_filter_opts(ErlNifEnv* env, ERL_NIF_TERM options, Extractor& ext, bool throwIfInvalid) {
+    return parse_expression_node<bool>(env, options, ext, throwIfInvalid);
 }
