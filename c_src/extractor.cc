@@ -1,15 +1,14 @@
+#include "CmpUtil.h"
+#include "ErlUtil.h"
+
+#include "cmp.h"
+#include "cmp_mem_access.h"
+#include "exceptionutils.h"
 #include "extractor.h"
 #include "filter_parser.h"
 #include "workitems.h"
 
-#include "CmpUtil.h"
-#include "ErlUtil.h"
-
-#include "exceptionutils.h"
-
-#include "cmp.h"
-#include "cmp_mem_access.h"
-
+#include <arpa/inet.h>
 #include <inttypes.h>
 
 using namespace eleveldb;

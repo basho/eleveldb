@@ -2,7 +2,7 @@
 
 -compile(export_all).
 
--include_lib("eunit/include/eunit.hrl").
+%%-include_lib("eunit/include/eunit.hrl").
 
 %%=======================================================================
 %% This is all stuff we need to mock up msgpack-encoding of riak objects
@@ -14,6 +14,46 @@
 -define(MD_VTAG,     <<"X-Riak-VTag">>).
 -define(MD_LASTMOD,  <<"X-Riak-Last-Modified">>).
 -define(MD_DELETED,  <<"X-Riak-Deleted">>).
+-define(MD_CTYPE,    <<"content-type">>).
+-define(MAX_KEY_SIZE, 65536).
+-define(DAYS_FROM_GREGORIAN_BASE_TO_EPOCH, (1970*365+478)).
+-define(SECONDS_FROM_GREGORIAN_BASE_TO_EPOCH,
+        (?DAYS_FROM_GREGORIAN_BASE_TO_EPOCH * 24*60*60)
+       ).
+
+-export_type([vclock/0, timestamp/0, vclock_node/0, dot/0, pure_dot/0]).
+-export_type([riak_object/0, bucket/0, key/0, value/0, binary_version/0]).
+
+-type vclock() :: [dot()].
+-type dot() :: {vclock_node(), {counter(), timestamp()}}.
+-type pure_dot() :: {vclock_node(), counter()}.
+
+% Nodes can have any term() as a name, but they must differ from each other.
+
+-type   vclock_node() :: term().
+-type   counter() :: integer().
+-type   timestamp() :: integer().
+
+% @doc Create a brand new vclock.
+-spec fresh() -> vclock().
+fresh() ->
+    [].
+
+-spec fresh(vclock_node(), counter()) -> vclock().
+fresh(Node, Count) ->
+    [{Node, {Count, timestamp()}}].
+
+% @doc Return a timestamp for a vector clock
+-spec timestamp() -> timestamp().
+timestamp() ->
+    %% Same as calendar:datetime_to_gregorian_seconds(erlang:universaltime()),
+    %% but significantly faster.
+    {MegaSeconds, Seconds, _} = os:timestamp(),
+        ?SECONDS_FROM_GREGORIAN_BASE_TO_EPOCH + MegaSeconds*1000000 + Seconds.
+
+-type key() :: binary().
+-type bucket() :: binary() | {binary(), binary()}.
+-type value() :: term().
 
 -record(r_content, {
           metadata :: dict() | list(),
@@ -21,29 +61,73 @@
          }).
 
 -record(r_object, {
-          bucket :: riak_object:bucket(),
-          key :: riak_object:key(),
+          bucket :: bucket(),
+          key :: key(),
           contents :: [#r_content{}],
-          vclock = vclock:fresh() :: vclock:vclock(),
+          vclock = fresh() :: vclock(),
           updatemetadata=dict:store(clean, true, dict:new()) :: dict(),
           updatevalue :: term()
          }).
+
+-opaque riak_object() :: #r_object{}.
+
+%% @doc Constructor for new riak objects.
+-spec new(Bucket::bucket(), Key::key(), Value::value()) -> riak_object().
+new({T, B}, K, V) when is_binary(T), is_binary(B), is_binary(K) ->
+    new_int({T, B}, K, V, no_initial_metadata);
+new(B, K, V) when is_binary(B), is_binary(K) ->
+    new_int(B, K, V, no_initial_metadata).
+
+%% @doc Constructor for new riak objects with an initial content-type.
+-spec new(Bucket::bucket(), Key::key(), Value::value(),
+          string() | dict() | no_initial_metadata) -> riak_object().
+new({T, B}, K, V, C) when is_binary(T), is_binary(B), is_binary(K), is_list(C) ->
+    new_int({T, B}, K, V, dict:from_list([{?MD_CTYPE, C}]));
+new(B, K, V, C) when is_binary(B), is_binary(K), is_list(C) ->
+    new_int(B, K, V, dict:from_list([{?MD_CTYPE, C}]));
+
+%% @doc Constructor for new riak objects with an initial metadata dict.
+%%
+%% NOTE: Removed "is_tuple(MD)" guard to make Dialyzer happy.  The previous clause
+%%       has a guard for string(), so this clause is OK without the guard.
+new({T, B}, K, V, MD) when is_binary(T), is_binary(B), is_binary(K) ->
+    new_int({T, B}, K, V, MD);
+new(B, K, V, MD) when is_binary(B), is_binary(K) ->
+    new_int(B, K, V, MD).
+
+%% internal version after all validation has been done
+new_int(B, K, V, MD) ->
+    case size(K) > ?MAX_KEY_SIZE of
+        true ->
+            throw({error,key_too_large});
+        false ->
+            case MD of
+                no_initial_metadata ->
+                    Contents = [#r_content{metadata=dict:new(), value=V}],
+                    #r_object{bucket=B,key=K,
+                              contents=Contents,vclock=fresh()};
+                _ ->
+                    Contents = [#r_content{metadata=MD, value=V}],
+                    #r_object{bucket=B,key=K,updatemetadata=MD,
+                              contents=Contents,vclock=fresh()}
+            end
+    end.
 
 is_robject(#r_object{}) ->
     true;
 is_robject(_) ->
     false.
 
--spec get_contents(riak_object:riak_object()) -> [{dict(), term()}].
+-spec get_contents(riak_object()) -> [{dict(), term()}].
 get_contents(#r_object{contents=Contents}) ->
     [{Content#r_content.metadata, Content#r_content.value} ||
         Content <- Contents].
 
--spec bucket(riak_object:riak_object()) -> riak_object:bucket().
+-spec bucket(riak_object()) -> bucket().
 bucket(Obj1) ->
     Obj1#r_object.bucket.
 
--spec contents(riak_object:riak_object()) -> term().
+-spec contents(riak_object()) -> term().
 contents(Obj1) ->
     Obj1#r_object.contents#r_content.value.
 
@@ -52,8 +136,8 @@ contents(Obj1) ->
 -type encoding() :: erlang | msgpack.
 
 
--spec to_binary(binary_version(), riak_object:riak_object()) -> binary().
--spec to_binary(binary_version(), riak_object:riak_object(), encoding()) -> binary().
+-spec to_binary(binary_version(), riak_object()) -> binary().
+-spec to_binary(binary_version(), riak_object(), encoding()) -> binary().
 
 to_binary(Vers, Robj) ->
     to_binary(Vers, Robj, erlang).
@@ -141,13 +225,13 @@ binary_version(<<131,_/binary>>) -> v0;
 binary_version(<<?MAGIC:8/integer, 1:8/integer, _/binary>>) -> v1.
 
 %% @doc Convert binary object to riak object
--spec from_binary(riak_object:bucket(),riak_object:key(),binary()) ->
-    riak_object:riak_object() | {error, 'bad_object_format'}.
+-spec from_binary(bucket(),key(),binary()) ->
+    riak_object() | {error, 'bad_object_format'}.
 from_binary(B,K,Obj) ->
     from_binary(B,K,Obj,erlang).
 
--spec from_binary(riak_object:bucket(),riak_object:key(),binary(), encoding()) ->
-    riak_object:riak_object() | {error, 'bad_object_format'}.
+-spec from_binary(bucket(),key(),binary(), encoding()) ->
+    riak_object() | {error, 'bad_object_format'}.
 from_binary(_B,_K,<<131, _Rest/binary>>=ObjTerm, _) ->
     binary_to_term(ObjTerm);
 from_binary(B,K,<<?MAGIC:8/integer, 1:8/integer, Rest/binary>>=_ObjBin, Enc) ->
@@ -289,7 +373,7 @@ putkeysObj(Ref,N,Acc) when Acc > N ->
 
 addKey(Ref, ValList, Acc, N) ->
     Key = list_to_binary("key"++integer_to_list(Acc)),
-    Obj = riak_object:new(<<"bucket">>, Key, ValList),
+    Obj = new(<<"bucket">>, Key, ValList),
     Val = to_binary(v1, Obj, msgpack),
     ok = eleveldb:put(Ref, Key, Val, []),
 
@@ -301,7 +385,7 @@ addKey(Ref, ValList, Acc, N) ->
 
 addKey(Ref, KeyNum, ValList) ->
     Key = list_to_binary("key"++integer_to_list(KeyNum)),
-    Obj = riak_object:new(<<"bucket">>, Key, ValList),
+    Obj = new(<<"bucket">>, Key, ValList),
     Val = to_binary(v1, Obj, msgpack),
     ok = eleveldb:put(Ref, Key, Val, []).
 
@@ -371,7 +455,7 @@ fieldsMatching(Vals, Field, CompVal, CompFun) ->
 %% Test that we can pack and unpack erlang/msgpack-encoded objects
 
 packObj_test() ->
-    Obj = riak_object:new(<<"bucket">>, <<"key">>, [{<<"field1">>, 1}, {<<"field2">>, 2.123}]),
+    Obj = new(<<"bucket">>, <<"key">>, [{<<"field1">>, 1}, {<<"field2">>, 2.123}]),
     PackedErl = to_binary(v1, Obj, erlang),
     PackedMsg = to_binary(v1, Obj, msgpack),
     ObjErl = from_binary(<<"bucket">>, <<"key">>, PackedErl, erlang),
@@ -488,9 +572,9 @@ anyOps_test() ->
     EvalFn = fun sut:defaultEvalFn/1,
     eqOpsOnly({F, {Val, CompVal}, any, PutFn, EvalFn}) and (anyCompOps({F, {Val, CompVal}, any, PutFn, EvalFn}) == false).
 
-normalOps_test() ->
-    io:format("normalOps_test~n"),
-    intOps_test() and binaryOps_test() and boolOps_test() and floatOps_test() and anyOps_test() and timestampOps_test().
+%normalOps_test() ->
+%    io:format("normalOps_test~n"),
+%    intOps_test() and binaryOps_test() and boolOps_test() and floatOps_test() and anyOps_test() and timestampOps_test().
 
 %%=======================================================================
 %% Test malformed keys
@@ -552,9 +636,9 @@ badAny_test() ->
     PutFn  = fun sut:putKeyNormalOps/1,
     neqOps({F, {Val, CompVal}, any, PutFn, fun({N,_}) -> N == 3 end}).
 
-abnormalOps_test() ->
-    io:format("abnormalOps_test~n"),
-    badInt_test() and badBinary_test() and badFloat_test() and badBool_test() and badTimestamp_test() and badAny_test().
+%abnormalOps_test() ->
+%    io:format("abnormalOps_test~n"),
+%    badInt_test() and badBinary_test() and badFloat_test() and badBool_test() and badTimestamp_test() and badAny_test().
 
 %%=======================================================================
 %% Test various exceptional conditions
@@ -606,12 +690,12 @@ filterRefInvalidType_test() ->
     EvalFn = fun abnormalEvalFn/1,
     gtOps({F, {Val}, map, PutFn, EvalFn}).
 
-variousExceptionalOps_test() ->
-    missingKey_test() and filterRefMissingKey_test() and filterRefWrongType_test() and filterRefInvalidType_test().
+%variousExceptionalOps_test() ->
+%    missingKey_test() and filterRefMissingKey_test() and filterRefWrongType_test() and filterRefInvalidType_test().
 
 %%=======================================================================
 %% All test defined in this file
 %%=======================================================================
 
-all_test() ->
-    normalOps_test() and abnormalOps_test() and variousExceptionalOps_test().
+%all_test() ->
+%    normalOps_test() and abnormalOps_test() and variousExceptionalOps_test().
