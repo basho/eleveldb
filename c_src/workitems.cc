@@ -767,17 +767,27 @@ work_result RangeScanTask::operator()()
 	    // If the filter has not yet been parsed, check the data
 	    // types of all fields in this key, then parse the filter,
 	    // so we know which templatized versions of the
-	    // ExpressionNodes to use
-	    //------------------------------------------------------------
+	    // ExpressionNodes to use.  If the data can't be decoded,
+	    // set filter_passed to false to ignore this key.
+	    // ------------------------------------------------------------
 
 	    if(!options_.extractor_->typesParsed_) {
-	      options_.extractor_->parseRiakObjectTypes(value.data(), value.size());
 
-	      options_.range_filter_ = 
-		parse_range_filter_opts(options_.env_, 
-                                        options_.rangeFilterSpec_, *(options_.extractor_),
-                                        throwIfBadFilter);
-	    }
+                // Only attempt to parse the data if it is correctly
+                // formatted, otherwise we will throw an error. 
+
+                if(options_.extractor_->riakObjectContentsCanBeParsed(value.data(), value.size())) {
+             
+                    options_.extractor_->parseRiakObjectTypes(value.data(), value.size());
+
+                    options_.range_filter_ = 
+                        parse_range_filter_opts(options_.env_, 
+                                                options_.rangeFilterSpec_, *(options_.extractor_),
+                                                throwIfBadFilter);
+                } else {
+                    filter_passed = false;
+                }
+            }
 
 	    //------------------------------------------------------------
 	    // Now extract relevant fields of this object prior to
@@ -789,15 +799,20 @@ work_result RangeScanTask::operator()()
 	    //------------------------------------------------------------
 
             if(options_.range_filter_) {
-                options_.extractor_->extractRiakObject(value.data(), value.size(), options_.range_filter_);
-            }
+
+                // Also check if the key can be parsed.  If TS-encoded
+                // data and non-TS encoded data are interleaved, this
+                // causes us to ignore the non-TS-encoded data
+
+                if(options_.extractor_->riakObjectContentsCanBeParsed(value.data(), value.size())) {
+                    options_.extractor_->extractRiakObject(value.data(), value.size(), options_.range_filter_);
             
-            //------------------------------------------------------------
-            // Now evaluate the filter, but only if we have a valid filter
-            //------------------------------------------------------------
+                    //------------------------------------------------------------
+                    // Now evaluate the filter, but only if we have a valid filter
+                    //------------------------------------------------------------
             
-            if(options_.range_filter_) {
-                filter_passed = options_.range_filter_->evaluate();
+                    filter_passed = options_.range_filter_->evaluate();
+                }
             }
             
 	  } catch(std::runtime_error& err) {

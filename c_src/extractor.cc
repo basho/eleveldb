@@ -338,6 +338,18 @@ DataType::Type Extractor::cTypeOf(ErlNifEnv* env, ERL_NIF_TERM tuple, bool throw
  * Given the start of a key data binary, return the start and size of the
  * contents portion of an encoded riak object
  */
+bool Extractor::riakObjectContentsCanBeParsed(const char* data, size_t size)
+{
+    const char* ptr = data;
+    ptr++;
+    unsigned char vers     = (*ptr++);
+    return vers == 1;
+}
+
+/**.......................................................................
+ * Given the start of a key data binary, return the start and size of the
+ * contents portion of an encoded riak object
+ */
 void Extractor::getToRiakObjectContents(const char* data, size_t size, 
 					const char** contentsPtr, size_t& contentsSize) 
 {

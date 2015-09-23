@@ -49,6 +49,7 @@ public:
     virtual void extract(const char *data, size_t size, ExpressionNode<bool>* root) = 0;
     virtual void extractRiakObject(const char *data, size_t size, ExpressionNode<bool>* root) = 0;
     
+    bool riakObjectContentsCanBeParsed(const char* data, size_t size);
     void getToRiakObjectContents(const char* data, size_t size, 
                                  const char** contentsPtr, size_t& contentsSize);
     
