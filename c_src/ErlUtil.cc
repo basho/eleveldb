@@ -1161,6 +1161,21 @@ std::string ErlUtil::formatBinary(ErlNifEnv* env, ERL_NIF_TERM term)
     return os.str();
 }
 
+std::string ErlUtil::formatBinary(unsigned char* buf, size_t size)
+{
+    std::ostringstream os;
+
+    os << "<<";
+    for(unsigned iByte=0; iByte < size; iByte++) {
+        os << (int)buf[iByte];
+        if(iByte < size-1)
+            os << ", ";
+    }
+    os << ">>";
+
+    return os.str();
+}
+
 std::string ErlUtil::formatTupleVec(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& cells)
 {
     std::ostringstream os;

@@ -26,6 +26,8 @@
 #include "filter_parser.h"
 #include "workitems.h"
 
+#include "ErlUtil.h"
+
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
 #include "leveldb/perf_count.h"
@@ -773,17 +775,40 @@ work_result RangeScanTask::operator()()
 
 	    if(!options_.extractor_->typesParsed_) {
 
+                //------------------------------------------------------------
                 // Only attempt to parse the data if it is correctly
-                // formatted, otherwise we will throw an error. 
+                // formatted, otherwise we would throw an error. 
+                //------------------------------------------------------------
 
                 if(options_.extractor_->riakObjectContentsCanBeParsed(value.data(), value.size())) {
              
                     options_.extractor_->parseRiakObjectTypes(value.data(), value.size());
 
-                    options_.range_filter_ = 
-                        parse_range_filter_opts(options_.env_, 
-                                                options_.rangeFilterSpec_, *(options_.extractor_),
-                                                throwIfBadFilter);
+                    //------------------------------------------------------------
+                    // Parse the filter here.  We trap the throw error
+                    // here and rethrow, so we can report an
+                    // informative error that the filter was malformed
+                    //------------------------------------------------------------
+
+                    try {
+                        options_.range_filter_ = 
+                            parse_range_filter_opts(options_.env_, 
+                                                    options_.rangeFilterSpec_, *(options_.extractor_),
+                                                    throwIfBadFilter);
+                    } catch(std::runtime_error& err) {
+                        std::ostringstream os;
+                        os << err.what() << std::endl << "While processing filter: " 
+                           << ErlUtil::formatTerm(options_.env_, options_.rangeFilterSpec_);
+
+                        ThrowRuntimeError(os.str());
+                    }
+
+                    //------------------------------------------------------------
+                    // If this value can't be parsed, set
+                    // filter_passed to false, which will ignore the
+                    // key
+                    //------------------------------------------------------------
+
                 } else {
                     filter_passed = false;
                 }
@@ -800,11 +825,14 @@ work_result RangeScanTask::operator()()
 
             if(options_.range_filter_) {
 
+                //------------------------------------------------------------
                 // Also check if the key can be parsed.  If TS-encoded
                 // data and non-TS encoded data are interleaved, this
                 // causes us to ignore the non-TS-encoded data
+                //------------------------------------------------------------
 
                 if(options_.extractor_->riakObjectContentsCanBeParsed(value.data(), value.size())) {
+
                     options_.extractor_->extractRiakObject(value.data(), value.size(), options_.range_filter_);
             
                     //------------------------------------------------------------
@@ -814,13 +842,17 @@ work_result RangeScanTask::operator()()
                     filter_passed = options_.range_filter_->evaluate();
                 }
             }
-            
+
+            //------------------------------------------------------------
+            // Trap errors thrown during filter parsing or value
+            // extraction, and propagate to erlang
+            //------------------------------------------------------------
+
 	  } catch(std::runtime_error& err) {
               std::ostringstream os;
-              char buf[key.size()+1];
-              strncpy(buf, key.data(), key.size());
-              buf[key.size()] = '\0';
-              os << err.what() << std::endl << "While processing key: " << buf;
+              os << err.what() << std::endl << "While processing key: " 
+                 << ErlUtil::formatBinary((unsigned char*)key.data(), key.size());
+
               sendMsg(msg_env, ATOM_STREAMING_ERROR, pid, os.str());
               return work_result(local_env(), ATOM_ERROR, ATOM_STREAMING_ERROR);
 	  }
