@@ -386,6 +386,11 @@ getKeyVal(K,V) ->
     [{_,Contents}] = get_contents(Obj),
     Contents.
 
+getKeyVal(B,K,V) ->
+    Obj = from_binary(B, K, V, msgpack),
+    [{_,Contents}] = get_contents(Obj),
+    Contents.
+
 %%------------------------------------------------------------
 %% Fold over keys using streaming folds
 %%------------------------------------------------------------
@@ -854,8 +859,27 @@ badEncodingOptions_test() ->
 	    ?assert(true)
     end.
 
-       
-    
+readKeysFromTable(Table) ->    
 
+    Cond1 = {'=', {field, <<"user">>, binary},    {const, <<"user_1">>}},
+    Cond2 = {'<', {field, <<"time">>, timestamp}, {const, 11000000}},
+    Cond3 = {'>', {field, <<"time">>, timestamp}, {const,  9990000}},
+    Filter = {'and_', Cond1, {'and_', Cond2, Cond3}},
+    Opts=[{fold_method, streaming},
+	  {range_filter, Filter},
+	  {encoding, msgpack}],
+    io:format("Filter = ~p~n", [lists:flatten([Filter])]),
+    TableName = "/Users/eml/projects/riak/riak_end_to_end_timeseries/dev/dev1/data/leveldb/" ++ Table,
+    io:format("Attemping to open ~ts~n", [TableName]),
+    Ref = open(TableName),
+    Bucket = {<<"GeoCheckin">>, <<"GeoCheckin">>},
+    FoldFun = fun({_K,V}, _Acc) -> 
+		      Contents = getKeyVal(Bucket, <<"key">>, V),
+		      io:format("Val = ~p~n", [lists:flatten(Contents)])
+	      end,
 
+    eleveldb:fold(Ref, FoldFun, [], Opts),
+    ok = eleveldb:close(Ref).
 
+r() ->
+    readKeysFromTable("1096126227998177188652763624537212264741949407232").
