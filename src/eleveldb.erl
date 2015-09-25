@@ -354,7 +354,7 @@ do_streaming_batch(Bin, Fun, Acc) ->
 do_streaming_fold(StreamRef = {MsgRef, AckRef}, Fun, Acc) ->
     receive
         {streaming_error, MsgRef, ErrMsg} ->
-	    io:format("\rGot an error message: ~s~n", [ErrMsg]),
+	    lager:error("Streaming error: ~s~n", [ErrMsg]),
             Acc;
         {streaming_end, MsgRef} ->
             Acc;

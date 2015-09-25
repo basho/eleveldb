@@ -67,10 +67,9 @@ namespace eleveldb {
         std::string getAtom(ERL_NIF_TERM term);
         static std::string getAtom(ErlNifEnv* env, ERL_NIF_TERM term, bool toLower=false);
 
-        unsigned char* getBinary(size_t& size);
-        unsigned char* getBinary(ERL_NIF_TERM term, size_t& size);
-        static unsigned char* getBinary(ErlNifEnv* env, 
-                                        ERL_NIF_TERM term, size_t& size);
+        std::vector<unsigned char> getBinary();
+        std::vector<unsigned char> getBinary(ERL_NIF_TERM term);
+        static std::vector<unsigned char> getBinary(ErlNifEnv* env, ERL_NIF_TERM term);
 
         std::string getString();
         std::string getString(ERL_NIF_TERM term);
@@ -106,6 +105,9 @@ namespace eleveldb {
 
         static std::string formatAtom(  ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatBinary(ErlNifEnv* env, ERL_NIF_TERM term);
+
+        static std::string formatBinary(unsigned char* buf, size_t size);
+
         static std::string formatList(  ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatNumber(ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatString(ErlNifEnv* env, ERL_NIF_TERM term);

@@ -263,34 +263,32 @@ std::string ErlUtil::getAtom(ErlNifEnv* env, ERL_NIF_TERM term, bool toLower)
     return buf;
 }
 
-unsigned char* ErlUtil::getBinary(size_t& size)
+std::vector<unsigned char> ErlUtil::getBinary()
 {
     checkTerm();
-    return getBinary(term_, size);
+    return getBinary(term_);
 }
 
-unsigned char* ErlUtil::getBinary(ERL_NIF_TERM term, size_t& size)
+std::vector<unsigned char> ErlUtil::getBinary(ERL_NIF_TERM term)
 {
     checkEnv();
-    return getBinary(env_, term, size);
+    return getBinary(env_, term);
 }
 
-unsigned char* ErlUtil::getBinary(ErlNifEnv* env, ERL_NIF_TERM term, size_t& size)
+std::vector<unsigned char> ErlUtil::getBinary(ErlNifEnv* env, ERL_NIF_TERM term)
 {
+    std::vector<unsigned char> ret;
+
     ErlNifBinary bin;
 
-    if(isList(env, term)) {
-        if(enif_inspect_iolist_as_binary(env, term, &bin) == 0)
-            ThrowRuntimeError("Failed to inspect iolist '" << formatTerm(env, term)
-                              << "' as a binary");
-    } else {
-        if(enif_inspect_binary(env, term, &bin) == 0)
-            ThrowRuntimeError("Failed to inspect '" << formatTerm(env, term)
-                              << "' as a binary");
-    }
+    if(enif_inspect_binary(env, term, &bin) == 0)
+        ThrowRuntimeError("Failed to inspect '" << formatTerm(env, term)
+                          << "' as a binary");
 
-    size = bin.size;
-    return bin.data;
+    ret.resize(bin.size);
+    memcpy(&ret[0], bin.data, bin.size);
+
+    return ret;
 }
 
 std::string ErlUtil::getString()
@@ -1154,6 +1152,21 @@ std::string ErlUtil::formatBinary(ErlNifEnv* env, ERL_NIF_TERM term)
     for(unsigned iByte=0; iByte < bin.size; iByte++) {
         os << (int)bin.data[iByte];
         if(iByte < bin.size-1)
+            os << ", ";
+    }
+    os << ">>";
+
+    return os.str();
+}
+
+std::string ErlUtil::formatBinary(unsigned char* buf, size_t size)
+{
+    std::ostringstream os;
+
+    os << "<<";
+    for(unsigned iByte=0; iByte < size; iByte++) {
+        os << (int)buf[iByte];
+        if(iByte < size-1)
             os << ", ";
     }
     os << ">>";

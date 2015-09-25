@@ -386,15 +386,14 @@ getKeyVal(K,V) ->
     [{_,Contents}] = get_contents(Obj),
     Contents.
 
+getKeyVal(B,K,V) ->
+    Obj = from_binary(B, K, V, msgpack),
+    [{_,Contents}] = get_contents(Obj),
+    Contents.
+
 %%------------------------------------------------------------
 %% Fold over keys using streaming folds
 %%------------------------------------------------------------
-
-streamFoldTestOpts(Opts, FoldFun) ->
-    Ref = open(),
-    Acc = eleveldb:fold(Ref, FoldFun, [], Opts),
-    ok = eleveldb:close(Ref),
-    lists:reverse(Acc).
 
 streamFoldTest(Filter, PutKeyFun) ->
     clearDb(),
@@ -446,22 +445,34 @@ fieldsMatching(Vals, Field, CompVal, CompFun) ->
 %% Actual tests begin here
 %%=======================================================================
 
+%%=======================================================================
 %% Test that we can pack and unpack erlang/msgpack-encoded objects
+%%=======================================================================
 
 packObj_test() ->
+    io:format("packObj_test~n"),
     Obj = new(<<"bucket">>, <<"key">>, [{<<"field1">>, 1}, {<<"field2">>, 2.123}]),
     PackedErl = to_binary(v1, Obj, erlang),
     PackedMsg = to_binary(v1, Obj, msgpack),
     ObjErl = from_binary(<<"bucket">>, <<"key">>, PackedErl, erlang),
     ObjMsg = from_binary(<<"bucket">>, <<"key">>, PackedMsg, msgpack),
     Res = (ObjErl == Obj) and (ObjMsg == Obj),
-    ?assert(Res).
+    ?assert(Res),
+    Res.
+
+%%=======================================================================
+%% Operations tests
+%%=======================================================================
+
+%%-----------------------------------------------------------------------
+%% Utilities needed for operations tests
+%%-----------------------------------------------------------------------
 
 putKeyNormalOps(Ref) ->
-    addKey(Ref, 1, [{<<"f1">>, 1}, {<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
-    addKey(Ref, 2, [{<<"f1">>, 2}, {<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
-    addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
-    addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
+    addKey(Ref, 1, [{<<"f1">>, 1}, {<<"f2">>, <<"test1">>}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
+    addKey(Ref, 2, [{<<"f1">>, 2}, {<<"f2">>, <<"test2">>}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
+    addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, <<"test3">>}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
+    addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, <<"test4">>}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
 
 defaultEvalFn({N,Nmatch}) ->
     (N > 0) and (N == Nmatch).
@@ -522,13 +533,23 @@ anyCompOps(Args) ->
     gtOps(Args) or gteOps(Args) or
 	ltOps(Args) or lteOps(Args).
 
+%%------------------------------------------------------------
+%% Test timestamp operations
+%%------------------------------------------------------------
+
 timestampOps_test() ->
     io:format("timestampOps_test~n"),
     F = <<"f6">>,
     Val = 2000,
     PutFn = fun putKeyNormalOps/1,
     EvalFn = fun defaultEvalFn/1,
-    allOps({F, {Val}, timestamp, PutFn, EvalFn}).
+    Res = allOps({F, {Val}, timestamp, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% Test integer operations
+%%------------------------------------------------------------
 
 intOps_test() ->
     io:format("intOps_test~n"),
@@ -536,15 +557,27 @@ intOps_test() ->
     Val = 3,
     PutFn = fun putKeyNormalOps/1,
     EvalFn = fun defaultEvalFn/1,
-    allOps({F, {Val}, integer, PutFn, EvalFn}).
+    Res = allOps({F, {Val}, integer, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% Test binary operations
+%%------------------------------------------------------------
 
 binaryOps_test() ->
     io:format("binaryOps_test~n"),
     F = <<"f2">>,
-    Val = "test3",
+    Val = <<"test3">>,
     PutFn = fun putKeyNormalOps/1,
     EvalFn = fun defaultEvalFn/1,
-    eqOpsOnly({F, {Val}, binary, PutFn, EvalFn}) and (anyCompOps({F, {Val}, binary, PutFn, EvalFn}) == false).
+    Res = eqOpsOnly({F, {Val}, binary, PutFn, EvalFn}) and (anyCompOps({F, {Val}, binary, PutFn, EvalFn}) == false),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% Test float operations
+%%------------------------------------------------------------
 
 floatOps_test() ->
     io:format("floatOps_test~n"),
@@ -552,7 +585,13 @@ floatOps_test() ->
     Val = 3.0,
     PutFn = fun putKeyNormalOps/1,
     EvalFn = fun defaultEvalFn/1,
-    allOps({F, {Val}, float, PutFn, EvalFn}).
+    Res = allOps({F, {Val}, float, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% Test boolean operations
+%%------------------------------------------------------------
 
 boolOps_test() ->
     io:format("boolOps_test~n"),
@@ -560,7 +599,13 @@ boolOps_test() ->
     Val = true,
     PutFn = fun putKeyNormalOps/1,
     EvalFn = fun defaultEvalFn/1,
-    eqOpsOnly({F, {Val}, boolean, PutFn, EvalFn}) and (anyCompOps({F, {Val}, boolean, PutFn, EvalFn}) == false).
+    Res = eqOpsOnly({F, {Val}, boolean, PutFn, EvalFn}) and (anyCompOps({F, {Val}, boolean, PutFn, EvalFn}) == false),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% Test any operations
+%%------------------------------------------------------------
 
 anyOps_test() ->
     io:format("anyOps_test~n"),
@@ -569,15 +614,24 @@ anyOps_test() ->
     CompVal = [1,2,3],
     PutFn  = fun sut:putKeyNormalOps/1,
     EvalFn = fun sut:defaultEvalFn/1,
-    eqOpsOnly({F, {Val, CompVal}, any, PutFn, EvalFn}) and (anyCompOps({F, {Val, CompVal}, any, PutFn, EvalFn}) == false).
+    Res = eqOpsOnly({F, {Val, CompVal}, any, PutFn, EvalFn}) and (anyCompOps({F, {Val, CompVal}, any, PutFn, EvalFn}) == false),
+    ?assert(Res),
+    Res.
 
-%normalOps_test() ->
-%    io:format("normalOps_test~n"),
-%    intOps_test() and binaryOps_test() and boolOps_test() and floatOps_test() and anyOps_test() and timestampOps_test().
+%%------------------------------------------------------------
+%% All normal operations tests
+%%------------------------------------------------------------
+
+normalOpsTests() ->
+    intOps_test() and binaryOps_test() and boolOps_test() and floatOps_test() and anyOps_test() and timestampOps_test().
 
 %%=======================================================================
 %% Test AND + OR comparators
 %%=======================================================================
+
+%%------------------------------------------------------------
+%% Test AND operations
+%%------------------------------------------------------------
 
 andOps_test() ->
     io:format("andOps_test~n"),
@@ -589,7 +643,12 @@ andOps_test() ->
     {N1, NMatch1} = fieldsMatching(Keys, <<"f1">>, 2,   fun(V1,V2) -> V1 > V2 end),
     {N3, NMatch3} = fieldsMatching(Keys, <<"f3">>, 4.0, fun(V1,V2) -> V1 == V2 end),
     Res = (N1 == 1) and (NMatch1 == 1) and (N3 == 1) and (NMatch3 == 1),
-    ?assert(Res).
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% Test OR filtering
+%%------------------------------------------------------------
 
 orOps_test() ->
     io:format("orOps_test~n"),
@@ -601,20 +660,36 @@ orOps_test() ->
     {N1, NMatch1} = fieldsMatching(Keys, <<"f1">>, 2,   fun(V1,V2) -> V1 > V2 end),
     {N3, NMatch3} = fieldsMatching(Keys, <<"f3">>, 4.0, fun(V1,V2) -> V1 == V2 end),
     Res = (N1 == 2) and (NMatch1 == 2) and (N3 == 2) and (NMatch3 == 1),
-    ?assert(Res).
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% Test all AND + OR ops
+%%------------------------------------------------------------
+
+andOrOpsTests() ->
+    andOps_test() and orOps_test().
 
 %%=======================================================================
-%% Test malformed keys
+%% Abnormal operations testing
 %%=======================================================================
+
+%%-----------------------------------------------------------------------
+%% Utilities needed for abnormal ops
+%%-----------------------------------------------------------------------
 
 putKeyAbnormalOps(Ref) ->
-    addKey(Ref, 1, [{<<"f1">>,   1}, {<<"f2">>, "test1"}, {<<"f3">>,   1.0}, {<<"f4">>,  false}, {<<"f5">>, em([1,2,3])}, {<<"f6">>,  1000}]),
-    addKey(Ref, 2, [{<<"f1">>, 2.1}, {<<"f2">>, "test2"}, {<<"f3">>,   2.0}, {<<"f4">>,   true}, {<<"f5">>, em([2,3,4])}, {<<"f6">>, -2000}]),
-    addKey(Ref, 3, [{<<"f1">>,   3}, {<<"f2">>,       3}, {<<"f3">>, "3.0"}, {<<"f4">>,  false}, {<<"f5">>, em([3,4,5])}, {<<"f6">>,  3000}]),
-    addKey(Ref, 4, [{<<"f1">>,   4}, {<<"f2">>, "test4"}, {<<"f3">>,   4.0}, {<<"f4">>, "true"}, {<<"f5">>,           4}, {<<"f6">>,  4000}]).
+    addKey(Ref, 1, [{<<"f1">>,   1}, {<<"f2">>, <<"test1">>}, {<<"f3">>,   1.0}, {<<"f4">>,  false}, {<<"f5">>, em([1,2,3])}, {<<"f6">>,  1000}]),
+    addKey(Ref, 2, [{<<"f1">>, 2.1}, {<<"f2">>, <<"test2">>}, {<<"f3">>,   2.0}, {<<"f4">>,   true}, {<<"f5">>, em([2,3,4])}, {<<"f6">>, -2000}]),
+    addKey(Ref, 3, [{<<"f1">>,   3}, {<<"f2">>,           3}, {<<"f3">>, "3.0"}, {<<"f4">>,  false}, {<<"f5">>, em([3,4,5])}, {<<"f6">>,  3000}]),
+    addKey(Ref, 4, [{<<"f1">>,   4}, {<<"f2">>, <<"test4">>}, {<<"f3">>,   4.0}, {<<"f4">>, "true"}, {<<"f5">>,           4}, {<<"f6">>,  4000}]).
 
 abnormalEvalFn({N,_Nmatch}) ->
     (N == 0).
+
+%%-----------------------------------------------------------------------
+%% Test reading data that are not all integers as integers
+%%-----------------------------------------------------------------------
 
 badInt_test() ->
     io:format("badInt_test~n"),
@@ -622,7 +697,13 @@ badInt_test() ->
     Val = 0,
     PutFn = fun putKeyAbnormalOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    ?assert(gtOps({F, {Val}, integer, PutFn, EvalFn})).
+    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+%%-----------------------------------------------------------------------
+%% Test reading data that are not all timestamps as timestamps
+%%-----------------------------------------------------------------------
 
 badTimestamp_test() ->
     io:format("badTimestamp_test~n"),
@@ -630,14 +711,26 @@ badTimestamp_test() ->
     Val = 2000,
     PutFn = fun putKeyAbnormalOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    ?assert(gtOps({F, {Val}, timestamp, PutFn, EvalFn})).
+    Res = gtOps({F, {Val}, timestamp, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+%%-----------------------------------------------------------------------
+%% Test reading data that are not all binarys as binarys
+%%-----------------------------------------------------------------------
 
 badBinary_test() ->
     io:format("badBinary_test~n"),
     F = <<"f2">>,
-    Val = "test",
+    Val = <<"test">>,
     PutFn = fun putKeyAbnormalOps/1,
-    ?assert(neqOps({F, {Val}, binary, PutFn, fun({N,_}) -> N == 4 end})).
+    Res = neqOps({F, {Val}, binary, PutFn, fun({N,_}) -> N == 4 end}),
+    ?assert(Res),
+    Res.
+
+%%-----------------------------------------------------------------------
+%% Test reading data that are not all floats as floats
+%%-----------------------------------------------------------------------
 
 badFloat_test() ->
     io:format("badFloat_test~n"),
@@ -645,7 +738,13 @@ badFloat_test() ->
     Val = 0.0,
     PutFn = fun putKeyAbnormalOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    ?assert(gtOps({F, {Val}, float, PutFn, EvalFn})).
+    Res = gtOps({F, {Val}, float, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+%%-----------------------------------------------------------------------
+%% Test reading data that are not all booleans as booleans
+%%-----------------------------------------------------------------------
 
 badBool_test() ->
     io:format("badBool_test~n"),
@@ -653,7 +752,13 @@ badBool_test() ->
     Val = false,
     PutFn = fun putKeyAbnormalOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    ?assert(eqOps({F, {Val}, boolean, PutFn, EvalFn})).
+    Res = eqOps({F, {Val}, boolean, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+%%-----------------------------------------------------------------------
+%% Test reading any data: comparison should succeed!
+%%-----------------------------------------------------------------------
 
 badAny_test() ->
     io:format("badAny_test~n"),
@@ -661,15 +766,24 @@ badAny_test() ->
     Val = sut:em([1,2,3]),
     CompVal = [1,2,3],
     PutFn  = fun sut:putKeyNormalOps/1,
-    ?assert(neqOps({F, {Val, CompVal}, any, PutFn, fun({N,_}) -> N == 3 end})).
+    Res = neqOps({F, {Val, CompVal}, any, PutFn, fun({N,_}) -> N == 3 end}),
+    ?assert(Res),
+    Res.
 
-%abnormalOps_test() ->
-%    io:format("abnormalOps_test~n"),
-%    badInt_test() and badBinary_test() and badFloat_test() and badBool_test() and badTimestamp_test() and badAny_test().
+%%------------------------------------------------------------
+%% All abnormal ops tests
+%%------------------------------------------------------------
+
+abnormalOpsTests() ->
+    badInt_test() and badBinary_test() and badFloat_test() and badBool_test() and badTimestamp_test() and badAny_test().
 
 %%=======================================================================
 %% Test various exceptional conditions
 %%=======================================================================
+
+%%-----------------------------------------------------------------------
+%% Utilities needed for exceptional testing
+%%-----------------------------------------------------------------------
 
 putKeyMissingOps(Ref) ->
     addKey(Ref, 1, [{<<"f1">>, 1}, {<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
@@ -677,7 +791,9 @@ putKeyMissingOps(Ref) ->
     addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
     addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
 
+%%------------------------------------------------------------
 %% Valid filter, but values are missing for referenced keys
+%%------------------------------------------------------------
 
 missingKey_test() ->
     io:format("missingKey_test~n"),
@@ -685,9 +801,13 @@ missingKey_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    ?assert(gtOps({F, {Val}, integer, PutFn, EvalFn})).
+    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
 
+%%------------------------------------------------------------
 %% Filter references a key that doesn't exist
+%%------------------------------------------------------------
 
 filterRefMissingKey_test() ->
     io:format("filterRefMissingKey_test~n"),
@@ -695,9 +815,13 @@ filterRefMissingKey_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    ?assert(gtOps({F, {Val}, integer, PutFn, EvalFn})).
+    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
 
+%%------------------------------------------------------------
 %% Filter specified the wrong type for a valid key
+%%------------------------------------------------------------
 
 filterRefWrongType_test() ->
     io:format("filterRefWrongType_test~n"),
@@ -705,9 +829,13 @@ filterRefWrongType_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    ?assert(gtOps({F, {Val}, integer, PutFn, EvalFn})).
+    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
 
+%%------------------------------------------------------------
 %% Filter specifies type that's not supported
+%%------------------------------------------------------------
 
 filterRefInvalidType_test() ->
     io:format("filterRefInvalidType_test~n"),
@@ -715,13 +843,43 @@ filterRefInvalidType_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    ?assert(gtOps({F, {Val}, map, PutFn, EvalFn})).
+    Res = gtOps({F, {Val}, map, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% All exceptional tests
+%%------------------------------------------------------------
+
+exceptionalTests() ->
+    missingKey_test() and filterRefMissingKey_test() and 
+	filterRefWrongType_test() and filterRefInvalidType_test().
 
 %%=======================================================================
 %% Test scanning
 %%=======================================================================
 
-%% Make sure that we iterate over the right number of keys
+%%-----------------------------------------------------------------------
+%% Utilities needed for scanning tests
+%%-----------------------------------------------------------------------
+
+streamFoldTestOpts(Opts, FoldFun) ->
+    Ref = open(),
+    try
+	Acc = eleveldb:fold(Ref, FoldFun, [], Opts),
+	ok = eleveldb:close(Ref),
+	Keys = lists:reverse(Acc)
+    catch
+	error:Error ->
+	    io:format("Caught an error: closing db~n"),
+	    ok = eleveldb:close(Ref),
+	    error(Error)
+    end.
+
+%%------------------------------------------------------------
+%% Make sure that we iterate over the right number of keys when
+%% iterating over all keys
+%%------------------------------------------------------------
 
 scanAll_test() ->
     N = 100,
@@ -732,10 +890,14 @@ scanAll_test() ->
 	      end,
     Keys = streamFoldTestOpts(Opts, FoldFun),
     Len = length(Keys),
-    ?assert(Len =:= N),
-    Keys.
+    Res = (Len =:= N),
+    ?assert(Res),
+    Res.
 
-%% Make sure that we iterate over the right number of keys
+%%------------------------------------------------------------
+%% Make sure that we iterate over the right number of keys when
+%% requesting start and end keys
+%%------------------------------------------------------------
 
 scanSome_test() ->
     N = 100,
@@ -751,10 +913,13 @@ scanSome_test() ->
 
     Keys = streamFoldTestOpts(Opts, FoldFun),
     Len = length(Keys),
-    ?assert(Len =:= N-2),
-    Keys.
+    Res = (Len =:= N-2),
+    ?assert(Res),
+    Res.
 
+%%------------------------------------------------------------
 %% Don't include the first key
+%%------------------------------------------------------------
 
 scanNoStart_test() ->
     N = 100,
@@ -770,7 +935,13 @@ scanNoStart_test() ->
     Keys = streamFoldTestOpts(Opts, FoldFun),
     [Key1 | _Rest] = Keys,
     Len = length(Keys),
-    ?assert((Len =:= N-1) and (Key1 =:= <<"key002">>)).
+    Res = ((Len =:= N-1) and (Key1 =:= <<"key002">>)),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% Don't include the start or end key
+%%------------------------------------------------------------
 
 scanNoStartOrEnd_test() ->
     N = 100,
@@ -791,7 +962,20 @@ scanNoStartOrEnd_test() ->
     KeyLast = lists:last(Keys),
     
     Len = length(Keys),
-    ?assert((Len =:= N-2) and (KeyFirst =:= <<"key002">>) and (KeyLast =:= <<"key099">>)).
+    Res = ((Len =:= N-2) and (KeyFirst =:= <<"key002">>) and (KeyLast =:= <<"key099">>)),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% All scanning tests
+%%------------------------------------------------------------
+
+scanTests() ->
+    scanAll_test() and scanSome_test() and scanNoStart_test() and scanNoStartOrEnd_test().
+
+%%=======================================================================
+%% Encoding options tests
+%%=======================================================================
 
 %%------------------------------------------------------------
 %% This test should throw an exception because no encoding option was
@@ -812,15 +996,19 @@ noEncodingOptions_test() ->
 	
 	Keys = streamFoldTestOpts(Opts, FoldFun),
 	Len = length(Keys),
-	?assert(Len > 0)
+	Res = (Len > 0),
+	?assert(Res),
+	Res
     of
 	_ -> 
 	    io:format("Function returned ok.  Shouldn't have!"),
-	    ?assert(false)
+	    ?assert(false),
+	    false
     catch
 	error:Error ->
 	    io:format("Caught an error: ~p.  Ok.~n", [Error]),
-	    ?assert(true)
+	    ?assert(true),
+	    true
     end.
 
 %%------------------------------------------------------------
@@ -843,19 +1031,61 @@ badEncodingOptions_test() ->
 	
 	Keys = streamFoldTestOpts(Opts, FoldFun),
 	Len = length(Keys),
-	?assert(Len > 0)
+	Res = (Len > 0),
+	?assert(Res),
+	Res
     of
 	_ -> 
 	    io:format("Function returned ok.  Shouldn't have!"),
-	    ?assert(false)
+	    ?assert(false),
+	    false
     catch
 	error:Error ->
 	    io:format("Caught an error: ~p.  Ok.~n", [Error]),
-	    ?assert(true)
+	    ?assert(true),
+	    true
     end.
 
-       
-    
+%%------------------------------------------------------------
+%% All encoding options tests
+%%------------------------------------------------------------
 
+encodingOptionsTests() ->
+    noEncodingOptions_test() and badEncodingOptions_test().
 
+%%------------------------------------------------------------
+%% All tests in this file
+%%------------------------------------------------------------
 
+allTests() ->
+    packObj_test() and normalOpsTests() and abnormalOpsTests() and exceptionalTests() 
+	and scanTests()and encodingOptionsTests().
+
+%%=======================================================================
+%% Test code to filter & decode TS keys from a leveldb table
+%%=======================================================================
+
+readKeysFromTable(Table) ->    
+
+    Cond1 = {'=', {field, <<"user">>, binary},    {const, <<"user_1">>}},
+    Cond2 = {'<', {field, <<"time">>, timestamp}, {const, 11000000}},
+    Cond3 = {'>', {field, <<"time">>, timestamp}, {const,  9990000}},
+    Filter = {'and_', Cond1, {'and_', Cond2, Cond3}},
+    Opts=[{fold_method, streaming},
+	  {range_filter, Filter},
+	  {encoding, msgpack}],
+    io:format("Filter = ~p~n", [lists:flatten([Filter])]),
+    TableName = "/Users/eml/projects/riak/riak_end_to_end_timeseries/dev/dev1/data/leveldb/" ++ Table,
+    io:format("Attemping to open ~ts~n", [TableName]),
+    Ref = open(TableName),
+    Bucket = {<<"GeoCheckin">>, <<"GeoCheckin">>},
+    FoldFun = fun({_K,V}, _Acc) -> 
+		      Contents = getKeyVal(Bucket, <<"key">>, V),
+		      io:format("Val = ~p~n", [lists:flatten(Contents)])
+	      end,
+
+    eleveldb:fold(Ref, FoldFun, [], Opts),
+    ok = eleveldb:close(Ref).
+
+r() ->
+    readKeysFromTable("1096126227998177188652763624537212264741949407232").

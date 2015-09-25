@@ -401,8 +401,17 @@ struct ConstantValue<unsigned char*> : public ExpressionNode<unsigned char*> {
     const unsigned char* value_;
     size_t size_;
     
+    ConstantValue(std::vector<unsigned char>& buf) : 
+        ExpressionNode<unsigned char*>(DataType::UNKNOWN) {
+        initialize(&buf[0], buf.size());
+    }
+        
     ConstantValue(unsigned char* val, size_t size) : 
         ExpressionNode<unsigned char*>(DataType::UNKNOWN) {
+        initialize(val, size);
+    }
+
+    void initialize(unsigned char* val, size_t size) {
 
         // Constructor for const copies the value into an internal
         // buffer, since we are not guaranteed that the passed pointer
