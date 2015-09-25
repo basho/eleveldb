@@ -903,8 +903,8 @@ scanSome_test() ->
     N = 100,
     putKeysObj(N),
     Opts=[{fold_method, streaming},
-	  {first_key, <<"key002">>},
-	  {last_key,  <<"key099">>},
+	  {start_key, <<"key002">>},
+	  {end_key,  <<"key099">>},
 	  {end_inclusive,  true}],
 
     FoldFun = fun({K,_V}, Acc) -> 
@@ -926,7 +926,7 @@ scanNoStart_test() ->
     putKeysObj(N),
     Opts=[{fold_method, streaming},
 	  {start_inclusive, false},
-	  {first_key, <<"key001">>}],
+	  {start_key, <<"key001">>}],
 
     FoldFun = fun({K,_V}, Acc) -> 
 		      [K | Acc]
@@ -949,8 +949,8 @@ scanNoStartOrEnd_test() ->
     Opts=[{fold_method, streaming},
 	  {start_inclusive, false},
 	  {end_inclusive, false},
-	  {first_key, <<"key001">>},
-	  {last_key,   <<"key100">>}],
+	  {start_key, <<"key001">>},
+	  {end_key,   <<"key100">>}],
 
     FoldFun = fun({K,_V}, Acc) -> 
 		      [K | Acc]
