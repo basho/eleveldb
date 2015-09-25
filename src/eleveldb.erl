@@ -164,8 +164,8 @@ init() ->
 -type fold_options() :: [read_option() |
 			 {encoding, encoding()} |
                          {fold_method, fold_method()} |
-                         {first_key, binary()} |
-                         {last_key, binary() | undefined} |
+                         {start_key, binary()} |
+                         {end_key, binary() | undefined} |
                          {start_inclusive, boolean()} |
                          {end_inclusive, boolean()} |
                          {limit, pos_integer()} |
@@ -408,8 +408,8 @@ fold(Ref, Fun, Acc0, Opts) ->
             {ok, Itr} = iterator(Ref, Opts),
             do_itr_fold(Itr, Fun, Acc0, Opts);
         streaming ->
-            SKey = proplists:get_value(first_key, Opts, <<>>),
-            EKey = proplists:get_value(last_key, Opts),
+            SKey = proplists:get_value(start_key, Opts, <<>>),
+            EKey = proplists:get_value(end_key, Opts),
             {ok, StreamRef} = streaming_start(Ref, SKey, EKey, Opts),
             {_, AckRef} = StreamRef,
             try
@@ -427,8 +427,8 @@ foldtest1(Ref, Fun, Acc0, Opts) ->
             {ok, Itr} = iterator(Ref, Opts),
             do_itr_fold(Itr, Fun, Acc0, Opts);
         streaming ->
-            SKey = proplists:get_value(first_key, Opts, <<>>),
-            EKey = proplists:get_value(last_key, Opts),
+            SKey = proplists:get_value(start_key, Opts, <<>>),
+            EKey = proplists:get_value(end_key, Opts),
             {ok, StreamRef} = streaming_start(Ref, SKey, EKey, Opts),
             {_, AckRef} = StreamRef,
             try
@@ -441,7 +441,7 @@ foldtest1(Ref, Fun, Acc0, Opts) ->
 
 emlfold1(Ref, _, _, Opts) ->
     {ok, Itr} = iterator(Ref, Opts),
-    Start = proplists:get_value(first_key, Opts, first),
+    Start = proplists:get_value(start_key, Opts, first),
     true = is_binary(Start) or (Start == first),
     iterator_move(Itr, Start).
 
@@ -562,10 +562,10 @@ add_open_defaults(Opts) ->
 
 do_itr_fold(Itr, Fun, Acc0, Opts) ->
     try
-        %% Extract {first_key, binary()} and seek to that key as a starting
+        %% Extract {start_key, binary()} and seek to that key as a starting
         %% point for the iteration. The folding function should use throw if it
         %% wishes to terminate before the end of the fold.
-        Start = proplists:get_value(first_key, Opts, first),
+        Start = proplists:get_value(start_key, Opts, first),
         true = is_binary(Start) or (Start == first),
         fold_loop(iterator_move(Itr, Start), Itr, Fun, Acc0)
     after
@@ -678,7 +678,7 @@ fold_from_key_test_Z() ->
     ok = ?MODULE:put(Ref, <<"hij">>, <<"789">>, []),
     [<<"def">>, <<"hij">>] = lists:reverse(fold_keys(Ref,
                                                      fun(K, Acc) -> [K | Acc] end,
-                                                     [], [{first_key, <<"d">>}])).
+                                                     [], [{start_key, <<"d">>}])).
 
 destroy_test() -> [{destroy_test_Z(), l} || l <- lists:seq(1, 20)].
 destroy_test_Z() ->
