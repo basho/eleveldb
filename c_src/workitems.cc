@@ -487,19 +487,40 @@ RangeScanTask::RangeScanTask(ErlNifEnv * caller_env,
                              RangeScanOptions & options,
                              SyncObject * sync_obj)
 : WorkTask(caller_env, caller_ref, db_handle),
-    options_(options),
-    start_key_(start_key),
-    has_end_key_(bool(end_key)),
-    sync_obj_(sync_obj)
+  options_(options),
+  start_key_(start_key),
+  has_end_key_(bool(end_key)),
+  sync_obj_(sync_obj),
+  range_filter_(0),
+  extractor_(0)
 {
     if (end_key) {
         end_key_ = *end_key;
     }
+
+    if(options_.useRangeFilter_) {
+        if(options_.encodingType_ == Encoding::MSGPACK)
+            extractor_ = new ExtractorMsgpack();
+        else {
+            ThrowRuntimeError("An invalid object encoding was specified");
+        }
+    }
+
     sync_obj_->RefInc();
 }
 
 RangeScanTask::~RangeScanTask()
 {
+    if(range_filter_) {
+        delete range_filter_;
+        range_filter_ = 0;
+    }
+    
+    if(extractor_) {
+        delete extractor_;
+        extractor_ = 0;
+    }
+
     sync_obj_->RefDec();
 }
 
@@ -773,16 +794,16 @@ work_result RangeScanTask::operator()()
 	    // set filter_passed to false to ignore this key.
 	    // ------------------------------------------------------------
 
-	    if(!options_.extractor_->typesParsed_) {
+	    if(!extractor_->typesParsed_) {
 
                 //------------------------------------------------------------
                 // Only attempt to parse the data if it is correctly
                 // formatted, otherwise we would throw an error. 
                 //------------------------------------------------------------
 
-                if(options_.extractor_->riakObjectContentsCanBeParsed(value.data(), value.size())) {
+                if(extractor_->riakObjectContentsCanBeParsed(value.data(), value.size())) {
              
-                    options_.extractor_->parseRiakObjectTypes(value.data(), value.size());
+                    extractor_->parseRiakObjectTypes(value.data(), value.size());
 
                     //------------------------------------------------------------
                     // Parse the filter here.  We trap the throw error
@@ -791,9 +812,9 @@ work_result RangeScanTask::operator()()
                     //------------------------------------------------------------
 
                     try {
-                        options_.range_filter_ = 
+                        range_filter_ = 
                             parse_range_filter_opts(options_.env_, 
-                                                    options_.rangeFilterSpec_, *(options_.extractor_),
+                                                    options_.rangeFilterSpec_, *(extractor_),
                                                     throwIfBadFilter);
                     } catch(std::runtime_error& err) {
                         std::ostringstream os;
@@ -823,7 +844,7 @@ work_result RangeScanTask::operator()()
 	    // extracting the data or evaluating the filter
 	    //------------------------------------------------------------
 
-            if(options_.range_filter_) {
+            if(range_filter_) {
 
                 //------------------------------------------------------------
                 // Also check if the key can be parsed.  If TS-encoded
@@ -831,15 +852,15 @@ work_result RangeScanTask::operator()()
                 // causes us to ignore the non-TS-encoded data
                 //------------------------------------------------------------
 
-                if(options_.extractor_->riakObjectContentsCanBeParsed(value.data(), value.size())) {
+                if(extractor_->riakObjectContentsCanBeParsed(value.data(), value.size())) {
 
-                    options_.extractor_->extractRiakObject(value.data(), value.size(), options_.range_filter_);
+                    extractor_->extractRiakObject(value.data(), value.size(), range_filter_);
             
                     //------------------------------------------------------------
                     // Now evaluate the filter, but only if we have a valid filter
                     //------------------------------------------------------------
             
-                    filter_passed = options_.range_filter_->evaluate();
+                    filter_passed = range_filter_->evaluate();
                 }
             }
 
