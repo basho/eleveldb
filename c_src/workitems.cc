@@ -494,9 +494,9 @@ RangeScanTask::RangeScanTask(ErlNifEnv * caller_env,
   range_filter_(0),
   extractor_(0)
 {
-    if (end_key) {
-        end_key_ = *end_key;
-    }
+    //------------------------------------------------------------
+    // Sanity checks
+    //------------------------------------------------------------
 
     if(options_.useRangeFilter_) {
         if(options_.encodingType_ == Encoding::MSGPACK)
@@ -504,6 +504,14 @@ RangeScanTask::RangeScanTask(ErlNifEnv * caller_env,
         else {
             ThrowRuntimeError("An invalid object encoding was specified");
         }
+    }
+
+    if(!sync_obj_) {
+        ThrowRuntimeError("Constructor was called with NULL SyncObject pointer");
+    }
+
+    if (end_key) {
+        end_key_ = *end_key;
     }
 
     sync_obj_->RefInc();

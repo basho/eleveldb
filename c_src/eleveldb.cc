@@ -224,7 +224,7 @@ struct EleveldbOptions
     std::string m_GlobalDataDir;
 
     EleveldbOptions()
-        : m_EleveldbThreads(51), m_EleveldbStreamThreads(20),
+        : m_EleveldbThreads(53), m_EleveldbStreamThreads(23),
           m_LeveldbImmThreads(0), m_LeveldbBGWriteThreads(0),
           m_LeveldbOverlapThreads(0), m_LeveldbGroomingThreads(0),
           m_TotalMemPercent(0), m_TotalMem(0),
@@ -1415,12 +1415,28 @@ streaming_start(ErlNifEnv * env,
         RangeScanTask::CreateSyncHandle(opts);
 
     ERL_NIF_TERM sync_ref = enif_make_resource(env, sync_handle);
+
     // Release so it's destroyed on GC.
+
     enif_release_resource(sync_handle);
 
-    RangeScanTask * task =
-        new RangeScanTask(env, reply_ref, db_ptr.get(),
-                          start_key, end_key_ptr, opts, sync_handle->sync_obj);
+    //------------------------------------------------------------
+    // Attempt to allocate a new RangeScanTask.  Internal options
+    // check is redundant with checkOptions() above, but I'm leaving
+    // it alone for now (the alternative is checking for NULL
+    // extractor_ elsewhere in the code).  Because this can throw in
+    // principle (although checkOptions() above will already have
+    // caught it) it is protected here
+    //------------------------------------------------------------
+
+    RangeScanTask* task = 0;
+    try {
+        task = new RangeScanTask(env, reply_ref, db_ptr.get(),
+                                 start_key, end_key_ptr, opts, sync_handle->sync_obj);
+    } catch(std::runtime_error& err) {
+	ERL_NIF_TERM msg_str  = enif_make_string(env, err.what(), ERL_NIF_LATIN1);
+        return enif_make_tuple3(env, eleveldb::ATOM_ERROR, reply_ref, msg_str);
+    }
 
     eleveldb_priv_data& priv =
         *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
