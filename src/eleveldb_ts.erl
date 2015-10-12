@@ -19,7 +19,7 @@ encode_key(Elements) when is_list(Elements) ->
 encode_k2([],                    Bin) -> Bin;
 encode_k2([{timestamp, Ts} | T], Bin) -> encode_k2(T, append(<<Ts:64>>, Bin));
 encode_k2([{float, F}      | T], Bin) -> encode_k2(T, append(<<F:64/float>>,  Bin));
-encode_k2([{int, I}        | T], Bin) -> encode_k2(T, append(<<I:64/integer>>, Bin));
+encode_k2([{integer, I}        | T], Bin) -> encode_k2(T, append(<<I:64/integer>>, Bin));
 encode_k2([{binary, B}     | T], Bin) when is_binary(B) -> 
     encode_k2(T, append(B, Bin));
 encode_k2([{binary, L}     | T], Bin) when is_list(L) ->
