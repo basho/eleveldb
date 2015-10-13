@@ -19,7 +19,7 @@ encode_key(Elements) when is_list(Elements) ->
 encode_k2([],                    Bin) -> Bin;
 encode_k2([{timestamp, Ts} | T], Bin) -> encode_k2(T, append(<<Ts:64>>, Bin));
 encode_k2([{float, F}      | T], Bin) -> encode_k2(T, append(<<F:64/float>>,  Bin));
-encode_k2([{int, I}        | T], Bin) -> encode_k2(T, append(<<I:64/integer>>, Bin));
+encode_k2([{integer, I}    | T], Bin) -> encode_k2(T, append(<<I:64/integer>>, Bin));
 encode_k2([{binary, B}     | T], Bin) when is_binary(B) -> 
     encode_k2(T, append(B, Bin));
 encode_k2([{binary, L}     | T], Bin) when is_list(L) ->
@@ -61,7 +61,7 @@ append(S, Bin) when is_binary(S)   andalso
 -ifdef(TEST).
 
 simple_encode_key_test() ->
-    Key = [{timestamp, 1}, {binary, <<"abc">>}, {float, 1.0}, {int, 9}],
+    Key = [{timestamp, 1}, {binary, <<"abc">>}, {float, 1.0}, {integer, 9}],
     Got = encode_key(Key),
     Exp = <<8,0,0,0,0,0,0,0,01,3,97,98,99,8,63,240,0,0,0,0,0,0,8,0,0,0,0,0,0,0,9>>,
     ?assertEqual(Exp, Got).
@@ -77,6 +77,6 @@ simple_decode_record_test() ->
     Got = decode_record(Rec),
     Exp = [{<<"field_1">>, 123}, {<<"field_2">>, "abdce"}],
     ?assertEqual(Exp, Got).
-    
+
 
 -endif.
