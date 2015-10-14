@@ -48,6 +48,8 @@
 #include "leveldb/translator.h"
 #include "leveldb/data_dictionary.h"
 
+#define TEST2
+
 #ifndef INCL_THREADING_H
     #include "threading.h"
 #endif
