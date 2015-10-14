@@ -579,7 +579,7 @@ struct FieldValue<unsigned char*>: public ExpressionNode<unsigned char*> {
     size_t size_;
 
     FieldValue(const std::string fieldName, DataType::Type type) : 
-        ExpressionNode<unsigned char*>(type), field_(fieldName), has_val_(false) {}
+    ExpressionNode<unsigned char*>(type), field_(fieldName), has_val_(false), value_(0), size_(0) {}
 
     inline virtual bool has_value() const {
         return has_val_;
