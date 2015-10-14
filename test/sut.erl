@@ -10,6 +10,7 @@
 
 -define(V1_VERS, 1).
 -define(MAGIC, 53).
+-define(MSGPACK_MAGIC, 2). %% Magic number for msgpack encoding                                  
 -define(EMPTY_VTAG_BIN, <<"e">>).
 -define(MD_VTAG,     <<"X-Riak-VTag">>).
 -define(MD_LASTMOD,  <<"X-Riak-Last-Modified">>).
@@ -205,9 +206,8 @@ encode(Bin, Enc) when Enc == erlang ->
 encode(Bin, Enc) when Enc == msgpack ->
     encode_msgpack(Bin).
 
-encode_msgpack(Bin) ->
-    MsgBin = msgpack:pack(Bin, [{format, jsx}]),
-    MsgBin.
+encode_msgpack(Bin) ->    
+    <<?MSGPACK_MAGIC:8/integer, (msgpack:pack(Bin, [{format, jsx}]))/binary>>.
 
 em(Bin) ->
     MsgBin = msgpack:pack(Bin, [{format, jsx}]),
@@ -257,7 +257,7 @@ sibs_of_binary(Count, SibsBin, Result, Enc) ->
     {Sib, SibsRest} = sib_of_binary(SibsBin, Enc),
     sibs_of_binary(Count-1, SibsRest, [Sib | Result], Enc).
 
-sib_of_binary(<<ValLen:32/integer, ValBin:ValLen/binary, MetaLen:32/integer, MetaBin:MetaLen/binary, Rest/binary>>, Enc) ->
+sib_of_binary(<<ValLen:32/integer, ValBin:ValLen/binary, MetaLen:32/integer, MetaBin:MetaLen/binary, Rest/binary>>, _Enc) ->
     <<LMMega:32/integer, LMSecs:32/integer, LMMicro:32/integer, VTagLen:8/integer, VTag:VTagLen/binary, Deleted:1/binary-unit:8, MetaRestBin/binary>> = MetaBin,
 
     MDList0 = deleted_meta(Deleted, []),
@@ -265,7 +265,7 @@ sib_of_binary(<<ValLen:32/integer, ValBin:ValLen/binary, MetaLen:32/integer, Met
     MDList2 = vtag_meta(VTag, MDList1),
     MDList = meta_of_binary(MetaRestBin, MDList2),
     MD = dict:from_list(MDList),
-    {#r_content{metadata=MD, value=decode(ValBin, Enc)}, Rest}.
+    {#r_content{metadata=MD, value=decode_maybe_binary(ValBin)}, Rest}.
 
 deleted_meta(<<1>>, MDList) ->
     [{?MD_DELETED, "true"} | MDList];
@@ -289,11 +289,6 @@ meta_of_binary(<<KeyLen:32/integer, KeyBin:KeyLen/binary, ValueLen:32/integer, V
     Value = decode_maybe_binary(ValueBin),
     meta_of_binary(Rest, [{Key, Value} | ResultList]).
 
-decode(ValBin, Enc) when Enc == erlang ->
-    decode_maybe_binary(ValBin);
-decode(ValBin, Enc) when Enc == msgpack ->
-    decode_msgpack(ValBin).
-
 decode_msgpack(ValBin) ->
     {ok, Unpacked} = msgpack:unpack(ValBin, [{format, jsx}]),
     Unpacked.
@@ -301,7 +296,9 @@ decode_msgpack(ValBin) ->
 decode_maybe_binary(<<1, Bin/binary>>) ->
     Bin;
 decode_maybe_binary(<<0, Bin/binary>>) ->
-    binary_to_term(Bin).
+    binary_to_term(Bin);
+decode_maybe_binary(<<?MSGPACK_MAGIC:8/integer, Bin/binary>>) ->
+    decode_msgpack(Bin).
 
 %%=======================================================================
 %% Generic utilities we need to run tests
