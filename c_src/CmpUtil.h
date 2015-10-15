@@ -81,6 +81,10 @@ namespace eleveldb {
 
         static void printMap(std::map<std::string, DataType::Type>& keyValMap);
 
+        // Return true if object is an empty erlang list
+
+        static bool isEmptyList(cmp_object_t* obj);
+
         // Object conversion functions
 
         static uint8_t  objectToUint8( cmp_object_t* obj);

@@ -480,7 +480,7 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
             // If there is no value for this field, do nothing
             //------------------------------------------------------------
 
-            if(cmp_object_is_nil(&obj)) {
+            if(CmpUtil::isEmptyList(&obj)) {
                 continue;
 
                 //------------------------------------------------------------
