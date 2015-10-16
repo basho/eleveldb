@@ -12,10 +12,6 @@ using namespace leveldb;
 
 namespace leveldb {
 
-#if 0
-Comparator::~Comparator() {};
-#endif
-
 namespace {
 class BytewiseComparatorImpl : public Comparator {
  public:
@@ -147,15 +143,15 @@ class TSComparator : public Comparator {
 
 }  // namespace
 
-static const Comparator* bytewiseComparator = new BytewiseComparatorImpl;
-static const Comparator* tsComparator       = new TSComparator;
+static const BytewiseComparatorImpl bytewiseComparator;
+static const TSComparator           tsComparator;
 
 const Comparator* GetBytewiseComparator() {
-  return bytewiseComparator;
+  return &bytewiseComparator;
 }
 
 const Comparator* GetTSComparator() {
-    return tsComparator;
+    return &tsComparator;
 }
 
 }  // namespace leveldb
