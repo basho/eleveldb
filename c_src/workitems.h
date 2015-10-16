@@ -35,6 +35,7 @@
 #include "leveldb/db.h"
 #include "leveldb/write_batch.h"
 
+#include "translator.h"
 
 #ifndef INCL_MUTEX_H
 #include "mutex.h"
@@ -54,6 +55,31 @@
 
 #include "filter.h"
 #include "extractor.h"
+
+//------------------------------------------------------------
+// Define a new OpenOptions struct that inherits from
+// leveldb::Options.  This allows us to use existing code for
+// passing around extended TS-specific options, without modifying the
+// underlying leveldb code.  
+//
+// Pointers in this class are handled by external code, since without
+// modifying the leveldb code we can't guarantee (for example) that a
+// destructor for this class would be called (so no
+// allocation/deletion is done here)
+//------------------------------------------------------------
+
+namespace leveldb {
+    struct OpenOptions : public leveldb::Options {
+
+        leveldb::KeyTranslator*   translator;
+        leveldb::BatchTranslator* batch_translator;
+        leveldb::DataDictionary*  data_dictionary;
+
+        OpenOptions() : translator(GetDefaultKeyTranslator()), 
+                        batch_translator(0), 
+                        data_dictionary(0) {}
+    };
+}
 
 namespace eleveldb {
 
@@ -154,9 +180,10 @@ namespace eleveldb {
 
         virtual work_result operator()();
 
-        OpenFamilyTask(const OpenFamilyTask &) = delete;
-        OpenFamilyTask & operator=(const OpenFamilyTask &) = delete;
-
+    private:
+        OpenFamilyTask();
+        OpenFamilyTask(const OpenFamilyTask &);
+        OpenFamilyTask & operator=(const OpenFamilyTask &);
     };
 
     class CloseFamilyTask : public WorkTask
@@ -173,8 +200,10 @@ namespace eleveldb {
 
         virtual work_result operator()();
 
-        CloseFamilyTask(const CloseFamilyTask &) = delete;
-        CloseFamilyTask & operator=(const CloseFamilyTask &) = delete;
+    private:
+        CloseFamilyTask();
+        CloseFamilyTask(const CloseFamilyTask &);
+        CloseFamilyTask & operator=(const CloseFamilyTask &);
 
     };
 
@@ -185,8 +214,8 @@ namespace eleveldb {
     class WriteTask : public WorkTask
     {
     protected:
-        std::unique_ptr<leveldb::WriteBatch>    batch;
-        std::unique_ptr<leveldb::WriteOptions>  options;
+        leveldb::WriteBatch*    batch;
+        leveldb::WriteOptions*  options;
         std::string family;
 
     public:

@@ -31,8 +31,9 @@
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
 #include "leveldb/perf_count.h"
-#include "leveldb/comparator.h"
-#include "leveldb/translator.h"
+
+#include "comparator.h"
+#include "translator.h"
 
 #include <iomanip>
 
@@ -176,6 +177,7 @@ OpenTask::operator()()
 }   // OpenTask::operator()
 
 
+#ifdef USE_TS_SPECIFIC
 OpenFamilyTask::OpenFamilyTask(
     ErlNifEnv* caller_env,
     ERL_NIF_TERM _caller_ref,
@@ -206,6 +208,7 @@ work_result CloseFamilyTask::operator()()
     leveldb::Status status = m_DbPtr->m_Db->CloseFamily(family_name_);
     return (status.ok() ? work_result(ATOM_OK) : work_result(local_env(), ATOM_ERROR_DB_WRITE, status));
 }
+#endif
 
 WriteTask::WriteTask(
         ErlNifEnv *_owner_env,
@@ -223,10 +226,15 @@ WriteTask::WriteTask(
 work_result WriteTask::operator()()
 {
     leveldb::Status status;
+
+#ifdef USER_TS_SPECIFIC
     if ( family.empty() )
         status = m_DbPtr->m_Db->Write(*options, batch.get());
     else
         status = m_DbPtr->m_Db->Write(family, *options, batch.get());
+#else
+    status = m_DbPtr->m_Db->Write(*options, batch);
+#endif
     return (status.ok() ? work_result(ATOM_OK) : work_result(local_env(), ATOM_ERROR_DB_WRITE, status));
 }
 
@@ -254,10 +262,16 @@ work_result GetTask::operator()()
     leveldb::Slice key_slice(m_Key);
 
     leveldb::Status status;
+
+#ifdef USE_TS_SPECIFIC
     if ( family.empty() )
         status = m_DbPtr->m_Db->Get(options, key_slice, &value);
     else
         status = m_DbPtr->m_Db->Get(family, options, key_slice, &value);
+#else
+    status = m_DbPtr->m_Db->Get(options, key_slice, &value);
+#endif
+
     if(!status.ok()){
         if ( status.IsNotFound() )
             return work_result(ATOM_NOT_FOUND);
@@ -697,13 +711,12 @@ work_result RangeScanTask::operator()()
     read_options.fill_cache = options_.fill_cache;
     read_options.verify_checksums = options_.verify_checksums;
     leveldb::Iterator * iter = m_DbPtr->m_Db->NewIterator(read_options);
-    const leveldb::Comparator * cmp = m_DbPtr->m_DbOptions->comparator;
 
     const leveldb::Slice skey_slice(start_key_);
     const leveldb::Slice ekey_slice(end_key_);
 
-    const leveldb::Options& db_options = m_DbPtr->m_Db->GetOptions();
-    leveldb::KeyTranslator* translator = db_options.translator;
+    const leveldb::Comparator* cmp        = m_DbPtr->m_DbOptions->comparator;
+    leveldb::KeyTranslator*    translator = ((leveldb::OpenOptions*)m_DbPtr->m_DbOptions)->translator;
 
     iter->Seek(skey_slice);
 

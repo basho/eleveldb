@@ -39,14 +39,18 @@
 #include "ErlUtil.h"
 
 #include "leveldb/db.h"
-#include "leveldb/comparator.h"
 #include "leveldb/env.h"
 #include "leveldb/write_batch.h"
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
 #include "leveldb/perf_count.h"
-#include "leveldb/translator.h"
-#include "leveldb/data_dictionary.h"
+
+#include "comparator.h"
+#include "translator.h"
+
+#ifdef USE_TS_SPECIFIC
+    #include "data_dictionary.h"
+#endif
 
 #ifndef INCL_THREADING_H
     #include "threading.h"
@@ -259,6 +263,8 @@ public:
     EleveldbOptions m_Opts;
     eleveldb::eleveldb_thread_pool thread_pool;
     eleveldb::eleveldb_thread_pool stream_thread_pool;
+
+#ifdef USE_TS_SPECIFIC
     leveldb::DataDictionary data_dictionary;
 
     explicit eleveldb_priv_data(EleveldbOptions & Options)
@@ -266,6 +272,12 @@ public:
         stream_thread_pool(Options.m_EleveldbStreamThreads),
         data_dictionary(Options.m_GlobalDataDir)
         {}
+#else
+    explicit eleveldb_priv_data(EleveldbOptions & Options)
+      : m_Opts(Options), thread_pool(Options.m_EleveldbThreads),
+        stream_thread_pool(Options.m_EleveldbStreamThreads)
+        {}
+#endif
 
 private:
     eleveldb_priv_data();                                      // no default constructor
@@ -522,14 +534,19 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         {
             if (option[1] == eleveldb::ATOM_TRUE)
             {
-                opts.comparator = leveldb::GetTSComparator();
+#ifdef USE_TS_SPECIFIC
+                leveldb::OpenOptions& oopts = (leveldb::OpenOptions&) opts;
+                oopts.comparator = leveldb::GetTSComparator();
                 eleveldb_priv_data& priv =
                     *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-                opts.data_dictionary = &priv.data_dictionary;
+
+                oopts.data_dictionary = &priv.data_dictionary;
+
                 leveldb::TSTranslator * translator =
-                    new leveldb::TSTranslator(opts.data_dictionary);
-                opts.translator = translator;
-                opts.batch_translator = translator;
+                    new leveldb::TSTranslator(oopts.data_dictionary);
+                oopts.translator = translator;
+                oopts.batch_translator = translator;
+#endif
             }
         }
     }
@@ -743,7 +760,8 @@ async_open(
 
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
-    leveldb::Options *opts = new leveldb::Options;
+    leveldb::Options *opts = (leveldb::Options*) new leveldb::OpenOptions;
+
     fold(env, argv[2], parse_open_option, *opts);
     opts->fadvise_willneed = priv.m_Opts.m_FadviseWillNeed;
 
@@ -805,15 +823,16 @@ submit_to_thread_queue(eleveldb::WorkTask *work_item, ErlNifEnv* env, ERL_NIF_TE
 
 ERL_NIF_TERM
 convert_binary_batch( ErlNifEnv * env, ERL_NIF_TERM bin_term,
-                      leveldb::DB * db, leveldb::WriteBatch * write_batch)
+                      DbObject* db, leveldb::WriteBatch * write_batch)
 {
     ErlNifBinary bin;
     enif_inspect_binary(env, bin_term, &bin);
     leveldb::Slice input((const char *)bin.data, bin.size);
 
     leveldb::Status s;
-    leveldb::BatchTranslator * batch_translator =
-        db->GetOptions().batch_translator;
+    leveldb::OpenOptions* oopts = (leveldb::OpenOptions*) db->m_DbOptions;
+    leveldb::BatchTranslator* batch_translator = oopts->batch_translator;
+
     if (batch_translator) {
         s = batch_translator->TranslateBatch(input, write_batch);
     } else {
@@ -837,6 +856,7 @@ async_open_family(
     int argc,
     const ERL_NIF_TERM argv[])
 {
+#ifdef USE_TS_SPECIFIC
     const ERL_NIF_TERM& caller_ref = argv[0];
     const ERL_NIF_TERM& db_ref     = argv[1];
     const ERL_NIF_TERM& family_name_ref = argv[2];
@@ -861,6 +881,13 @@ async_open_family(
     eleveldb::OpenFamilyTask* work_item = new eleveldb::OpenFamilyTask(env, caller_ref,
                                                             db_ptr.get(), family_name, opts);
     return submit_to_thread_queue(work_item, env, caller_ref);
+#else
+
+    // Not currently supporting series/family operations -- return
+    // error
+
+    return ATOM_ERROR;
+#endif
 }
 
 ERL_NIF_TERM
@@ -869,6 +896,7 @@ async_close_family(
     int argc,
     const ERL_NIF_TERM argv[])
 {
+#ifdef USE_TS_SPECIFIC
     const ERL_NIF_TERM& caller_ref = argv[0];
     const ERL_NIF_TERM& db_ref     = argv[1];
     const ERL_NIF_TERM& family_name_ref = argv[2];
@@ -885,6 +913,12 @@ async_close_family(
     eleveldb::CloseFamilyTask* work_item = new eleveldb::CloseFamilyTask(env, caller_ref,
                                                             db_ptr.get(), family_name);
     return submit_to_thread_queue(work_item, env, caller_ref);
+#else
+    // Not currently supporting series/family operations -- return
+    // error
+
+    return ATOM_ERROR;
+#endif
 }
 
 ERL_NIF_TERM
@@ -897,7 +931,7 @@ async_write(
     ERL_NIF_TERM handle_ref;
     ERL_NIF_TERM action_ref;
     ERL_NIF_TERM opts_ref  ;
-    ERL_NIF_TERM family_name_ref;
+    ERL_NIF_TERM family_name_ref=0;
     bool hasFamily = false;
     if ( argc ==  4 ){
         caller_ref = argv[0];
@@ -914,6 +948,13 @@ async_write(
         action_ref = argv[3];
         opts_ref   = argv[4];
 
+#ifndef USE_TS_SPECIFIC
+
+        // Not currently supporting family/series operations -- return
+        // error
+
+        return ATOM_ERROR;
+#endif
     }
     char family_name[4096];
     family_name[0] = 0;
@@ -931,8 +972,8 @@ async_write(
         return send_reply(env, caller_ref, error_einval(env));
     // Construct a write batch:
     leveldb::WriteBatch* batch = new leveldb::WriteBatch();
-    leveldb::KeyTranslator * translator =
-        db_ptr->m_Db->GetOptions().translator;
+    leveldb::OpenOptions*   oopts = (leveldb::OpenOptions*) db_ptr->m_DbOptions;
+    leveldb::KeyTranslator* translator = oopts->translator;
 
     // Seed the batch's data:
     ERL_NIF_TERM result;
@@ -940,7 +981,7 @@ async_write(
         WriteBatchItemAcc acc(translator, batch);
         result = fold(env, action_ref, write_batch_item, acc);
     } else {
-        result = convert_binary_batch(env, action_ref, db_ptr->m_Db, batch);
+        result = convert_binary_batch(env, action_ref, db_ptr.get(), batch);
     }
     if(eleveldb::ATOM_OK != result)
     {
@@ -967,7 +1008,7 @@ async_get(
     ERL_NIF_TERM dbh_ref   ;
     ERL_NIF_TERM key_ref   ;
     ERL_NIF_TERM opts_ref  ;
-    ERL_NIF_TERM family_name_ref;
+    ERL_NIF_TERM family_name_ref=0;
     bool hasFamily = false;
     if ( argc == 4 ){
         caller_ref = argv[0];
@@ -983,6 +1024,14 @@ async_get(
         family_name_ref = argv[2];
         key_ref    = argv[3];
         opts_ref   = argv[4];
+
+#ifndef USE_TS_SPECIFIC
+
+    // Not currently supporting series/family operations -- return
+    // error
+
+    return ATOM_ERROR;
+#endif
     }
 
     char family_name[4096];
