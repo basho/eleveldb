@@ -17,6 +17,9 @@ class Slice;
 // ordering. 
 
 extern const Comparator* GetBytewiseComparator();
+
+// Return a builtin comparator that is specific to TS keys
+
 extern const Comparator* GetTSComparator();
 
 }  // namespace leveldb
