@@ -237,9 +237,13 @@ GetTask::operator()()
     
     leveldb::Status status = m_DbPtr->m_Db->Get(options, key_slice, &value);
     
-    if(!status.ok())
-        return work_result(ATOM_NOT_FOUND);
-    
+    if(!status.ok()){
+        if ( status.IsNotFound() )
+            return work_result(ATOM_NOT_FOUND);
+        else
+            return work_result(local_env(), ATOM_ERROR, status);
+    }
+
     return work_result(local_env(), ATOM_OK, value_bin);
 }
 
