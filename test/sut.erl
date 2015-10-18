@@ -882,6 +882,7 @@ streamFoldTestOpts(Opts, FoldFun) ->
 %%------------------------------------------------------------
 
 scanAll_test() ->
+    io:format("scanAll_test~n"),
     N = 100,
     putKeysObj(N),
     Opts=[{fold_method, streaming}],
@@ -900,6 +901,7 @@ scanAll_test() ->
 %%------------------------------------------------------------
 
 scanSome_test() ->
+    io:format("scanSome_test~n"),
     N = 100,
     putKeysObj(N),
     Opts=[{fold_method, streaming},
@@ -922,6 +924,7 @@ scanSome_test() ->
 %%------------------------------------------------------------
 
 scanNoStart_test() ->
+    io:format("scanNoStart_test~n"),
     N = 100,
     putKeysObj(N),
     Opts=[{fold_method, streaming},
@@ -939,11 +942,25 @@ scanNoStart_test() ->
     ?assert(Res),
     Res.
 
+scanNoStartTest() ->
+    N = 100,
+    putKeysObj(N),
+    Opts=[{fold_method, streaming},
+	  {start_inclusive, false},
+	  {start_key, <<"key001">>}],
+
+    FoldFun = fun({K,_V}, Acc) -> 
+		      [K | Acc]
+	      end,
+
+    streamFoldTestOpts(Opts, FoldFun).
+
 %%------------------------------------------------------------
 %% Don't include the start or end key
 %%------------------------------------------------------------
 
 scanNoStartOrEnd_test() ->
+    io:format("scanNoStartOrEnd_test~n"),
     N = 100,
     putKeysObj(N),
     Opts=[{fold_method, streaming},
@@ -983,6 +1000,7 @@ scanTests() ->
 %%------------------------------------------------------------
 
 noEncodingOptions_test() ->
+    io:format("noEncodingOptions_test~n"),
     try
 	N = 100,
 	putKeysObj(N),
@@ -1017,6 +1035,7 @@ noEncodingOptions_test() ->
 %%------------------------------------------------------------
 
 badEncodingOptions_test() ->
+    io:format("badEncodingOptions_test~n"),
     try
 	N = 100,
 	putKeysObj(N),

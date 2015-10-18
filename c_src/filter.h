@@ -47,17 +47,28 @@ public:
 
     virtual void checkType(DataType::Type type) 
         {
+            // If the type is unknown, we can't check it
+
             if(type_ == DataType::UNKNOWN)
                 ThrowRuntimeError("Unable to check the type of this expression");
 
-            std::ostringstream os;
-            os << "Attempt to set the wrong type of value (" << type 
-               << ") for this expression, which is of type " << type_;
+            // If the type is a string, check that the passed type is
+            // either a string or a uchar_ptr
 
             if(type_ == DataType::STRING) {
-                if(!(type == DataType::STRING || type == DataType::UCHAR_PTR))
+                if(!(type == DataType::STRING || type == DataType::UCHAR_PTR)) {
+                    std::ostringstream os;
+                    os << "Attempt to set the wrong type of value (" << type 
+                       << ") for this expression, which is of type " << type_;
                     ThrowRuntimeError(os.str());
+                }
+
+                // Else just check if the types match
+
             } else if(type_ != type) {
+                std::ostringstream os;
+                os << "Attempt to set the wrong type of value (" << type 
+                   << ") for this expression, which is of type " << type_;
                 ThrowRuntimeError(os.str() << " this  = " << this);
             }
         }
@@ -97,7 +108,7 @@ public:
     
     BinaryExpression(ExpressionNode<TOperands>* left  = 0, 
                      ExpressionNode<TOperands>* right = 0, 
-                     DataType::Type type=DataType::UNKNOWN) : 
+                     DataType::Type type = DataType::UNKNOWN) : 
         ExpressionNode<TResult>(type), left_(left), right_(right) {};
     
     virtual ~BinaryExpression() {
@@ -282,6 +293,8 @@ public:
     }
 };
 
+// If we are managing a uchar ptr, do a bytewise comparison
+
 template<>
 class EqOperator<unsigned char*>: public BinaryExpression<bool, unsigned char*> {
 public:
@@ -334,6 +347,8 @@ public:
     }
 
 };
+
+// If managing a uchar ptr, do a bytewise comparison
 
 template<>
 class NeqOperator<unsigned char*>: public BinaryExpression<bool, unsigned char*> {
@@ -551,7 +566,9 @@ struct FieldValue<std::string>: public ExpressionNode<std::string> {
                                   DataType::Type type, size_t size=0) {
 
         // If called from a BinaryOperator parent, only set/check the
-        // value for the matching field
+        // value for the matching field. (This is because set_value
+        // from a binary will be called on both the left and right
+        // operands)
 
         if(key == field_) {
             checkType(type);
@@ -614,15 +631,17 @@ struct FieldValue<unsigned char*>: public ExpressionNode<unsigned char*> {
                                   DataType::Type type, size_t size=0) {
 
         // If called from a BinaryOperator parent, only set/check the
-        // value for the matching field
+        // value for the matching field (This is because set_value
+        // from a binary will be called on both the left and right
+        // operands)
 
         if(key == field_) {
             checkType(type);
 
             // set_value() for FieldValue nodes stores the external
-            // pointer, since these point to memory that is persistent
-            // in the leveldb key for the duration of the expression
-            // evaluation
+            // pointer, rather than copy, since these point to memory
+            // that is persistent in the leveldb key for the duration
+            // of the expression evaluation
 
             value_   = *((unsigned char**)val);
             size_    = size;
