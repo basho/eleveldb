@@ -83,8 +83,6 @@ static ErlNifFunc nif_funcs[] =
     {"streaming_stop", 1, eleveldb::streaming_stop},
 
     {"current_usec",   0, eleveldb::currentMicroSeconds},
-    {"msgpacktest",    1, eleveldb::msgpacktest},
-    {"eniftest",       1, eleveldb::eniftest},
 };
 
 
@@ -1237,79 +1235,6 @@ streaming_start(ErlNifEnv * env,
 
 } // streaming_start
 
-ERL_NIF_TERM
-currentMicroSeconds(
-    ErlNifEnv* env,
-    int argc,
-    const ERL_NIF_TERM argv[])
-{
-  return enif_make_int64(env, getCurrentMicroSeconds());
-} // currentMicroSeconds
-
-ERL_NIF_TERM
-msgpacktest(
-    ErlNifEnv* env,
-    int argc,
-    const ERL_NIF_TERM argv[])
-{
-  try {
-
-      ExtractorMsgpack ext;
-      ErlNifBinary bin;
-      
-      enif_inspect_binary(env, argv[0], &bin);
-
-      std::map<std::string, DataType::Type> keyValMap = CmpUtil::parseMap((const char*)bin.data, bin.size);
-      CmpUtil::printMap(keyValMap);
-
-  } catch(std::runtime_error err) {
-      return enif_make_atom(env, err.what());
-  }
-  
-  return enif_make_atom(env, "ok");
-}
-
-ERL_NIF_TERM
-eniftest(
-    ErlNifEnv* env,
-    int argc,
-    const ERL_NIF_TERM argv[])
-{
-    ErlUtil erlUtil;
-    COUT(erlUtil.formatTerm(env, argv[0]));
-    return enif_make_atom(env, "ok");
-}
-
-
-ERL_NIF_TERM
-async_destroy(
-    ErlNifEnv* env,
-    int argc,
-    const ERL_NIF_TERM argv[])
-{
-    char db_name[4096];
-
-    if(!enif_get_string(env, argv[1], db_name, sizeof(db_name), ERL_NIF_LATIN1) ||
-       !enif_is_list(env, argv[2]))
-    {
-        return enif_make_badarg(env);
-    }   // if
-
-    ERL_NIF_TERM caller_ref = argv[0];
-
-    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-    leveldb::Options *opts = new leveldb::Options;
-    fold(env, argv[2], parse_open_option, *opts);
-
-    eleveldb::WorkTask *work_item = new eleveldb::DestroyTask(env, caller_ref,
-                                                              db_name, opts);
-
-    return submit_to_thread_queue(work_item, env, caller_ref);
-}   // async_destroy
-
-} // namespace eleveldb
-
 int64_t getCurrentMicroSeconds()
 {
 #if _POSIX_TIMERS >= 200801L
@@ -1330,6 +1255,41 @@ return static_cast<uint64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
 
 #endif
 }
+
+ERL_NIF_TERM
+currentMicroSeconds(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+  return enif_make_int64(env, getCurrentMicroSeconds());
+} // currentMicroSeconds
+
+ERL_NIF_TERM
+async_destroy(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    char db_name[4096];
+
+    if(!enif_get_string(env, argv[1], db_name, sizeof(db_name), ERL_NIF_LATIN1) ||
+       !enif_is_list(env, argv[2]))
+    {
+        return enif_make_badarg(env);
+    }   // if
+
+    ERL_NIF_TERM caller_ref = argv[0];
+
+    leveldb::Options *opts = new leveldb::Options;
+    fold(env, argv[2], parse_open_option, *opts);
+
+    eleveldb::WorkTask *work_item = new eleveldb::DestroyTask(env, caller_ref,
+                                                              db_name, opts);
+    return submit_to_thread_queue(work_item, env, caller_ref);
+}   // async_destroy
+
+} // namespace eleveldb
 
 /**
  * HEY YOU ... please make async

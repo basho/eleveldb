@@ -41,9 +41,7 @@
          parse_string/1,
          is_empty/1,
 	 encode/2,
-	 current_usec/0,
-	 msgpacktest/1,
-	 eniftest/1]).
+	 current_usec/0]).
 
 %% for testing
 -export([
@@ -333,12 +331,6 @@ do_streaming_fold_test1(StreamRef = {MsgRef, AckRef}, Fun, Acc) ->
     end.
 
 current_usec() ->
-    erlang:nif_error({error, not_loaded}).
-
-eniftest(_) ->
-    erlang:nif_error({error, not_loaded}).
-
-msgpacktest(_) ->
     erlang:nif_error({error, not_loaded}).
 
 parse_string(Bin) ->
