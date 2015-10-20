@@ -8,7 +8,6 @@
 #include <cmath>
 
 #include <arpa/inet.h>
-#include <xlocale.h>
 
 using namespace std;
 
@@ -145,26 +144,6 @@ bool ErlUtil::isString(ErlNifEnv* env, ERL_NIF_TERM term)
         return true;
         
         //------------------------------------------------------------
-        // If this is a binary, it _could_ be a string
-        //------------------------------------------------------------
-        
-    } else if(isBinary(env, term)) {
-        ErlNifBinary bin;
-
-        if(enif_inspect_binary(env, term, &bin) == 0) {
-            ThrowRuntimeError("Failed to inspect '" << formatTerm(env, term)
-                              << "' as a binary");
-        }
-
-        size = bin.size;
-        for(unsigned i=0; i < size; i++) {
-            if(!isprint_l(bin.data[i], LC_GLOBAL_LOCALE))
-                return false;
-        }
-
-        return true;
-
-        //------------------------------------------------------------
         // Erlang represents strings internally as lists, so use native
         // erlang conversion to check a list
         //------------------------------------------------------------
@@ -175,14 +154,71 @@ bool ErlUtil::isString(ErlNifEnv* env, ERL_NIF_TERM term)
             ThrowRuntimeError("Failed to get list length");
         }
 
+        // Note that enif_get_string expects the buffer size, not the
+        // string length, and will return less than the length of the
+        // string if the passed size isn't large enough to include the
+        // string + null terminator
+
         StringBuf sBuf(size);
+        return enif_get_string(env, term, sBuf.getBuf(), sBuf.size(), ERL_NIF_LATIN1);
+
+        //------------------------------------------------------------
+        // Else not a string
+        //------------------------------------------------------------
+
+    } else {
+        return false;
+    }
+}
+
+bool ErlUtil::isRepresentableAsString()
+{
+    checkTerm();
+    return isRepresentableAsString(term_);
+}
+
+bool ErlUtil::isRepresentableAsString(ERL_NIF_TERM term)
+{
+    checkEnv();
+    return isRepresentableAsString(env_, term);
+}
+
+bool ErlUtil::isRepresentableAsString(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    unsigned size=0;
+
+    //------------------------------------------------------------
+    // If this is an atom, it can be represented as a string
+    //------------------------------------------------------------
+
+    if(isAtom(env, term)) {
+        return true;
+        
+        //------------------------------------------------------------
+        // If this is a binary, it _could_ be a string
+        //------------------------------------------------------------
+        
+    } else if(isBinary(env, term)) {
+        return true;
+
+        //------------------------------------------------------------
+        // Erlang represents strings internally as lists, so use native
+        // erlang conversion to check that a list is a string
+        //------------------------------------------------------------
+
+    } else if(isList(env, term)) {
+
+        if(enif_get_list_length(env, term, &size) == 0) {
+            ThrowRuntimeError("Failed to get list length");
+        }
 
         // Note that enif_get_string expects the buffer size, not the
         // string length, and will return less than the length of the
         // string if the passed size isn't large enough to include the
         // string + null terminator
 
-        return enif_get_string(env, term, sBuf.getBuf(), sBuf.size(), ERL_NIF_LATIN1);
+        StringBuf sBuf(size+1);
+        return enif_get_string(env, term, sBuf.getBuf(), size+1, ERL_NIF_LATIN1);
 
         //------------------------------------------------------------
         // Else not a string
@@ -312,36 +348,6 @@ std::string ErlUtil::getString(ErlNifEnv* env, ERL_NIF_TERM term)
         return getAtom(env, term);
 
         //------------------------------------------------------------
-        // If this is a binary, it _could_ be a string
-        //------------------------------------------------------------
-
-
-    } else if(isBinary(env, term)) {
-        ErlNifBinary bin;
-
-        if(enif_inspect_binary(env, term, &bin) == 0) {
-            ThrowRuntimeError("Failed to inspect binary");
-        }
-
-        size = bin.size;
-
-        StringBuf sBuf(size+1);
-        char* buf = sBuf.getBuf();
-
-        for(unsigned i=0; i < size; i++) {
-
-            if(isprint_l(bin.data[i], LC_GLOBAL_LOCALE)) {
-                buf[i] = bin.data[i];
-            } else {
-                ThrowRuntimeError("Term '" << formatTerm(env, term) 
-                                  << "' is not a printable string");
-            }
-        }
-
-        buf[size] = '\0';
-        return buf;
-
-        //------------------------------------------------------------
         // Erlang represents strings internally as lists, so use native
         // erlang conversion to check a list
         //------------------------------------------------------------
@@ -369,6 +375,94 @@ std::string ErlUtil::getString(ErlNifEnv* env, ERL_NIF_TERM term)
         ThrowRuntimeError("Term '" << formatTerm(env, term) 
                           << "' cannot be interpreted as a string");
     }
+}
+
+std::string ErlUtil::getAsString()
+{
+    checkTerm();
+    return getAsString(term_);
+}
+
+std::string ErlUtil::getAsString(ERL_NIF_TERM term)
+{
+    checkEnv();
+    return getAsString(env_, term);
+}
+
+std::string ErlUtil::getAsString(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    //------------------------------------------------------------
+    // Atoms are represented as strings
+    //------------------------------------------------------------
+
+    if(isAtom(env, term)) {
+        return getAtom(env, term);
+
+        //------------------------------------------------------------
+        // We allow generic binaries to be interpreted as strings
+        //------------------------------------------------------------
+
+    } else if(isBinary(env, term)) {
+        return getBinaryAsString(env, term);
+
+        //------------------------------------------------------------
+        // Erlang represents strings internally as lists, so use native
+        // erlang conversion to check a list
+        //------------------------------------------------------------
+
+    } else if(isList(env, term)) {
+        return getListAsString(env, term);
+
+        //------------------------------------------------------------
+        // Else not a string
+        //------------------------------------------------------------
+
+    } else {
+        ThrowRuntimeError("Term '" << formatTerm(env, term) 
+                          << "' cannot be interpreted as a string");
+    }
+}
+
+/**.......................................................................
+ * Return an erlang binary as a string
+ */
+std::string ErlUtil::getBinaryAsString(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    ErlNifBinary bin;
+
+    if(enif_inspect_binary(env, term, &bin) == 0) {
+        ThrowRuntimeError("Failed to inspect binary");
+    }
+
+    StringBuf sBuf(bin.size+1);
+    char* buf = sBuf.getBuf();
+
+    memcpy(buf, bin.data, bin.size);
+    
+    buf[bin.size] = '\0';
+
+    return buf;
+}
+
+/**.......................................................................
+ * Return an erlang list as a string.
+ */
+std::string ErlUtil::getListAsString(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    unsigned size=0;
+
+    if(enif_get_list_length(env, term, &size) == 0) {
+        ThrowRuntimeError("Failed to get list length");
+    }
+    
+    StringBuf sBuf(size+1);
+    char* buf = sBuf.getBuf();
+    
+    if(enif_get_string(env, term, buf, size+1, ERL_NIF_LATIN1) == 0) {
+        ThrowRuntimeError("Unable to encode string");
+    }
+    
+    return buf;
 }
 
 /**.......................................................................

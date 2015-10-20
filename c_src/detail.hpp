@@ -159,7 +159,7 @@ static inline uint64_t sub_and_fetch(volatile uint64_t *ptr, uint64_t v)
 static inline uint32_t sub_and_fetch(volatile uint32_t *ptr, uint32_t v)
 {
 #if ELEVELDB_IS_SOLARIS
-    return atomic_sub_32_nv(ptr, -(int32_t)v);
+    return atomic_add_32_nv(ptr, -(int32_t)v);
 #else
     return __sync_sub_and_fetch(ptr, v);
 #endif

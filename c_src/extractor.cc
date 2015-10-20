@@ -500,6 +500,8 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
 
                 try {
 
+                    COUT("SpecType = " << specType);
+
                     switch (specType) {
                     case DataType::UINT8:
                     {
@@ -554,7 +556,7 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
 
                     case DataType::ANY:
                     {
-                        //COUT("Converting " << CmpUtil::typeStrOf(&obj) << " to binary (any)");
+                        COUT("Converting " << CmpUtil::typeStrOf(&obj) << " to binary (any)");
                         setBinaryVal(root, key, &ma, &cmp_, &obj, true);
                     }
                     break;
