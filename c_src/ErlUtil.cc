@@ -8,6 +8,7 @@
 #include <cmath>
 
 #include <arpa/inet.h>
+#include <xlocale.h>
 
 using namespace std;
 
@@ -52,7 +53,7 @@ void ErlUtil::checkEnv()
 
 void ErlUtil::checkTerm() 
 {
-    if(!term_)
+    if(!hasTerm_)
         ThrowRuntimeError("No term has been set");
 }
 
@@ -157,8 +158,7 @@ bool ErlUtil::isString(ErlNifEnv* env, ERL_NIF_TERM term)
 
         size = bin.size;
         for(unsigned i=0; i < size; i++) {
-
-            if(!isprint(bin.data[i]))
+            if(!isprint_l(bin.data[i], LC_GLOBAL_LOCALE))
                 return false;
         }
 
@@ -175,14 +175,14 @@ bool ErlUtil::isString(ErlNifEnv* env, ERL_NIF_TERM term)
             ThrowRuntimeError("Failed to get list length");
         }
 
-        char buf[size+1];
+        StringBuf sBuf(size);
 
         // Note that enif_get_string expects the buffer size, not the
         // string length, and will return less than the length of the
         // string if the passed size isn't large enough to include the
         // string + null terminator
 
-        return enif_get_string(env, term, buf, size+1, ERL_NIF_LATIN1);
+        return enif_get_string(env, term, sBuf.getBuf(), sBuf.size(), ERL_NIF_LATIN1);
 
         //------------------------------------------------------------
         // Else not a string
@@ -245,20 +245,17 @@ std::string ErlUtil::getAtom(ERL_NIF_TERM term)
     return getAtom(env_, term);
 }
 
-std::string ErlUtil::getAtom(ErlNifEnv* env, ERL_NIF_TERM term, bool toLower)
+std::string ErlUtil::getAtom(ErlNifEnv* env, ERL_NIF_TERM term)
 {
     unsigned len=0;
     if(!enif_get_atom_length(env, term, &len, ERL_NIF_LATIN1))
         ThrowRuntimeError("Unable to encode atom");
 
-    char buf[len+1];
-    if(!enif_get_atom(env, term, buf, len+1, ERL_NIF_LATIN1))
-        ThrowRuntimeError("Unable to encode atom");
+    StringBuf sBuf(len+1);
+    char* buf = sBuf.getBuf();
 
-    if(toLower) {
-        for(unsigned i=0; i < len; i++)
-            buf[i] = tolower(buf[i]);
-    }
+    if(!enif_get_atom(env, term, buf, sBuf.size(), ERL_NIF_LATIN1))
+        ThrowRuntimeError("Unable to encode atom");
         
     return buf;
 }
@@ -306,7 +303,6 @@ std::string ErlUtil::getString(ERL_NIF_TERM term)
 std::string ErlUtil::getString(ErlNifEnv* env, ERL_NIF_TERM term)
 {
     unsigned size=0;
-    std::string retVal;
 
     //------------------------------------------------------------
     // Atoms are represented as strings
@@ -328,11 +324,13 @@ std::string ErlUtil::getString(ErlNifEnv* env, ERL_NIF_TERM term)
         }
 
         size = bin.size;
-        char buf[size+1];
+
+        StringBuf sBuf(size+1);
+        char* buf = sBuf.getBuf();
 
         for(unsigned i=0; i < size; i++) {
 
-            if(isprint(bin.data[i])) {
+            if(isprint_l(bin.data[i], LC_GLOBAL_LOCALE)) {
                 buf[i] = bin.data[i];
             } else {
                 ThrowRuntimeError("Term '" << formatTerm(env, term) 
@@ -354,7 +352,9 @@ std::string ErlUtil::getString(ErlNifEnv* env, ERL_NIF_TERM term)
             ThrowRuntimeError("Failed to get list length");
         }
 
-        char buf[size+1];
+        StringBuf sBuf(size+1);
+        char* buf = sBuf.getBuf();
+
         if(enif_get_string(env, term, buf, size+1, ERL_NIF_LATIN1) == 0) {
             ThrowRuntimeError("Unable to encode string");
         }
@@ -682,7 +682,7 @@ int32_t ErlUtil::getValAsInt32(ErlNifEnv* env, ERL_NIF_TERM term, bool exact)
     //------------------------------------------------------------
 
     if(ErlUtil::isAtom(env, term)) {
-        std::string atom = ErlUtil::getAtom(env, term, true);
+        std::string atom = ErlUtil::getAtom(env, term);
         if(atom == "true") {
             return 1;
         } else if(atom == "false") {
@@ -744,7 +744,7 @@ int64_t ErlUtil::getValAsInt64(ErlNifEnv* env, ERL_NIF_TERM term, bool exact)
     //------------------------------------------------------------
 
     if(ErlUtil::isAtom(env, term)) {
-        std::string atom = ErlUtil::getAtom(env, term, true);
+        std::string atom = ErlUtil::getAtom(env, term);
         if(atom == "true") {
             return 1;
         } else if(atom == "false") {
@@ -822,7 +822,7 @@ uint32_t ErlUtil::getValAsUint32(ErlNifEnv* env, ERL_NIF_TERM term, bool exact)
     //------------------------------------------------------------
 
     if(ErlUtil::isAtom(env, term)) {
-        std::string atom = ErlUtil::getAtom(env, term, true);
+        std::string atom = ErlUtil::getAtom(env, term);
         if(atom == "true") {
             return 1;
         } else if(atom == "false") {
@@ -903,7 +903,7 @@ uint8_t ErlUtil::getValAsUint8(ErlNifEnv* env, ERL_NIF_TERM term, bool exact)
     //------------------------------------------------------------
 
     if(ErlUtil::isAtom(env, term)) {
-        std::string atom = ErlUtil::getAtom(env, term, true);
+        std::string atom = ErlUtil::getAtom(env, term);
         if(atom == "true") {
             return 1;
         } else if(atom == "false") {
@@ -980,7 +980,7 @@ uint64_t ErlUtil::getValAsUint64(ErlNifEnv* env, ERL_NIF_TERM term, bool exact)
     //------------------------------------------------------------
 
     if(ErlUtil::isAtom(env, term)) {
-        std::string atom = ErlUtil::getAtom(env, term, true);
+        std::string atom = ErlUtil::getAtom(env, term);
         if(atom == "true") {
             return 1;
         } else if(atom == "false") {
@@ -1025,7 +1025,7 @@ double ErlUtil::getValAsDouble(ErlNifEnv* env, ERL_NIF_TERM term, bool exact)
     //------------------------------------------------------------
 
     if(ErlUtil::isAtom(env, term)) {
-        std::string atom = ErlUtil::getAtom(env, term, true);
+        std::string atom = ErlUtil::getAtom(env, term);
         if(atom == "true") {
             return 1.0;
         } else if(atom == "false") {
@@ -1194,4 +1194,72 @@ std::string ErlUtil::formatTuple(ErlNifEnv* env, ERL_NIF_TERM term)
 {
     std::vector<ERL_NIF_TERM> cells = getTupleCells(env, term);
     return formatTupleVec(env, cells);
+}
+
+//=======================================================================
+// Methods of ErlUtil::StringBuf
+//=======================================================================
+
+/**.......................................................................
+ * Constructor initializes size to minBufSize_, and sets internal buf
+ * pointer to point to the stack buffer
+ */
+ErlUtil::StringBuf::StringBuf()
+{
+    initialize();
+}
+
+/**.......................................................................
+ * Constructor initializes size to minBufSize_, and sets internal buf
+ * pointer to point to the stack buffer
+ */
+ErlUtil::StringBuf::StringBuf(size_t size)
+{
+    initialize();
+    resize(size);
+}
+
+/**.......................................................................
+ * Initializes size to minBufSize_, and sets internal buf pointer to
+ * point to the stack buffer
+ */
+void ErlUtil::StringBuf::initialize() 
+{
+    size_    = MIN_BUF_SIZE;
+    heapBuf_ = 0;
+    bufPtr_  = fixedBuf_;
+}
+
+/**.......................................................................
+ * Destructor frees any allocated memory, and resets to init state
+ */
+ErlUtil::StringBuf::~StringBuf()
+{
+    if(heapBuf_) {
+        free(heapBuf_);
+        initialize();
+   }
+}
+
+size_t ErlUtil::StringBuf::size()
+{
+    return size_;
+}
+
+char* ErlUtil::StringBuf::getBuf()
+{
+    return bufPtr_;
+}
+
+/**.......................................................................
+ * If requested size is larger than our stack buffer, allocated memory
+ * on the heap, and set internal bufPtr_ to point to it
+ */
+void ErlUtil::StringBuf::resize(size_t size)
+{
+    if(size > MIN_BUF_SIZE) {
+        heapBuf_ = (char*)realloc(heapBuf_, size);
+        bufPtr_  = heapBuf_;
+        size_    = size;
+    }
 }

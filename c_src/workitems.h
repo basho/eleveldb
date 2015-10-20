@@ -430,7 +430,7 @@ public:
         const uint32_t max_bytes_;
         const uint32_t low_bytes_;
         volatile uint32_t num_bytes_;
-        bool producer_sleeping_;
+        volatile bool producer_sleeping_;
 
         // Set if producer filled up but consumer acked before
         // producer went to sleep. Producer should abort going to

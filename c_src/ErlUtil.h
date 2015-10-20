@@ -17,11 +17,35 @@
 
 #include<string>
 
+#define MIN_BUF_SIZE 1024
+
 namespace eleveldb {
 
     class ErlUtil {
     public:
       
+        struct StringBuf {
+        public:
+
+            StringBuf();
+            StringBuf(size_t size);
+
+            ~StringBuf();
+
+            void resize(size_t size);
+            size_t size();
+            char* getBuf();
+
+        private:
+
+            void initialize();
+
+            char  fixedBuf_[MIN_BUF_SIZE];
+            char* heapBuf_;
+            char* bufPtr_;
+            size_t size_;
+        };
+
         // Constructor.
 
         ErlUtil(ErlNifEnv* env=0);
@@ -65,7 +89,7 @@ namespace eleveldb {
 
         std::string getAtom();
         std::string getAtom(ERL_NIF_TERM term);
-        static std::string getAtom(ErlNifEnv* env, ERL_NIF_TERM term, bool toLower=false);
+        static std::string getAtom(ErlNifEnv* env, ERL_NIF_TERM term);
 
         std::vector<unsigned char> getBinary();
         std::vector<unsigned char> getBinary(ERL_NIF_TERM term);

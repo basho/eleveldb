@@ -148,7 +148,6 @@ ERL_NIF_TERM ATOM_END_INCLUSIVE;
 ERL_NIF_TERM ATOM_MAX_UNACKED_BYTES;
 ERL_NIF_TERM ATOM_MAX_BATCH_BYTES;
 ERL_NIF_TERM ATOM_NEEDS_REACK;
-ERL_NIF_TERM ATOM_GLOBAL_DATA_DIR;
 ERL_NIF_TERM ATOM_RANGE_FILTER;
 ERL_NIF_TERM ATOM_STREAMING_BATCH;
 ERL_NIF_TERM ATOM_STREAMING_END;
@@ -210,15 +209,13 @@ struct EleveldbOptions
 
     bool m_LimitedDeveloper;
     bool m_FadviseWillNeed;
-    std::string m_GlobalDataDir;
 
     EleveldbOptions()
         : m_EleveldbThreads(71), m_EleveldbStreamThreads(71),
           m_LeveldbImmThreads(0), m_LeveldbBGWriteThreads(0),
           m_LeveldbOverlapThreads(0), m_LeveldbGroomingThreads(0),
           m_TotalMemPercent(0), m_TotalMem(0),
-          m_LimitedDeveloper(false), m_FadviseWillNeed(false),
-          m_GlobalDataDir(".")
+          m_LimitedDeveloper(false), m_FadviseWillNeed(false)
         {};
 
     void Dump()
@@ -260,17 +257,6 @@ private:
     eleveldb_priv_data& operator=(const eleveldb_priv_data&);  // nocopyassign
 
 };
-
-bool get_nif_string(ErlNifEnv * env, ERL_NIF_TERM estr, size_t max_size,
-                    std::string * out) {
-    char buf[max_size];
-    int ret_val = enif_get_string(env, estr, buf, max_size, ERL_NIF_LATIN1);
-    if (0<ret_val && ret_val<256) {
-        *out = buf;
-        return true;
-    }
-    return false;
-}
 
 ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOptions& opts)
 {
@@ -334,10 +320,6 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
         else if (option[0] == eleveldb::ATOM_FADVISE_WILLNEED)
         {
             opts.m_FadviseWillNeed = (option[1] == eleveldb::ATOM_TRUE);
-        }
-        else if (option[0] == eleveldb::ATOM_GLOBAL_DATA_DIR)
-        {
-            get_nif_string(env, option[1], 1024, &opts.m_GlobalDataDir);
         }
     }
 
@@ -1494,7 +1476,6 @@ try
     ATOM(eleveldb::ATOM_MAX_UNACKED_BYTES, "max_unacked_bytes");
     ATOM(eleveldb::ATOM_MAX_BATCH_BYTES, "max_batch_bytes");
     ATOM(eleveldb::ATOM_NEEDS_REACK, "needs_reack");
-    ATOM(eleveldb::ATOM_GLOBAL_DATA_DIR, "global_data_dir");
     ATOM(eleveldb::ATOM_RANGE_FILTER, "range_filter");
     ATOM(eleveldb::ATOM_STREAMING_BATCH, "streaming_batch");
     ATOM(eleveldb::ATOM_STREAMING_END,   "streaming_end");
