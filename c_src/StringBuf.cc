@@ -105,6 +105,4 @@ void StringBuf::resize(size_t size)
         bufPtr_     = heapBuf_;
         bufSize_    = size;
     }
-
-    dataSize_ = size;
 }
