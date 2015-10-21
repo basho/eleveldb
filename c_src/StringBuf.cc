@@ -76,29 +76,31 @@ StringBuf::~StringBuf()
         initialize();
     }
 }
-size_t StringBuf::bufSize() const
+size_t StringBuf::bufSize()
 {
     return bufSize_;
 }
 
-size_t StringBuf::dataSize() const
+size_t StringBuf::dataSize()
 {
     return dataSize_;
 }
 
-char* StringBuf::getBuf() const
+char* StringBuf::getBuf()
 {
     return bufPtr_;
 }
 
 /**.......................................................................
- * If requested size is larger than our stack buffer, allocate memory
+ * If requested size is larger than our current buffer, allocate memory
  * on the heap, and set internal bufPtr_ to point to it.  Assumes
  * until told otherwise (ie, by copy()) that dataSize_ == bufSize_
  */
 void StringBuf::resize(size_t size)
 {
-    if(size > STRING_BUF_MIN_SIZE) {
+    // If size is <= bufSize_, do nothing
+
+    if(size > bufSize_) {
         heapBuf_    = (char*)realloc(heapBuf_, size);
         bufPtr_     = heapBuf_;
         bufSize_    = size;

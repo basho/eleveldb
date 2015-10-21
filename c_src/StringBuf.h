@@ -51,15 +51,15 @@ namespace eleveldb {
 
         // Return the buffer size
 
-        size_t bufSize()  const;
+        size_t bufSize();
 
         // Return the data size
 
-        size_t dataSize() const;
+        size_t dataSize();
 
         // Get a pointer to the buffer
 
-        char*  getBuf()   const;
+        char*  getBuf();
 
     private:
 
