@@ -797,6 +797,18 @@ putKeyFirstMissingOps(Ref) ->
     addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
     addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
 
+putKeyEmptyOps(Ref) ->
+    addKey(Ref, 1, [{<<"f1">>, 1},  {<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
+    addKey(Ref, 2, [{<<"f1">>, []}, {<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
+    addKey(Ref, 3, [{<<"f1">>, 3},  {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
+    addKey(Ref, 4, [{<<"f1">>, 4},  {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
+
+putKeyFirstEmptyOps(Ref) ->
+    addKey(Ref, 1, [{<<"f1">>, []}, {<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
+    addKey(Ref, 2, [{<<"f1">>, 2}, {<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
+    addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
+    addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
+
 %%------------------------------------------------------------
 %% Valid filter, but values are missing for referenced keys
 %%------------------------------------------------------------
@@ -806,13 +818,44 @@ missingKey_test() ->
     F = <<"f1">>,
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
-    EvalFn = fun abnormalEvalFn/1,
+    EvalFn = fun defaultEvalFn/1,
+    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+missingFirstKey_test() ->
+    io:format("missingFirstKey_test~n"),
+    F = <<"f1">>,
+    Val = 0,
+    PutFn = fun putKeyFirstMissingOps/1,
+    EvalFn = fun defaultEvalFn/1,
+    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+emptyKey_test() ->
+    io:format("emptyKey_test~n"),
+    F = <<"f1">>,
+    Val = 0,
+    PutFn = fun putKeyEmptyOps/1,
+    EvalFn = fun defaultEvalFn/1,
+    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+emptyFirstKey_test() ->
+    io:format("emptyFirstKey_test~n"),
+    F = <<"f1">>,
+    Val = 0,
+    PutFn = fun putKeyFirstEmptyOps/1,
+    EvalFn = fun defaultEvalFn/1,
     Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
     ?assert(Res),
     Res.
 
 %%------------------------------------------------------------
-%% Filter references a key that doesn't exist
+%% Filter references a key that doesn't exist -- should return no
+%% records
 %%------------------------------------------------------------
 
 filterRefMissingKey_test() ->
@@ -820,16 +863,6 @@ filterRefMissingKey_test() ->
     F = <<"f0">>,
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
-    EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
-    ?assert(Res),
-    Res.
-
-filterRefFirstMissingKey_test() ->
-    io:format("filterRefFirstMissingKey_test~n"),
-    F = <<"f1">>,
-    Val = 0,
-    PutFn = fun putKeyFirstMissingOps/1,
     EvalFn = fun abnormalEvalFn/1,
     Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
     ?assert(Res),
@@ -868,7 +901,7 @@ filterRefInvalidType_test() ->
 %%------------------------------------------------------------
 
 exceptionalTests() ->
-    missingKey_test() and filterRefMissingKey_test() and 
+    missingKey_test() and emptyKey_test() and filterRefMissingKey_test() and 
 	filterRefWrongType_test() and filterRefInvalidType_test().
 
 %%=======================================================================
