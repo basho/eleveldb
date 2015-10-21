@@ -703,6 +703,22 @@ unsigned char* CmpUtil::getDataPtr(cmp_mem_access_t* ma, cmp_ctx_t* cmp,
     return ptr - (includeMarker ? 1 : 0);
 }
 
+/**.......................................................................
+ * Return true if this field is empty -- i.e., [], used to signify
+ * null value from riak_kv
+ */
+bool CmpUtil::isEmptyList(cmp_object_t* obj)
+{
+    if(obj->type != CMP_TYPE_FIXARRAY)
+        return false;
+
+    uint32_t size=0;
+    if(!cmp_object_as_array(obj, &size))
+        return false;
+
+    return size == 0;
+}
+
 //=======================================================================
 // Templatized convert specializations
 //=======================================================================

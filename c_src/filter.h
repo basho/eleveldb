@@ -153,8 +153,11 @@ public:
     virtual ~AndOperator() {};
 
     virtual bool evaluate() const {
-        BinaryExpression<bool, bool>::throwIfNoValue();
-        return left_->evaluate() && right_->evaluate();
+        if(has_value()) {
+            return left_->evaluate() && right_->evaluate();
+        } else {
+            return false;
+        }
     }
 
 };
@@ -172,8 +175,11 @@ public:
     virtual ~OrOperator() {};
 
     virtual bool evaluate() const {
-        BinaryExpression<bool, bool>::throwIfNoValue();
-        return left_->evaluate() || right_->evaluate();
+        if(has_value()) {
+            return left_->evaluate() || right_->evaluate();
+        } else {
+            return false;
+        }
     }
 };
 
@@ -193,8 +199,11 @@ public:
     virtual ~GtOperator() {};
 
     virtual bool evaluate() const {
-        BinaryExpression<bool,T>::throwIfNoValue();
-        return this->left_->evaluate() > this->right_->evaluate();
+        if(BinaryExpression<bool, T>::has_value()) {
+            return this->left_->evaluate() > this->right_->evaluate();
+        } else {
+            return false;
+        }
     }
 };
 
@@ -214,8 +223,11 @@ public:
     virtual ~GteOperator() {};
 
     virtual bool evaluate() const {
-        BinaryExpression<bool,T>::throwIfNoValue();
-        return this->left_->evaluate() >= this->right_->evaluate();
+        if(BinaryExpression<bool, T>::has_value()) {
+            return this->left_->evaluate() >= this->right_->evaluate();
+        } else {
+            return false;
+        }
     }
 };
 
@@ -235,8 +247,11 @@ public:
     virtual ~LtOperator() {};
 
     virtual bool evaluate() const {
-        BinaryExpression<bool,T>::throwIfNoValue();
-        return this->left_->evaluate() < this->right_->evaluate();
+        if(BinaryExpression<bool, T>::has_value()) {
+            return this->left_->evaluate() < this->right_->evaluate();
+        } else {
+            return false;
+        }
     }
 };
 
@@ -256,8 +271,11 @@ public:
     virtual ~LteOperator() {};
 
     virtual bool evaluate() const {
-        BinaryExpression<bool,T>::throwIfNoValue();
-        return this->left_->evaluate() <= this->right_->evaluate();
+        if(BinaryExpression<bool, T>::has_value()) {
+            return this->left_->evaluate() <= this->right_->evaluate();
+        } else {
+            return false;
+        }
     }
 };
 
@@ -277,8 +295,11 @@ public:
     virtual ~EqOperator() {};
 
     virtual bool evaluate() const {
-        BinaryExpression<bool,T>::throwIfNoValue();
-        return this->left_->evaluate() == this->right_->evaluate();
+        if(BinaryExpression<bool, T>::has_value()) {
+            return this->left_->evaluate() == this->right_->evaluate();
+        } else {
+            return false;
+        }
     }
 };
 
@@ -295,7 +316,8 @@ public:
 
     virtual bool evaluate() const {
 
-        BinaryExpression<bool,unsigned char*>::throwIfNoValue();
+        if(!BinaryExpression<bool,unsigned char*>::has_value())
+           return false;
 
         // If the sizes are equal, compare memory blocks
 
@@ -327,10 +349,11 @@ public:
     virtual ~NeqOperator() {};
 
     virtual bool evaluate() const {
-
-        BinaryExpression<bool, T>::throwIfNoValue();
-
-        return this->left_->evaluate() != this->right_->evaluate();
+        if(BinaryExpression<bool, T>::has_value()) {
+            return this->left_->evaluate() != this->right_->evaluate();
+        } else {
+            return false;
+        }
     }
 
 };
@@ -348,7 +371,8 @@ public:
 
     virtual bool evaluate() const {
 
-        BinaryExpression<bool, unsigned char*>::throwIfNoValue();
+        if(!BinaryExpression<bool,unsigned char*>::has_value())
+            return false;
 
         // If the sizes are equal, compare memory blocks
 
