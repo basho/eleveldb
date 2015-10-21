@@ -470,7 +470,7 @@ parse_field_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
 
     try {
 
-        std::string fieldName = eleveldb::ErlUtil::getAsString(env, operand);
+        std::string fieldName = eleveldb::ErlUtil::getBinaryAsString(env, operand);
         ext.add_field(fieldName);
         return new FieldValue<T>(fieldName, ext.cTypeOf(fieldName));
 

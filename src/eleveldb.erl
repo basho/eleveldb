@@ -310,7 +310,6 @@ do_streaming_fold(StreamRef = {MsgRef, AckRef}, Fun, Acc) ->
     receive
         {streaming_error, MsgRef, ErrMsg} ->
 	    lager:error("Streaming error: ~s~n", [ErrMsg]),
-	    io:format(user, "Streaming error: ~s~n", [ErrMsg]),
             Acc;
         {streaming_end, MsgRef} ->
             Acc;

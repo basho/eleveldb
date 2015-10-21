@@ -1000,12 +1000,10 @@ work_result RangeScanTask::operator()()
                     //------------------------------------------------------------
 
                     try {
-                        COUT("Parsing filter");
                         range_filter_ = 
                             parse_range_filter_opts(options_.env_, 
                                                     options_.rangeFilterSpec_, *(extractor_),
                                                     throwIfBadFilter);
-                        COUT("Parsing filter...done");
                     } catch(std::runtime_error& err) {
                         std::ostringstream os;
                         os << err.what() << std::endl << "While processing filter: " 

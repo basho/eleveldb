@@ -1,5 +1,6 @@
 #include "CmpUtil.h"
 #include "ErlUtil.h"
+#include "StringBuf.h"
 
 #include "cmp.h"
 #include "cmp_mem_access.h"
@@ -290,7 +291,7 @@ DataType::Type Extractor::cTypeOf(ErlNifEnv* env, ERL_NIF_TERM tuple, bool throw
             }
 
             if(op == eleveldb::filter::FIELD_OP)
-                fieldName = ErlUtil::getString(env, op_args[1]);
+                fieldName = ErlUtil::getBinaryAsString(env, op_args[1]);
             
             if(arity == 2) {
                 
@@ -439,6 +440,7 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
     // Iterate over the object, looking for fields
     //------------------------------------------------------------
 
+    std::string key;
     for(int i=0; i < map_size; i++) {
 
         //------------------------------------------------------------
@@ -454,8 +456,8 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
 	if(!cmp_object_as_str(&key_obj, &len))
             ThrowRuntimeError("Error parsing object as a string");
 
-	char key[len+1];
-        if(!cmp_object_to_str(&cmp_, &key_obj, key, len+1))
+	key.resize(len);
+        if(!cmp_object_to_str(&cmp_, &key_obj, &key[0], len+1))
             ThrowRuntimeError("Error reading key string");
 
 	//------------------------------------------------------------
@@ -499,8 +501,6 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
             } else {
 
                 try {
-
-                    COUT("SpecType = " << specType);
 
                     switch (specType) {
                     case DataType::UINT8:
@@ -556,7 +556,7 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
 
                     case DataType::ANY:
                     {
-                        COUT("Converting " << CmpUtil::typeStrOf(&obj) << " to binary (any)");
+                        //COUT("Converting " << CmpUtil::typeStrOf(&obj) << " to binary (any)");
                         setBinaryVal(root, key, &ma, &cmp_, &obj, true);
                     }
                     break;
@@ -593,14 +593,14 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
  * Set a string value decoded from msgpack as the expression value
  */
 void ExtractorMsgpack::setStringVal(ExpressionNode<bool>* root, 
-                                    char* key, cmp_object_t* obj)
+                                    std::string& key, cmp_object_t* obj)
 {
     uint32_t len;
-
     if(!cmp_object_as_str(obj, &len))
         ThrowRuntimeError("Error parsing value as string");
     
-    char buf[len+1];
+    StringBuf val(len+1);
+    char* buf = val.getBuf();
     if(!cmp_object_to_str(&cmp_, obj, buf, len+1))
         ThrowRuntimeError("Error extracting string value for key: " << key);
     
@@ -611,7 +611,7 @@ void ExtractorMsgpack::setStringVal(ExpressionNode<bool>* root,
  * Set a binary value decoded from msgpack as the expression value
  */
 void ExtractorMsgpack::setBinaryVal(ExpressionNode<bool>* root, 
-                                    char* key,
+                                    std::string& key,
                                     cmp_mem_access_t* ma,
                                     cmp_ctx_t* cmp,
                                     cmp_object_t* obj,

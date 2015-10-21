@@ -24,28 +24,6 @@ namespace eleveldb {
     class ErlUtil {
     public:
       
-        struct StringBuf {
-        public:
-
-            StringBuf();
-            StringBuf(size_t size);
-
-            ~StringBuf();
-
-            void resize(size_t size);
-            size_t size();
-            char* getBuf();
-
-        private:
-
-            void initialize();
-
-            char  fixedBuf_[MIN_BUF_SIZE];
-            char* heapBuf_;
-            char* bufPtr_;
-            size_t size_;
-        };
-
         // Constructor.
 
         ErlUtil(ErlNifEnv* env=0);
@@ -145,10 +123,6 @@ namespace eleveldb {
         // checking if term is valid UTF is done
 
         static std::string getBinaryAsString(ErlNifEnv* env, ERL_NIF_TERM term);
-
-        void decodeRiakObject(ERL_NIF_TERM obj, ERL_NIF_TERM encoding);
-        void parseSiblingData(unsigned char* ptr, unsigned len);
-        void parseSiblingDataMsgpack(unsigned char* ptr, unsigned len);
 
         static int32_t  getValAsInt32(ErlNifEnv* env, ERL_NIF_TERM term, bool exact=true);
         static int64_t  getValAsInt64(ErlNifEnv* env, ERL_NIF_TERM term, bool exact=true);

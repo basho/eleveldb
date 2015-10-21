@@ -1,4 +1,5 @@
 #include "ErlUtil.h"
+#include "StringBuf.h"
 
 #include "cmp.h"
 #include "cmp_mem_access.h"
@@ -159,8 +160,8 @@ bool ErlUtil::isString(ErlNifEnv* env, ERL_NIF_TERM term)
         // string if the passed size isn't large enough to include the
         // string + null terminator
 
-        StringBuf sBuf(size);
-        return enif_get_string(env, term, sBuf.getBuf(), sBuf.size(), ERL_NIF_LATIN1);
+        StringBuf sBuf(size+1);
+        return enif_get_string(env, term, sBuf.getBuf(), sBuf.bufSize(), ERL_NIF_LATIN1);
 
         //------------------------------------------------------------
         // Else not a string
@@ -218,7 +219,7 @@ bool ErlUtil::isRepresentableAsString(ErlNifEnv* env, ERL_NIF_TERM term)
         // string + null terminator
 
         StringBuf sBuf(size+1);
-        return enif_get_string(env, term, sBuf.getBuf(), size+1, ERL_NIF_LATIN1);
+        return enif_get_string(env, term, sBuf.getBuf(), sBuf.bufSize(), ERL_NIF_LATIN1);
 
         //------------------------------------------------------------
         // Else not a string
@@ -290,9 +291,13 @@ std::string ErlUtil::getAtom(ErlNifEnv* env, ERL_NIF_TERM term)
     StringBuf sBuf(len+1);
     char* buf = sBuf.getBuf();
 
-    if(!enif_get_atom(env, term, buf, sBuf.size(), ERL_NIF_LATIN1))
+    if(!enif_get_atom(env, term, buf, sBuf.bufSize(), ERL_NIF_LATIN1))
         ThrowRuntimeError("Unable to encode atom");
         
+    // At this point, buf will contain a null-terminated version of
+    // the converted atom, and can be returned as the argument to
+    // std::string() constructor
+
     return buf;
 }
 
@@ -364,6 +369,10 @@ std::string ErlUtil::getString(ErlNifEnv* env, ERL_NIF_TERM term)
         if(enif_get_string(env, term, buf, size+1, ERL_NIF_LATIN1) == 0) {
             ThrowRuntimeError("Unable to encode string");
         }
+
+        // At this point, buf will contain a null-terminated version of
+        // the converted atom, and can be returned as the argument to
+        // std::string() constructor
 
         return buf;
 
@@ -589,139 +598,6 @@ std::vector<std::pair<std::string, ERL_NIF_TERM> > ErlUtil::getListTuples(ERL_NI
     }
 
     return cells;
-}
-
-void ErlUtil::decodeRiakObject(ERL_NIF_TERM obj, ERL_NIF_TERM encoding)
-{
-    checkEnv();
-
-    ErlNifBinary bin;
-    if(enif_inspect_binary(env_, obj, &bin) == 0)
-        ThrowRuntimeError("Term is not a binary");
-
-#if 0
-    unsigned encodingLen;
-    if(enif_get_atom_length(env_, encoding, &encodingLen, ERL_NIF_LATIN1) == 0)
-        ThrowRuntimeError("Term is not an atom");
-
-    char encodingType[encodingLen+1];
-    if(enif_get_atom(env_, encoding, encodingType, encodingLen+1, ERL_NIF_LATIN1) == 0)
-        ThrowRuntimeError("Term is not an atom");
-
-    COUT("Binary has size: " << bin.size << " Encoding = " << encoding);
-#endif
-
-    unsigned char* ptr = bin.data;
-
-    unsigned char magic = (*ptr++);
-    COUT("Magic = " << (int)(magic));
-
-    unsigned char vers = (*ptr++);
-    COUT("Version = " << (int)(vers));
-
-    unsigned int vClockLen = ntohl(*((unsigned int*)ptr));
-    ptr += 4;
-
-    COUT("VclockLen = " << vClockLen);
-    ptr += vClockLen;
-
-    unsigned int sibCount =  ntohl(*((unsigned int*)ptr));
-    ptr += 4;
-    COUT("SibCount = " << sibCount);
-
-    //------------------------------------------------------------
-    // Now we are on to the first sibling
-    //------------------------------------------------------------
-
-    unsigned int valLen =  ntohl(*((unsigned int*)ptr));
-    ptr += 4;
-    COUT("ValLen = " << valLen);
-
-    // And the first siblings data
-
-    if(encoding == eleveldb::ATOM_ERLANG_ENCODING)
-        parseSiblingData(ptr, valLen);
-    else if(encoding == eleveldb::ATOM_MSGPACK_ENCODING)
-        parseSiblingDataMsgpack(ptr, valLen);
-    else
-        ThrowRuntimeError("Unrecognized encoding");
-}
-
-void ErlUtil::parseSiblingData(unsigned char* ptr, unsigned len)
-{
-    for(unsigned i=0; i < len; i++)
-        COUT("Byte " << i << " = " << *(ptr+i));
-}
-
-void ErlUtil::parseSiblingDataMsgpack(unsigned char* ptr, unsigned len)
-{
-    cmp_mem_access_t ma;
-    uint32_t map_size;
-    char key[255];
-    cmp_object_t map;
-    cmp_ctx_t cmp;
-  
-    cmp_mem_access_ro_init(&cmp, &ma, ptr, len);
-    cmp_read_object(&cmp, &map);
-  
-    if(!cmp_object_as_map(&map, &map_size)) {
-        ThrowRuntimeError("Unable to parse data as a msgpack object");
-    }
-
-    //------------------------------------------------------------
-    // Iterate over the object, looking for fields
-    //------------------------------------------------------------
-
-    for(unsigned int i=0; i < map_size; i++) {
-
-        //------------------------------------------------------------
-        // First read the field key
-        //------------------------------------------------------------
-
-        cmp_object_t key_obj;
-
-        if (!cmp_read_object(&cmp, &key_obj) || !cmp_object_is_str(&key_obj)) {
-            ThrowRuntimeError("Failed to read key");
-        }
-
-        if (!cmp_object_to_str(&cmp, &key_obj, key, sizeof(key))) {
-            ThrowRuntimeError("Error reading key as string!");
-        }
-
-	//------------------------------------------------------------
-	// Next read the field value
-	//------------------------------------------------------------
-
-        cmp_object_t obj;
-        cmp_read_object(&cmp, &obj);
-
-	if (cmp_object_is_nil(&obj)) {
-            continue;
-
-	} else if (cmp_object_is_long(&obj)) {
-            int64_t val;
-            if (cmp_object_as_long(&obj, &val)) {
-                COUT("Found field " << key << " with val (1) " << val);
-            }
-	} else if (cmp_object_is_ulong(&obj)) {
-            uint64_t val;
-            if (cmp_object_as_ulong(&obj, &val)) {
-                COUT("Found field " << key << " with val (2) " << val);
-            }
-	} else if (cmp_object_is_float(&obj)) {
-            float val;
-            if (cmp_object_as_float(&obj, &val)) {
-                COUT("Found field " << key << " with val (2) " << val);
-            }
-	} else if (cmp_object_is_double(&obj)) {
-            double val;
-            if (cmp_object_as_double(&obj, &val)) {
-                COUT("Found field " << key << " with val (2) " << val);
-            }
-	} else {
-            ThrowRuntimeError("Unsupported value type found!");
-	}
-    }
 }
 
 /**.......................................................................
@@ -1290,70 +1166,3 @@ std::string ErlUtil::formatTuple(ErlNifEnv* env, ERL_NIF_TERM term)
     return formatTupleVec(env, cells);
 }
 
-//=======================================================================
-// Methods of ErlUtil::StringBuf
-//=======================================================================
-
-/**.......................................................................
- * Constructor initializes size to minBufSize_, and sets internal buf
- * pointer to point to the stack buffer
- */
-ErlUtil::StringBuf::StringBuf()
-{
-    initialize();
-}
-
-/**.......................................................................
- * Constructor initializes size to minBufSize_, and sets internal buf
- * pointer to point to the stack buffer
- */
-ErlUtil::StringBuf::StringBuf(size_t size)
-{
-    initialize();
-    resize(size);
-}
-
-/**.......................................................................
- * Initializes size to minBufSize_, and sets internal buf pointer to
- * point to the stack buffer
- */
-void ErlUtil::StringBuf::initialize() 
-{
-    size_    = MIN_BUF_SIZE;
-    heapBuf_ = 0;
-    bufPtr_  = fixedBuf_;
-}
-
-/**.......................................................................
- * Destructor frees any allocated memory, and resets to init state
- */
-ErlUtil::StringBuf::~StringBuf()
-{
-    if(heapBuf_) {
-        free(heapBuf_);
-        initialize();
-   }
-}
-
-size_t ErlUtil::StringBuf::size()
-{
-    return size_;
-}
-
-char* ErlUtil::StringBuf::getBuf()
-{
-    return bufPtr_;
-}
-
-/**.......................................................................
- * If requested size is larger than our stack buffer, allocated memory
- * on the heap, and set internal bufPtr_ to point to it
- */
-void ErlUtil::StringBuf::resize(size_t size)
-{
-    if(size > MIN_BUF_SIZE) {
-        heapBuf_ = (char*)realloc(heapBuf_, size);
-        bufPtr_  = heapBuf_;
-        size_    = size;
-    }
-}
