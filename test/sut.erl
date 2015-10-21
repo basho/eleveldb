@@ -791,11 +791,23 @@ putKeyMissingOps(Ref) ->
     addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
     addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
 
+putKeyFirstMissingOps(Ref) ->
+    addKey(Ref, 1, [{<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
+    addKey(Ref, 2, [{<<"f1">>, 2}, {<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
+    addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
+    addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
+
 putKeyEmptyOps(Ref) ->
     addKey(Ref, 1, [{<<"f1">>, 1},  {<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
     addKey(Ref, 2, [{<<"f1">>, []}, {<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
     addKey(Ref, 3, [{<<"f1">>, 3},  {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
     addKey(Ref, 4, [{<<"f1">>, 4},  {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
+
+putKeyFirstEmptyOps(Ref) ->
+    addKey(Ref, 1, [{<<"f1">>, []}, {<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
+    addKey(Ref, 2, [{<<"f1">>, 2}, {<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
+    addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
+    addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
 
 %%------------------------------------------------------------
 %% Valid filter, but values are missing for referenced keys
@@ -811,11 +823,31 @@ missingKey_test() ->
     ?assert(Res),
     Res.
 
+missingFirstKey_test() ->
+    io:format("missingFirstKey_test~n"),
+    F = <<"f1">>,
+    Val = 0,
+    PutFn = fun putKeyFirstMissingOps/1,
+    EvalFn = fun defaultEvalFn/1,
+    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
 emptyKey_test() ->
     io:format("emptyKey_test~n"),
     F = <<"f1">>,
     Val = 0,
     PutFn = fun putKeyEmptyOps/1,
+    EvalFn = fun defaultEvalFn/1,
+    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+emptyFirstKey_test() ->
+    io:format("emptyFirstKey_test~n"),
+    F = <<"f1">>,
+    Val = 0,
+    PutFn = fun putKeyFirstEmptyOps/1,
     EvalFn = fun defaultEvalFn/1,
     Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
     ?assert(Res),
@@ -899,6 +931,7 @@ streamFoldTestOpts(Opts, FoldFun) ->
 %%------------------------------------------------------------
 
 scanAll_test() ->
+    io:format("scanAll_test~n"),
     N = 100,
     putKeysObj(N),
     Opts=[{fold_method, streaming}],
@@ -917,6 +950,7 @@ scanAll_test() ->
 %%------------------------------------------------------------
 
 scanSome_test() ->
+    io:format("scanSome_test~n"),
     N = 100,
     putKeysObj(N),
     Opts=[{fold_method, streaming},
@@ -939,6 +973,7 @@ scanSome_test() ->
 %%------------------------------------------------------------
 
 scanNoStart_test() ->
+    io:format("scanNoStart_test~n"),
     N = 100,
     putKeysObj(N),
     Opts=[{fold_method, streaming},
@@ -956,11 +991,25 @@ scanNoStart_test() ->
     ?assert(Res),
     Res.
 
+scanNoStartTest() ->
+    N = 100,
+    putKeysObj(N),
+    Opts=[{fold_method, streaming},
+	  {start_inclusive, false},
+	  {start_key, <<"key001">>}],
+
+    FoldFun = fun({K,_V}, Acc) -> 
+		      [K | Acc]
+	      end,
+
+    streamFoldTestOpts(Opts, FoldFun).
+
 %%------------------------------------------------------------
 %% Don't include the start or end key
 %%------------------------------------------------------------
 
 scanNoStartOrEnd_test() ->
+    io:format("scanNoStartOrEnd_test~n"),
     N = 100,
     putKeysObj(N),
     Opts=[{fold_method, streaming},
@@ -1000,6 +1049,7 @@ scanTests() ->
 %%------------------------------------------------------------
 
 noEncodingOptions_test() ->
+    io:format("noEncodingOptions_test~n"),
     try
 	N = 100,
 	putKeysObj(N),
@@ -1034,6 +1084,7 @@ noEncodingOptions_test() ->
 %%------------------------------------------------------------
 
 badEncodingOptions_test() ->
+    io:format("badEncodingOptions_test~n"),
     try
 	N = 100,
 	putKeysObj(N),

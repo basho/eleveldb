@@ -22,19 +22,22 @@
 
 #include <syslog.h>
 
-#include "detail.hpp"
+#ifndef __ELEVELDB_DETAIL_HPP
+    #include "detail.hpp"
+#endif
+
+#ifndef INCL_WORKITEMS_H
+    #include "workitems.h"
+#endif
+
 #include "filter_parser.h"
-#include "workitems.h"
 
 #include "ErlUtil.h"
 
 #include "leveldb/cache.h"
+#include "leveldb/comparator.h"
 #include "leveldb/filter_policy.h"
 #include "leveldb/perf_count.h"
-#include "leveldb/comparator.h"
-#include "leveldb/translator.h"
-
-#include <iomanip>
 
 // error_tuple duplicated in workitems.cc and eleveldb.cc ... how to fix?
 static ERL_NIF_TERM error_tuple(ErlNifEnv* env, ERL_NIF_TERM error, leveldb::Status& status)
@@ -137,6 +140,9 @@ WorkTask::recycle()
     // does not work by default
 }   // WorkTask::recycle
 
+
+
+
 /**
  * OpenTask functions
  */
@@ -175,101 +181,143 @@ OpenTask::operator()()
 
 }   // OpenTask::operator()
 
+/**
+ * WriteTask functions
+ */
 
-OpenFamilyTask::OpenFamilyTask(
-    ErlNifEnv* caller_env,
-    ERL_NIF_TERM _caller_ref,
-    DbObject * db_handle,
-    const char* family_name,
-    leveldb::Options *open_options)
-    : WorkTask(caller_env, _caller_ref, db_handle),
-    family_name_(family_name), open_options_(open_options)
-{
-}
-
-work_result
-OpenFamilyTask::operator()()
-{
-    leveldb::Status status = m_DbPtr->m_Db->OpenFamily(*open_options_, family_name_);
-    return (status.ok() ? work_result(ATOM_OK) : work_result(local_env(), ATOM_ERROR_DB_WRITE, status));
-}
-
-
-CloseFamilyTask::CloseFamilyTask(ErlNifEnv *caller_env, ERL_NIF_TERM caller_ref, DbObject *db_handle, const char *family_name)
-    : WorkTask(caller_env, caller_ref, db_handle),
-      family_name_(family_name)
-{
-}
-
-work_result CloseFamilyTask::operator()()
-{
-    leveldb::Status status = m_DbPtr->m_Db->CloseFamily(family_name_);
-    return (status.ok() ? work_result(ATOM_OK) : work_result(local_env(), ATOM_ERROR_DB_WRITE, status));
-}
-
-WriteTask::WriteTask(
-        ErlNifEnv *_owner_env,
-        ERL_NIF_TERM _caller_ref,
-        DbObject *_db_handle,
-        const char *family,
-        leveldb::WriteBatch *_batch,
-        leveldb::WriteOptions *_options)
+WriteTask::WriteTask(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
+                     DbObject * _db_handle,
+                     leveldb::WriteBatch* _batch,
+                     leveldb::WriteOptions* _options)
     : WorkTask(_owner_env, _caller_ref, _db_handle),
       batch(_batch),
-      options(_options),
-      family(family)
+      options(_options)
 {}
-
-work_result WriteTask::operator()()
+    
+WriteTask::~WriteTask()
 {
-    leveldb::Status status;
-    if ( family.empty() )
-        status = m_DbPtr->m_Db->Write(*options, batch.get());
-    else
-        status = m_DbPtr->m_Db->Write(family, *options, batch.get());
+    delete batch;
+    delete options;
+}
+    
+work_result 
+WriteTask::operator()()
+{
+    leveldb::Status status = m_DbPtr->m_Db->Write(*options, batch);
+    
     return (status.ok() ? work_result(ATOM_OK) : work_result(local_env(), ATOM_ERROR_DB_WRITE, status));
 }
 
-GetTask::GetTask(
-    ErlNifEnv *_caller_env,
-    ERL_NIF_TERM _caller_ref,
-    DbObject *_db_handle,
-    const char *family,
-    ERL_NIF_TERM _key_term,
-    leveldb::ReadOptions &_options) :
+/**
+ * GetTask functions
+ */
 
-    WorkTask(_caller_env, _caller_ref, _db_handle),
-    options(_options),
-    family(family)
+GetTask::GetTask(ErlNifEnv *_caller_env,
+                 ERL_NIF_TERM _caller_ref,
+                 DbObject *_db_handle,
+                 ERL_NIF_TERM _key_term,
+                 leveldb::ReadOptions &_options)
+    : WorkTask(_caller_env, _caller_ref, _db_handle),
+      options(_options)
 {
     ErlNifBinary key;
+    
     enif_inspect_binary(_caller_env, _key_term, &key);
     m_Key.assign((const char *)key.data, key.size);
 }
 
-work_result GetTask::operator()()
+GetTask::~GetTask() {}
+
+work_result 
+GetTask::operator()()
 {
     ERL_NIF_TERM value_bin;
     BinaryValue value(local_env(), value_bin);
     leveldb::Slice key_slice(m_Key);
-
-    leveldb::Status status;
-    if ( family.empty() )
-        status = m_DbPtr->m_Db->Get(options, key_slice, &value);
-    else
-        status = m_DbPtr->m_Db->Get(family, options, key_slice, &value);
+    
+    leveldb::Status status = m_DbPtr->m_Db->Get(options, key_slice, &value);
+    
     if(!status.ok()){
         if ( status.IsNotFound() )
             return work_result(ATOM_NOT_FOUND);
         else
             return work_result(local_env(), ATOM_ERROR, status);
     }
+
     return work_result(local_env(), ATOM_OK, value_bin);
 }
 
 /**
+ * IterTask functions
+ */
+
+IterTask::IterTask(ErlNifEnv *_caller_env,
+                   ERL_NIF_TERM _caller_ref,
+                   DbObject *_db_handle,
+                   const bool _keys_only,
+                   leveldb::ReadOptions &_options)
+    : WorkTask(_caller_env, _caller_ref, _db_handle),
+      keys_only(_keys_only), options(_options)
+{}
+
+IterTask::~IterTask() {}
+
+work_result 
+IterTask::operator()()
+{
+    ItrObject* itr_ptr=0;
+    void*     itr_ptr_ptr=0;
+    
+    // NOTE: transfering ownership of options to ItrObject
+    itr_ptr_ptr=ItrObject::CreateItrObject(m_DbPtr.get(), keys_only, options);
+    
+    // Copy caller_ref to reuse in future iterator_move calls
+    itr_ptr=*(ItrObject**)itr_ptr_ptr;
+    itr_ptr->itr_ref_env = enif_alloc_env();
+    itr_ptr->itr_ref = enif_make_copy(itr_ptr->itr_ref_env, caller_ref());
+    
+    itr_ptr->m_Iter.assign(new LevelIteratorWrapper(itr_ptr, keys_only,
+                                                    options, itr_ptr->itr_ref));
+    
+    ERL_NIF_TERM result = enif_make_resource(local_env(), itr_ptr_ptr);
+    
+    // release reference created during CreateItrObject()
+    enif_release_resource(itr_ptr_ptr);
+    
+    return work_result(local_env(), ATOM_OK, result);
+}   // operator()
+
+/**
  * MoveTask functions
  */
+
+// Constructor with no seek target:
+
+MoveTask::MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
+                   LevelIteratorWrapper * IterWrap, action_t& _action)
+    : WorkTask(NULL, _caller_ref, IterWrap->m_DbPtr.get()),
+      m_ItrWrap(IterWrap), action(_action)
+{
+    // special case construction
+    local_env_=NULL;
+    enif_self(_caller_env, &local_pid);
+}
+
+// Constructor with seek target:
+
+MoveTask::MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
+                   LevelIteratorWrapper * IterWrap, action_t& _action,
+                   std::string& _seek_target)
+    : WorkTask(NULL, _caller_ref, IterWrap->m_DbPtr.get()),
+      m_ItrWrap(IterWrap), action(_action),
+      seek_target(_seek_target)
+{
+    // special case construction
+    local_env_=NULL;
+    enif_self(_caller_env, &local_pid);
+}
+
+MoveTask::~MoveTask() {};
 
 work_result
 MoveTask::operator()()
@@ -283,7 +331,7 @@ MoveTask::operator()()
 // race condition of prefetch clearing db iterator while
 //  async_iterator_move looking at it.
 //
-
+    
     // iterator_refresh operation
     if (m_ItrWrap->m_Options.iterator_refresh && m_ItrWrap->m_StillUse)
     {
@@ -451,6 +499,85 @@ MoveTask::recycle()
 }   // MoveTask::recycle
 
 /**
+ * CloseTask functions
+ */
+
+CloseTask::CloseTask(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
+                     DbObject * _db_handle)
+    : WorkTask(_owner_env, _caller_ref, _db_handle)
+{}
+
+CloseTask::~CloseTask()
+{
+}
+
+work_result 
+CloseTask::operator()()
+{
+    DbObject * db_ptr;
+    
+    // get db pointer then clear reference count to it
+    db_ptr=m_DbPtr.get();
+    m_DbPtr.assign(NULL);
+    
+    if (NULL!=db_ptr)
+    {
+        // set closing flag, this is blocking
+        db_ptr->InitiateCloseRequest();
+        
+        // db_ptr no longer valid
+        db_ptr=NULL;
+        
+        return(work_result(ATOM_OK));
+    }   // if
+    else
+    {
+        return work_result(local_env(), ATOM_ERROR, ATOM_BADARG);
+    }   // else
+}
+
+/**
+ * ItrCloseTask functions
+ */
+
+ItrCloseTask::ItrCloseTask(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
+                           ItrObject * _itr_handle)
+    : WorkTask(_owner_env, _caller_ref),
+      m_ItrPtr(_itr_handle)
+{}
+
+ItrCloseTask::~ItrCloseTask()
+{
+}
+
+work_result 
+ItrCloseTask::operator()()
+{
+    ItrObject * itr_ptr;
+    
+    // get iterator pointer then clear reference count to it
+    itr_ptr=m_ItrPtr.get();
+    m_ItrPtr.assign(NULL);
+    
+    if (NULL!=itr_ptr)
+    {
+        // set closing flag, this is blocking
+        itr_ptr->InitiateCloseRequest();
+        
+        // itr_ptr no longer valid
+        itr_ptr=NULL;
+        
+        return(work_result(ATOM_OK));
+//            return(work_result());  // no message
+    }   // if
+    else
+    {
+        return work_result(local_env(), ATOM_ERROR, ATOM_BADARG);
+//            return(work_result());  // no message
+    }   // else
+}
+
+/**
  * DestroyTask functions
  */
 
@@ -477,91 +604,68 @@ DestroyTask::operator()()
 
 }   // DestroyTask::operator()
 
-///// RangeScanTask ////////////////////////////////
+/**
+ * RangeScanOptions functions
+ */
+RangeScanOptions::RangeScanOptions() : 
+    max_unacked_bytes(10 * 1024 * 1024), 
+    low_bytes(2 * 1024 * 1024),
+    max_batch_bytes(1 * 1024 * 1024),
+    limit(0),
+    start_inclusive(true), 
+    end_inclusive(false), 
+    fill_cache(false), 
+    verify_checksums(true), 
+    encodingType_(Encoding::NONE),
+    env_(0), 
+    useRangeFilter_(false) {};
 
-RangeScanTask::RangeScanTask(ErlNifEnv * caller_env,
-                             ERL_NIF_TERM caller_ref,
-                             DbObject * db_handle,
-                             const std::string & start_key,
-                             const std::string * end_key,
-                             RangeScanOptions & options,
-                             SyncObject * sync_obj)
-: WorkTask(caller_env, caller_ref, db_handle),
-  options_(options),
-  start_key_(start_key),
-  has_end_key_(bool(end_key)),
-  sync_obj_(sync_obj),
-  range_filter_(0),
-  extractor_(0)
+RangeScanOptions::~RangeScanOptions() {};
+    
+//------------------------------------------------------------
+// Sanity-check filter options
+//------------------------------------------------------------
+
+void RangeScanOptions::checkOptions() 
 {
+        
     //------------------------------------------------------------
-    // Sanity checks
+    // If a filter was specified, we don't allocate the extractor
+    // until we're done parsing the options.  This is because we
+    // require that an a valid encoding is specified before we can
+    // choose which extractor to use
     //------------------------------------------------------------
-
-    if(options_.useRangeFilter_) {
-        if(options_.encodingType_ == Encoding::MSGPACK)
-            extractor_ = new ExtractorMsgpack();
-        else {
-            ThrowRuntimeError("An invalid object encoding was specified");
+    
+    if(useRangeFilter_) {
+        switch (encodingType_) {
+        case Encoding::MSGPACK:
+            break;
+        case Encoding::NONE:
+            ThrowRuntimeError("No object encoding was specified");
+            break;
+        case Encoding::UNKNOWN:
+            ThrowRuntimeError("An invalud object encoding was specified");
+            break;
+        default:
+            ThrowRuntimeError("An unsupported object encoding was specified: " << encodingType_);
+            break;
         }
     }
+};
 
-    if(!sync_obj_) {
-        ThrowRuntimeError("Constructor was called with NULL SyncObject pointer");
-    }
-
-    if (end_key) {
-        end_key_ = *end_key;
-    }
-
-    sync_obj_->RefInc();
-}
-
-RangeScanTask::~RangeScanTask()
-{
-    if(range_filter_) {
-        delete range_filter_;
-        range_filter_ = 0;
-    }
-    
-    if(extractor_) {
-        delete extractor_;
-        extractor_ = 0;
-    }
-
-    sync_obj_->RefDec();
-}
-
-void RangeScanTask::sendMsg(ErlNifEnv * msg_env, ERL_NIF_TERM atom, ErlNifPid pid)
-{
-    if(!sync_obj_->IsConsumerDead()) {
-        ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
-        ERL_NIF_TERM msg      = enif_make_tuple2(msg_env, atom, ref_copy);
-
-        enif_send(NULL, &pid, msg_env, msg);
-    }
-}
-
-void RangeScanTask::sendMsg(ErlNifEnv * msg_env, ERL_NIF_TERM atom, ErlNifPid pid, std::string msg)
-{
-    if(!sync_obj_->IsConsumerDead()) {
-        ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
-	ERL_NIF_TERM msg_str  = enif_make_string(msg_env, msg.c_str(), ERL_NIF_LATIN1);
-        ERL_NIF_TERM msg      = enif_make_tuple3(msg_env, atom, ref_copy, msg_str);
-
-        enif_send(NULL, &pid, msg_env, msg);
-    }
-}
+/**
+ * RangeScanTask::SyncObject
+ */
 
 RangeScanTask::SyncObject::SyncObject(const RangeScanOptions & opts)
-: max_bytes_(opts.max_unacked_bytes), 
+  : max_bytes_(opts.max_unacked_bytes), 
     low_bytes_(opts.low_bytes),
     num_bytes_(0),
     producer_sleeping_(false), pending_signal_(false), consumer_dead_(false),
     crossed_under_max_(false), mutex_(NULL), cond_(NULL)
 {
     mutex_ = enif_mutex_create(0);
-    cond_ = enif_cond_create(0);
+    cond_  = enif_cond_create(0);
 }
 
 RangeScanTask::SyncObject::~SyncObject()
@@ -592,7 +696,7 @@ bool RangeScanTask::SyncObject::AckBytesRet(uint32_t n)
 {
     uint32_t num_bytes = sub_and_fetch(&num_bytes_, n);
     bool ret;
-
+    
     const bool is_reack = n == 0;
     const bool is_under_max = num_bytes < max_bytes_;
     const bool was_over_max = num_bytes_ + n >= max_bytes_;
@@ -620,10 +724,10 @@ bool RangeScanTask::SyncObject::AckBytesRet(uint32_t n)
 void RangeScanTask::SyncObject::AckBytes(uint32_t n)
 {
     uint32_t num_bytes = sub_and_fetch(&num_bytes_, n);
-
+    
     if (num_bytes < max_bytes_ && num_bytes_ + n >= max_bytes_)
         crossed_under_max_ = true;
-
+    
     // Detect if at some point buffer was full, but now we have
     // acked enough bytes to go under the low watermark.
     if (crossed_under_max_ && num_bytes < low_bytes_) {
@@ -653,11 +757,88 @@ bool RangeScanTask::SyncObject::IsConsumerDead() const {
     return consumer_dead_;
 }
 
+/**
+ * RangeScanTask
+ */
+RangeScanTask::RangeScanTask(ErlNifEnv * caller_env,
+                             ERL_NIF_TERM caller_ref,
+                             DbObject * db_handle,
+                             const std::string & start_key,
+                             const std::string * end_key,
+                             RangeScanOptions & options,
+                             SyncObject * sync_obj)
+  : WorkTask(caller_env, caller_ref, db_handle),
+    options_(options),
+    start_key_(start_key),
+    has_end_key_(bool(end_key)),
+    sync_obj_(sync_obj),
+    range_filter_(0),
+    extractor_(0)
+{
+    //------------------------------------------------------------
+    // Sanity checks
+    //------------------------------------------------------------
+    
+    if(options_.useRangeFilter_) {
+        if(options_.encodingType_ == Encoding::MSGPACK)
+            extractor_ = new ExtractorMsgpack();
+        else {
+            ThrowRuntimeError("An invalid object encoding was specified");
+        }
+    }
+    
+    if(!sync_obj_) {
+        ThrowRuntimeError("Constructor was called with NULL SyncObject pointer");
+    }
+    
+    if (end_key) {
+        end_key_ = *end_key;
+    }
+    
+    sync_obj_->RefInc();
+}
 
+RangeScanTask::~RangeScanTask()
+{
+    if(range_filter_) {
+        delete range_filter_;
+        range_filter_ = 0;
+    }
+    
+    if(extractor_) {
+        delete extractor_;
+        extractor_ = 0;
+    }
+    
+    sync_obj_->RefDec();
+}
 
-void send_streaming_batch(ErlNifPid * pid, ErlNifEnv * msg_env, ERL_NIF_TERM ref_term,
-                ErlNifBinary * bin) {
+void RangeScanTask::sendMsg(ErlNifEnv * msg_env, ERL_NIF_TERM atom, ErlNifPid pid)
+{
+    if(!sync_obj_->IsConsumerDead()) {
+        ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
+        ERL_NIF_TERM msg      = enif_make_tuple2(msg_env, atom, ref_copy);
+        
+        enif_send(NULL, &pid, msg_env, msg);
+    }
+}
+
+void RangeScanTask::sendMsg(ErlNifEnv * msg_env, ERL_NIF_TERM atom, ErlNifPid pid, std::string msg)
+{
+    if(!sync_obj_->IsConsumerDead()) {
+        ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
+	ERL_NIF_TERM msg_str  = enif_make_string(msg_env, msg.c_str(), ERL_NIF_LATIN1);
+        ERL_NIF_TERM msg      = enif_make_tuple3(msg_env, atom, ref_copy, msg_str);
+        
+        enif_send(NULL, &pid, msg_env, msg);
+    }
+}
+
+void RangeScanTask::send_streaming_batch(ErlNifPid * pid, ErlNifEnv * msg_env, ERL_NIF_TERM ref_term,
+                                         ErlNifBinary * bin) 
+{
     // Binary now owned. No need to release it.
+
     ERL_NIF_TERM bin_term = enif_make_binary(msg_env, bin);
     ERL_NIF_TERM local_ref = enif_make_copy(msg_env, ref_term);
     ERL_NIF_TERM msg =
@@ -666,24 +847,26 @@ void send_streaming_batch(ErlNifPid * pid, ErlNifEnv * msg_env, ERL_NIF_TERM ref
     enif_clear_env(msg_env);
 }
 
-int VarintLength(uint64_t v) {
-  int len = 1;
-  while (v >= 128) {
-    v >>= 7;
-    len++;
-  }
-  return len;
+int RangeScanTask::VarintLength(uint64_t v) 
+{
+    int len = 1;
+    while (v >= 128) {
+        v >>= 7;
+        len++;
+    }
+    return len;
 }
 
-char* EncodeVarint64(char* dst, uint64_t v) {
-  static const uint64_t B = 128;
-  unsigned char* ptr = reinterpret_cast<unsigned char*>(dst);
-  while (v >= B) {
-    *(ptr++) = (v & (B-1)) | B;
-    v >>= 7;
-  }
-  *(ptr++) = static_cast<unsigned char>(v);
-  return reinterpret_cast<char*>(ptr);
+char* RangeScanTask::EncodeVarint64(char* dst, uint64_t v) 
+{
+    static const uint64_t B = 128;
+    unsigned char* ptr = reinterpret_cast<unsigned char*>(dst);
+    while (v >= B) {
+        *(ptr++) = (v & (B-1)) | B;
+        v >>= 7;
+    }
+    *(ptr++) = static_cast<unsigned char>(v);
+    return reinterpret_cast<char*>(ptr);
 }
 
 /**.......................................................................
@@ -691,19 +874,19 @@ char* EncodeVarint64(char* dst, uint64_t v) {
  */
 work_result RangeScanTask::operator()()
 {
+    ErlNifEnv* env     = local_env_;
+    ErlNifEnv* msg_env = enif_alloc_env();
+
     leveldb::ReadOptions read_options;
-    ErlNifEnv * env = local_env_;
-    ErlNifEnv * msg_env = enif_alloc_env();
+
     read_options.fill_cache = options_.fill_cache;
     read_options.verify_checksums = options_.verify_checksums;
-    leveldb::Iterator * iter = m_DbPtr->m_Db->NewIterator(read_options);
-    const leveldb::Comparator * cmp = m_DbPtr->m_DbOptions->comparator;
+
+    leveldb::Iterator* iter        = m_DbPtr->m_Db->NewIterator(read_options);
+    const leveldb::Comparator* cmp = m_DbPtr->m_DbOptions->comparator;
 
     const leveldb::Slice skey_slice(start_key_);
     const leveldb::Slice ekey_slice(end_key_);
-
-    const leveldb::Options& db_options = m_DbPtr->m_Db->GetOptions();
-    leveldb::KeyTranslator* translator = db_options.translator;
 
     iter->Seek(skey_slice);
 
@@ -713,15 +896,12 @@ work_result RangeScanTask::operator()()
     ErlNifBinary bin;
     const size_t initial_bin_size = size_t(options_.max_batch_bytes * 1.1);
     size_t out_offset = 0;
-    size_t num_read = 0;
-
-    std::string key_buffer;
-    key_buffer.reserve(256);
+    size_t num_read   = 0;
 
     //------------------------------------------------------------ 
-    // The code allows for individual filter conditions to be bad, ie,
-    // conditions that reference fields that don't exist, or compare
-    // field values to constants of the wrong type.
+    // The code allows for individual filter conditions to be bad,
+    // i.e., conditions that reference fields that don't exist, or
+    // compare field values to constants of the wrong type.
     //
     // If throwIfBadFilter is set to true, these are treated as fatal
     // errors, halting execution of the loop.
@@ -890,10 +1070,7 @@ work_result RangeScanTask::operator()()
 
         if (filter_passed) {
 	  
-            key_buffer.resize(0);
-            translator->TranslateInternalKey(key, &key_buffer);
-
-            const size_t ksz = key_buffer.size();
+            const size_t ksz = key.size();
 	    const size_t vsz = value.size();
 
             const size_t ksz_sz = VarintLength(ksz);
@@ -919,7 +1096,7 @@ work_result RangeScanTask::operator()()
             char * const out = (char*)bin.data + out_offset;
 
             EncodeVarint64(out, ksz);
-            memcpy(out + ksz_sz, key_buffer.data(), ksz);
+            memcpy(out + ksz_sz, key.data(), ksz);
 
             EncodeVarint64(out + ksz_sz + ksz, vsz);
             memcpy(out + ksz_sz + ksz + vsz_sz, value.data(), vsz);
@@ -951,6 +1128,7 @@ work_result RangeScanTask::operator()()
 	    //------------------------------------------------------------
 
 	    ++num_read;
+
 	} else {
             //	  COUT("Filter DIDN'T pass");
 	}
@@ -995,7 +1173,7 @@ RangeScanTask::CreateSyncHandle(const RangeScanOptions & options)
     SyncHandle * handle =
         (SyncHandle*)enif_alloc_resource(sync_handle_resource_,
                                          sizeof(SyncHandle));
-    handle->sync_obj = sync_obj;
+    handle->sync_obj_ = sync_obj;
     return handle;
 }
 
@@ -1011,11 +1189,14 @@ RangeScanTask::RetrieveSyncHandle(ErlNifEnv * env, ERL_NIF_TERM term)
 void RangeScanTask::SyncHandleResourceCleanup(ErlNifEnv * env, void * arg)
 {
     SyncHandle * handle = (SyncHandle*)arg;
-    if (handle->sync_obj) {
-        handle->sync_obj->MarkConsumerDead();
-        handle->sync_obj->RefDec();
-        handle->sync_obj = NULL;
+    if (handle->sync_obj_) {
+        handle->sync_obj_->MarkConsumerDead();
+        handle->sync_obj_->RefDec();
+        handle->sync_obj_ = NULL;
     }
 }
 
+
 } // namespace eleveldb
+
+

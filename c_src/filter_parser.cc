@@ -119,8 +119,7 @@ parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
 
 template<> ExpressionNode<std::string>* 
 parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
-    eleveldb::ErlUtil erlUtil(env, operand);
-    return new ConstantValue<std::string>(erlUtil.getString());
+    return new ConstantValue<std::string>(eleveldb::ErlUtil::getString(env, operand));
 }
 
 template<> ExpressionNode<unsigned char*>* 
@@ -471,7 +470,7 @@ parse_field_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
 
     try {
 
-        std::string fieldName = eleveldb::ErlUtil::getString(env, operand);
+        std::string fieldName = eleveldb::ErlUtil::getBinaryAsString(env, operand);
         ext.add_field(fieldName);
         return new FieldValue<T>(fieldName, ext.cTypeOf(fieldName));
 

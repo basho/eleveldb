@@ -23,17 +23,11 @@
 
 -export([open/2,
          close/1,
-         open_family/3,
-         close_family/2,
          get/3,
-         get/4,
          put/4,
-         put/5,
          async_put/5,
          delete/3,
-         delete/4,
          write/3,
-         write/4,
          fold/4,
          foldtest1/4,
          fold_keys/4,
@@ -47,9 +41,7 @@
          parse_string/1,
          is_empty/1,
 	 encode/2,
-	 current_usec/0,
-	 msgpacktest/1,
-	 eniftest/1]).
+	 current_usec/0]).
 
 %% for testing
 -export([
@@ -206,43 +198,6 @@ close(Ref) ->
 async_close(_CallerRef, _Ref) ->
     erlang:nif_error({error, not_loaded}).
 
-async_open_family(_CallerRef, _Dbh, _Name, _Opts) ->
-    erlang:nif_error({error, not_loaded}).
-
-open_family(Dbh, Name, Opts) ->
-    CallerRef = make_ref(),
-    async_open_family(CallerRef, Dbh, Name, Opts),
-    ?WAIT_FOR_REPLY(CallerRef).
-
-async_close_family(_CallerRef, _Dbh, _Name) ->
-    erlang:nif_error({error, not_loaded}).
-
-close_family(Dbh, Name) ->
-    CallerRef = make_ref(),
-    async_close_family(CallerRef, Dbh, Name),
-    ?WAIT_FOR_REPLY(CallerRef).
-
-async_get(_CallerRef, _Dbh, _Family, _Key, _Opts) ->
-    erlang:nif_error({error, not_loaded}).
-
-get(Dbh, Family, Key, Opts) ->
-    CallerRef = make_ref(),
-    async_get(CallerRef, Dbh, Family, Key, Opts),
-    ?WAIT_FOR_REPLY(CallerRef).
-
-async_write(_CallerRef, _Ref, _Family, _Updates, _Opts) ->
-    erlang:nif_error({error, not_loaded}).
-
-put(Ref, Family, Key, Value, Opts) -> write(Ref, Family, [{put, Key, Value}], Opts).
-
-delete(Ref, Family, Key, Opts) -> write(Ref, Family, [{delete, Key}], Opts).
-
-write(Ref, Family, Updates, Opts) ->
-    CallerRef = make_ref(),
-    async_write(CallerRef, Ref, Family, Updates, Opts),
-    ?WAIT_FOR_REPLY(CallerRef).
-
-
 -spec async_get(reference(), db_ref(), binary(), read_options()) -> ok.
 async_get(_CallerRef, _Dbh, _Key, _Opts) ->
     erlang:nif_error({error, not_loaded}).
@@ -376,12 +331,6 @@ do_streaming_fold_test1(StreamRef = {MsgRef, AckRef}, Fun, Acc) ->
     end.
 
 current_usec() ->
-    erlang:nif_error({error, not_loaded}).
-
-eniftest(_) ->
-    erlang:nif_error({error, not_loaded}).
-
-msgpacktest(_) ->
     erlang:nif_error({error, not_loaded}).
 
 parse_string(Bin) ->

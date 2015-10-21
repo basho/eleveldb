@@ -1,4 +1,5 @@
 #include "CmpUtil.h"
+#include "StringBuf.h"
 
 #include "exceptionutils.h"
 
@@ -184,9 +185,10 @@ CmpUtil::parseMap(const char* data, size_t size)
       ThrowRuntimeError("Unable to parse data as a msgpack map");
 
     //------------------------------------------------------------
-    // Iterate over the map, ispecting field names
+    // Iterate over the map, inspecting field names
     //------------------------------------------------------------
 
+    StringBuf sBuf;
     for(unsigned int i=0; i < map_size; i++) {
 
         //------------------------------------------------------------
@@ -202,9 +204,11 @@ CmpUtil::parseMap(const char* data, size_t size)
 	if(!cmp_object_as_str(&key_obj, &len))
 	  ThrowRuntimeError("Error parsing object as a string");
 
-	char key[len+1];
-        if(!cmp_object_to_str(&cmp, &key_obj, key, len+1))
+        sBuf.resize(len+1);
+        if(!cmp_object_to_str(&cmp, &key_obj, sBuf.getBuf(), len+1))
 	  ThrowRuntimeError("Error reading key string");
+
+        std::string key(sBuf.getBuf());
 
 	//------------------------------------------------------------
 	// Next read the field value
@@ -213,10 +217,10 @@ CmpUtil::parseMap(const char* data, size_t size)
         cmp_object_t obj;
 
         if(!cmp_read_object(&cmp, &obj))
-	  ThrowRuntimeError("Unable to read value for field " << key);
+            ThrowRuntimeError("Unable to read value for field " << key);
 
         DataType::Type type = typeOf(&obj);
-        keyValMap[std::string(key)] = type;
+        keyValMap[key] = type;
 
         skipLastReadObject(&ma, &cmp, &obj);
     }

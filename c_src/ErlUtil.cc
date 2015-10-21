@@ -1,4 +1,5 @@
 #include "ErlUtil.h"
+#include "StringBuf.h"
 
 #include "cmp.h"
 #include "cmp_mem_access.h"
@@ -52,7 +53,7 @@ void ErlUtil::checkEnv()
 
 void ErlUtil::checkTerm() 
 {
-    if(!term_)
+    if(!hasTerm_)
         ThrowRuntimeError("No term has been set");
 }
 
@@ -144,27 +145,6 @@ bool ErlUtil::isString(ErlNifEnv* env, ERL_NIF_TERM term)
         return true;
         
         //------------------------------------------------------------
-        // If this is a binary, it _could_ be a string
-        //------------------------------------------------------------
-        
-    } else if(isBinary(env, term)) {
-        ErlNifBinary bin;
-
-        if(enif_inspect_binary(env, term, &bin) == 0) {
-            ThrowRuntimeError("Failed to inspect '" << formatTerm(env, term)
-                              << "' as a binary");
-        }
-
-        size = bin.size;
-        for(unsigned i=0; i < size; i++) {
-
-            if(!isprint(bin.data[i]))
-                return false;
-        }
-
-        return true;
-
-        //------------------------------------------------------------
         // Erlang represents strings internally as lists, so use native
         // erlang conversion to check a list
         //------------------------------------------------------------
@@ -175,14 +155,71 @@ bool ErlUtil::isString(ErlNifEnv* env, ERL_NIF_TERM term)
             ThrowRuntimeError("Failed to get list length");
         }
 
-        char buf[size+1];
+        // Note that enif_get_string expects the buffer size, not the
+        // string length, and will return less than the length of the
+        // string if the passed size isn't large enough to include the
+        // string + null terminator
+
+        StringBuf sBuf(size+1);
+        return enif_get_string(env, term, sBuf.getBuf(), sBuf.bufSize(), ERL_NIF_LATIN1);
+
+        //------------------------------------------------------------
+        // Else not a string
+        //------------------------------------------------------------
+
+    } else {
+        return false;
+    }
+}
+
+bool ErlUtil::isRepresentableAsString()
+{
+    checkTerm();
+    return isRepresentableAsString(term_);
+}
+
+bool ErlUtil::isRepresentableAsString(ERL_NIF_TERM term)
+{
+    checkEnv();
+    return isRepresentableAsString(env_, term);
+}
+
+bool ErlUtil::isRepresentableAsString(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    unsigned size=0;
+
+    //------------------------------------------------------------
+    // If this is an atom, it can be represented as a string
+    //------------------------------------------------------------
+
+    if(isAtom(env, term)) {
+        return true;
+        
+        //------------------------------------------------------------
+        // If this is a binary, it _could_ be a string
+        //------------------------------------------------------------
+        
+    } else if(isBinary(env, term)) {
+        return true;
+
+        //------------------------------------------------------------
+        // Erlang represents strings internally as lists, so use native
+        // erlang conversion to check that a list is a string
+        //------------------------------------------------------------
+
+    } else if(isList(env, term)) {
+
+        if(enif_get_list_length(env, term, &size) == 0) {
+            ThrowRuntimeError("Failed to get list length");
+        }
 
         // Note that enif_get_string expects the buffer size, not the
         // string length, and will return less than the length of the
         // string if the passed size isn't large enough to include the
         // string + null terminator
 
-        return enif_get_string(env, term, buf, size+1, ERL_NIF_LATIN1);
+        StringBuf sBuf(size+1);
+        return enif_get_string(env, term, sBuf.getBuf(), sBuf.bufSize(), ERL_NIF_LATIN1);
 
         //------------------------------------------------------------
         // Else not a string
@@ -245,21 +282,22 @@ std::string ErlUtil::getAtom(ERL_NIF_TERM term)
     return getAtom(env_, term);
 }
 
-std::string ErlUtil::getAtom(ErlNifEnv* env, ERL_NIF_TERM term, bool toLower)
+std::string ErlUtil::getAtom(ErlNifEnv* env, ERL_NIF_TERM term)
 {
     unsigned len=0;
     if(!enif_get_atom_length(env, term, &len, ERL_NIF_LATIN1))
         ThrowRuntimeError("Unable to encode atom");
 
-    char buf[len+1];
-    if(!enif_get_atom(env, term, buf, len+1, ERL_NIF_LATIN1))
-        ThrowRuntimeError("Unable to encode atom");
+    StringBuf sBuf(len+1);
+    char* buf = sBuf.getBuf();
 
-    if(toLower) {
-        for(unsigned i=0; i < len; i++)
-            buf[i] = tolower(buf[i]);
-    }
+    if(!enif_get_atom(env, term, buf, sBuf.bufSize(), ERL_NIF_LATIN1))
+        ThrowRuntimeError("Unable to encode atom");
         
+    // At this point, buf will contain a null-terminated version of
+    // the converted atom, and can be returned as the argument to
+    // std::string() constructor
+
     return buf;
 }
 
@@ -306,7 +344,6 @@ std::string ErlUtil::getString(ERL_NIF_TERM term)
 std::string ErlUtil::getString(ErlNifEnv* env, ERL_NIF_TERM term)
 {
     unsigned size=0;
-    std::string retVal;
 
     //------------------------------------------------------------
     // Atoms are represented as strings
@@ -314,34 +351,6 @@ std::string ErlUtil::getString(ErlNifEnv* env, ERL_NIF_TERM term)
 
     if(isAtom(env, term)) {
         return getAtom(env, term);
-
-        //------------------------------------------------------------
-        // If this is a binary, it _could_ be a string
-        //------------------------------------------------------------
-
-
-    } else if(isBinary(env, term)) {
-        ErlNifBinary bin;
-
-        if(enif_inspect_binary(env, term, &bin) == 0) {
-            ThrowRuntimeError("Failed to inspect binary");
-        }
-
-        size = bin.size;
-        char buf[size+1];
-
-        for(unsigned i=0; i < size; i++) {
-
-            if(isprint(bin.data[i])) {
-                buf[i] = bin.data[i];
-            } else {
-                ThrowRuntimeError("Term '" << formatTerm(env, term) 
-                                  << "' is not a printable string");
-            }
-        }
-
-        buf[size] = '\0';
-        return buf;
 
         //------------------------------------------------------------
         // Erlang represents strings internally as lists, so use native
@@ -354,10 +363,16 @@ std::string ErlUtil::getString(ErlNifEnv* env, ERL_NIF_TERM term)
             ThrowRuntimeError("Failed to get list length");
         }
 
-        char buf[size+1];
+        StringBuf sBuf(size+1);
+        char* buf = sBuf.getBuf();
+
         if(enif_get_string(env, term, buf, size+1, ERL_NIF_LATIN1) == 0) {
             ThrowRuntimeError("Unable to encode string");
         }
+
+        // At this point, buf will contain a null-terminated version of
+        // the converted atom, and can be returned as the argument to
+        // std::string() constructor
 
         return buf;
 
@@ -369,6 +384,94 @@ std::string ErlUtil::getString(ErlNifEnv* env, ERL_NIF_TERM term)
         ThrowRuntimeError("Term '" << formatTerm(env, term) 
                           << "' cannot be interpreted as a string");
     }
+}
+
+std::string ErlUtil::getAsString()
+{
+    checkTerm();
+    return getAsString(term_);
+}
+
+std::string ErlUtil::getAsString(ERL_NIF_TERM term)
+{
+    checkEnv();
+    return getAsString(env_, term);
+}
+
+std::string ErlUtil::getAsString(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    //------------------------------------------------------------
+    // Atoms are represented as strings
+    //------------------------------------------------------------
+
+    if(isAtom(env, term)) {
+        return getAtom(env, term);
+
+        //------------------------------------------------------------
+        // We allow generic binaries to be interpreted as strings
+        //------------------------------------------------------------
+
+    } else if(isBinary(env, term)) {
+        return getBinaryAsString(env, term);
+
+        //------------------------------------------------------------
+        // Erlang represents strings internally as lists, so use native
+        // erlang conversion to check a list
+        //------------------------------------------------------------
+
+    } else if(isList(env, term)) {
+        return getListAsString(env, term);
+
+        //------------------------------------------------------------
+        // Else not a string
+        //------------------------------------------------------------
+
+    } else {
+        ThrowRuntimeError("Term '" << formatTerm(env, term) 
+                          << "' cannot be interpreted as a string");
+    }
+}
+
+/**.......................................................................
+ * Return an erlang binary as a string
+ */
+std::string ErlUtil::getBinaryAsString(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    ErlNifBinary bin;
+
+    if(enif_inspect_binary(env, term, &bin) == 0) {
+        ThrowRuntimeError("Failed to inspect binary");
+    }
+
+    StringBuf sBuf(bin.size+1);
+    char* buf = sBuf.getBuf();
+
+    memcpy(buf, bin.data, bin.size);
+    
+    buf[bin.size] = '\0';
+
+    return buf;
+}
+
+/**.......................................................................
+ * Return an erlang list as a string.
+ */
+std::string ErlUtil::getListAsString(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    unsigned size=0;
+
+    if(enif_get_list_length(env, term, &size) == 0) {
+        ThrowRuntimeError("Failed to get list length");
+    }
+    
+    StringBuf sBuf(size+1);
+    char* buf = sBuf.getBuf();
+    
+    if(enif_get_string(env, term, buf, size+1, ERL_NIF_LATIN1) == 0) {
+        ThrowRuntimeError("Unable to encode string");
+    }
+    
+    return buf;
 }
 
 /**.......................................................................
@@ -497,139 +600,6 @@ std::vector<std::pair<std::string, ERL_NIF_TERM> > ErlUtil::getListTuples(ERL_NI
     return cells;
 }
 
-void ErlUtil::decodeRiakObject(ERL_NIF_TERM obj, ERL_NIF_TERM encoding)
-{
-    checkEnv();
-
-    ErlNifBinary bin;
-    if(enif_inspect_binary(env_, obj, &bin) == 0)
-        ThrowRuntimeError("Term is not a binary");
-
-#if 0
-    unsigned encodingLen;
-    if(enif_get_atom_length(env_, encoding, &encodingLen, ERL_NIF_LATIN1) == 0)
-        ThrowRuntimeError("Term is not an atom");
-
-    char encodingType[encodingLen+1];
-    if(enif_get_atom(env_, encoding, encodingType, encodingLen+1, ERL_NIF_LATIN1) == 0)
-        ThrowRuntimeError("Term is not an atom");
-
-    COUT("Binary has size: " << bin.size << " Encoding = " << encoding);
-#endif
-
-    unsigned char* ptr = bin.data;
-
-    unsigned char magic = (*ptr++);
-    COUT("Magic = " << (int)(magic));
-
-    unsigned char vers = (*ptr++);
-    COUT("Version = " << (int)(vers));
-
-    unsigned int vClockLen = ntohl(*((unsigned int*)ptr));
-    ptr += 4;
-
-    COUT("VclockLen = " << vClockLen);
-    ptr += vClockLen;
-
-    unsigned int sibCount =  ntohl(*((unsigned int*)ptr));
-    ptr += 4;
-    COUT("SibCount = " << sibCount);
-
-    //------------------------------------------------------------
-    // Now we are on to the first sibling
-    //------------------------------------------------------------
-
-    unsigned int valLen =  ntohl(*((unsigned int*)ptr));
-    ptr += 4;
-    COUT("ValLen = " << valLen);
-
-    // And the first siblings data
-
-    if(encoding == eleveldb::ATOM_ERLANG_ENCODING)
-        parseSiblingData(ptr, valLen);
-    else if(encoding == eleveldb::ATOM_MSGPACK_ENCODING)
-        parseSiblingDataMsgpack(ptr, valLen);
-    else
-        ThrowRuntimeError("Unrecognized encoding");
-}
-
-void ErlUtil::parseSiblingData(unsigned char* ptr, unsigned len)
-{
-    for(unsigned i=0; i < len; i++)
-        COUT("Byte " << i << " = " << *(ptr+i));
-}
-
-void ErlUtil::parseSiblingDataMsgpack(unsigned char* ptr, unsigned len)
-{
-    cmp_mem_access_t ma;
-    uint32_t map_size;
-    char key[255];
-    cmp_object_t map;
-    cmp_ctx_t cmp;
-  
-    cmp_mem_access_ro_init(&cmp, &ma, ptr, len);
-    cmp_read_object(&cmp, &map);
-  
-    if(!cmp_object_as_map(&map, &map_size)) {
-        ThrowRuntimeError("Unable to parse data as a msgpack object");
-    }
-
-    //------------------------------------------------------------
-    // Iterate over the object, looking for fields
-    //------------------------------------------------------------
-
-    for(unsigned int i=0; i < map_size; i++) {
-
-        //------------------------------------------------------------
-        // First read the field key
-        //------------------------------------------------------------
-
-        cmp_object_t key_obj;
-
-        if (!cmp_read_object(&cmp, &key_obj) || !cmp_object_is_str(&key_obj)) {
-            ThrowRuntimeError("Failed to read key");
-        }
-
-        if (!cmp_object_to_str(&cmp, &key_obj, key, sizeof(key))) {
-            ThrowRuntimeError("Error reading key as string!");
-        }
-
-	//------------------------------------------------------------
-	// Next read the field value
-	//------------------------------------------------------------
-
-        cmp_object_t obj;
-        cmp_read_object(&cmp, &obj);
-
-	if (cmp_object_is_nil(&obj)) {
-            continue;
-
-	} else if (cmp_object_is_long(&obj)) {
-            int64_t val;
-            if (cmp_object_as_long(&obj, &val)) {
-                COUT("Found field " << key << " with val (1) " << val);
-            }
-	} else if (cmp_object_is_ulong(&obj)) {
-            uint64_t val;
-            if (cmp_object_as_ulong(&obj, &val)) {
-                COUT("Found field " << key << " with val (2) " << val);
-            }
-	} else if (cmp_object_is_float(&obj)) {
-            float val;
-            if (cmp_object_as_float(&obj, &val)) {
-                COUT("Found field " << key << " with val (2) " << val);
-            }
-	} else if (cmp_object_is_double(&obj)) {
-            double val;
-            if (cmp_object_as_double(&obj, &val)) {
-                COUT("Found field " << key << " with val (2) " << val);
-            }
-	} else {
-            ThrowRuntimeError("Unsupported value type found!");
-	}
-    }
-}
-
 /**.......................................................................
  * Try to convert the erlang value in term to an integer
  */
@@ -682,7 +652,7 @@ int32_t ErlUtil::getValAsInt32(ErlNifEnv* env, ERL_NIF_TERM term, bool exact)
     //------------------------------------------------------------
 
     if(ErlUtil::isAtom(env, term)) {
-        std::string atom = ErlUtil::getAtom(env, term, true);
+        std::string atom = ErlUtil::getAtom(env, term);
         if(atom == "true") {
             return 1;
         } else if(atom == "false") {
@@ -744,7 +714,7 @@ int64_t ErlUtil::getValAsInt64(ErlNifEnv* env, ERL_NIF_TERM term, bool exact)
     //------------------------------------------------------------
 
     if(ErlUtil::isAtom(env, term)) {
-        std::string atom = ErlUtil::getAtom(env, term, true);
+        std::string atom = ErlUtil::getAtom(env, term);
         if(atom == "true") {
             return 1;
         } else if(atom == "false") {
@@ -822,7 +792,7 @@ uint32_t ErlUtil::getValAsUint32(ErlNifEnv* env, ERL_NIF_TERM term, bool exact)
     //------------------------------------------------------------
 
     if(ErlUtil::isAtom(env, term)) {
-        std::string atom = ErlUtil::getAtom(env, term, true);
+        std::string atom = ErlUtil::getAtom(env, term);
         if(atom == "true") {
             return 1;
         } else if(atom == "false") {
@@ -903,7 +873,7 @@ uint8_t ErlUtil::getValAsUint8(ErlNifEnv* env, ERL_NIF_TERM term, bool exact)
     //------------------------------------------------------------
 
     if(ErlUtil::isAtom(env, term)) {
-        std::string atom = ErlUtil::getAtom(env, term, true);
+        std::string atom = ErlUtil::getAtom(env, term);
         if(atom == "true") {
             return 1;
         } else if(atom == "false") {
@@ -980,7 +950,7 @@ uint64_t ErlUtil::getValAsUint64(ErlNifEnv* env, ERL_NIF_TERM term, bool exact)
     //------------------------------------------------------------
 
     if(ErlUtil::isAtom(env, term)) {
-        std::string atom = ErlUtil::getAtom(env, term, true);
+        std::string atom = ErlUtil::getAtom(env, term);
         if(atom == "true") {
             return 1;
         } else if(atom == "false") {
@@ -1025,7 +995,7 @@ double ErlUtil::getValAsDouble(ErlNifEnv* env, ERL_NIF_TERM term, bool exact)
     //------------------------------------------------------------
 
     if(ErlUtil::isAtom(env, term)) {
-        std::string atom = ErlUtil::getAtom(env, term, true);
+        std::string atom = ErlUtil::getAtom(env, term);
         if(atom == "true") {
             return 1.0;
         } else if(atom == "false") {
@@ -1195,3 +1165,4 @@ std::string ErlUtil::formatTuple(ErlNifEnv* env, ERL_NIF_TERM term)
     std::vector<ERL_NIF_TERM> cells = getTupleCells(env, term);
     return formatTupleVec(env, cells);
 }
+

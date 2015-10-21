@@ -1,6 +1,7 @@
 #ifndef extractor_h
 #define extractor_h
 
+#include <stdint.h>
 #include <map>
 #include <string>
 #include <set>
@@ -82,10 +83,10 @@ public:
     void extract(const char *data, size_t size, ExpressionNode<bool>* root);
     void extractRiakObject(const char *data, size_t size, ExpressionNode<bool>* root);
 
-    void setBinaryVal(ExpressionNode<bool>* root, char* key, 
+    void setBinaryVal(ExpressionNode<bool>* root, std::string& key,
                       cmp_mem_access_t* ma, cmp_ctx_t* cmp, cmp_object_t* obj, bool includeMarker);
 
-    void setStringVal(ExpressionNode<bool>* root, char* key, 
+    void setStringVal(ExpressionNode<bool>* root, std::string& key, 
                       cmp_object_t* obj);
 };
 
