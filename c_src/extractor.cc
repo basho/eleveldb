@@ -12,6 +12,8 @@
 #include <arpa/inet.h>
 #include <inttypes.h>
 
+#define MSGPACK_MAGIC 2
+
 using namespace eleveldb;
 
 //=======================================================================
@@ -264,7 +266,7 @@ DataType::Type Extractor::cTypeOf(ErlNifEnv* env, ERL_NIF_TERM oper1, ERL_NIF_TE
  *
  * New-style tuples should be of the form:
  *
- *    {field, "fieldname", type} or {const, val, type}
+ *    {field, "fieldname", type} or {const, val}
  *
  */
 DataType::Type Extractor::cTypeOf(ErlNifEnv* env, ERL_NIF_TERM tuple, bool throwIfInvalid)
@@ -293,6 +295,10 @@ DataType::Type Extractor::cTypeOf(ErlNifEnv* env, ERL_NIF_TERM tuple, bool throw
             if(op == eleveldb::filter::FIELD_OP)
                 fieldName = ErlUtil::getBinaryAsString(env, op_args[1]);
             
+            //------------------------------------------------------------
+            // Check 2-tuples
+            //------------------------------------------------------------
+
             if(arity == 2) {
                 
                 // If this is a constant expression, we defer to the field value
@@ -307,20 +313,33 @@ DataType::Type Extractor::cTypeOf(ErlNifEnv* env, ERL_NIF_TERM tuple, bool throw
                 if(op == eleveldb::filter::FIELD_OP)
                     return cTypeOf(fieldName);
 
+            //------------------------------------------------------------
+            // Check 3-tuples
+            //------------------------------------------------------------
+
             } else if(arity == 3) {
-                std::string type = ErlUtil::getAtom(env, op_args[2]);
 
-                // Store the type as-specified
-
-                expr_field_specs_[fieldName] = tsAtomToType(type, throwIfInvalid);
-
-                // Overwrite any inferences we may have made from parsing the data
-
-                field_types_[fieldName] = tsAtomToCtype(type, throwIfInvalid);
-
-                // And return the type
-
-                return tsAtomToCtype(type, throwIfInvalid);
+                // If this is a constant expression, and a type has
+                // been specified, we still defer to the field value
+                // against which we will be comparing it
+                
+                if(op == eleveldb::filter::CONST_OP) {
+                    return DataType::CONST;
+                } else {
+                    std::string type = ErlUtil::getAtom(env, op_args[2]);
+                    
+                    // Store the type as-specified
+                    
+                    expr_field_specs_[fieldName] = tsAtomToType(type, throwIfInvalid);
+                    
+                    // Overwrite any inferences we may have made from parsing the data
+                    
+                    field_types_[fieldName] = tsAtomToCtype(type, throwIfInvalid);
+                    
+                    // And return the type
+                    
+                    return tsAtomToCtype(type, throwIfInvalid);
+                }
             }
         }
 
@@ -342,9 +361,53 @@ DataType::Type Extractor::cTypeOf(ErlNifEnv* env, ERL_NIF_TERM tuple, bool throw
 bool Extractor::riakObjectContentsCanBeParsed(const char* data, size_t size)
 {
     const char* ptr = data;
-    ptr++;
+
+    //------------------------------------------------------------
+    // Skip the magic number and version
+    //------------------------------------------------------------
+
+    unsigned char magic    = (*ptr++);
     unsigned char vers     = (*ptr++);
-    return vers == 1;
+
+    if(!(magic == 53 && vers == 1))
+        return false;
+
+    //------------------------------------------------------------
+    // Skip the vclock len and vclock contents
+    //------------------------------------------------------------
+
+    unsigned int vClockLen = ntohl(*((unsigned int*)ptr));
+    ptr += 4;
+    ptr += vClockLen;
+
+    //------------------------------------------------------------
+    // Skip the sibling count
+    //------------------------------------------------------------
+
+    unsigned int sibCount =  ntohl(*((unsigned int*)ptr));
+    ptr += 4;
+
+    if(sibCount != 1)
+        return false;
+
+    //------------------------------------------------------------
+    // Now we are on to the first (and only) sibling.  Skip the length of
+    // the data contents for this sibling
+    //------------------------------------------------------------
+
+    ptr += 4;
+
+    //------------------------------------------------------------
+    // The next byte should now be the msgpack magic number (2).
+    // Check that it is
+    //------------------------------------------------------------
+
+    unsigned char encMagic = (*ptr++);
+
+    if(encMagic != MSGPACK_MAGIC)
+        return false;
+
+    return true;
 }
 
 /**.......................................................................
@@ -360,11 +423,11 @@ void Extractor::getToRiakObjectContents(const char* data, size_t size,
     // Skip the magic number and version
     //------------------------------------------------------------
 
-    ptr++;
+    unsigned char magic    = (*ptr++);
     unsigned char vers     = (*ptr++);
 
-    if(vers != 1)
-        ThrowRuntimeError("Riak object contents can only be inspected for v1 encoding");
+    if(!(magic == 53 && vers == 1))
+        ThrowRuntimeError("Riak object contents can only be inspected for magic = 53 and v1 encoding");
 
     //------------------------------------------------------------
     // Skip the vclock len and vclock contents
@@ -393,13 +456,23 @@ void Extractor::getToRiakObjectContents(const char* data, size_t size,
     ptr += 4;
 
     //------------------------------------------------------------
+    // The next byte should now be the msgpack magic number (2).
+    // Check that it is
+    //------------------------------------------------------------
+
+    unsigned char encMagic = (*ptr++);
+
+    if(encMagic != MSGPACK_MAGIC)
+        ThrowRuntimeError("This is not msgpack-encoded data");
+
+    //------------------------------------------------------------
     // Set the passed ptr pointing to the start of the contents for this
     // object, and set the returned length to be just the length of the
     // contents
     //------------------------------------------------------------
 
-    *contentsPtr = ptr;
-    contentsSize = valLen;
+    *contentsPtr  = ptr;
+     contentsSize = valLen;
 }
 
 //=======================================================================
