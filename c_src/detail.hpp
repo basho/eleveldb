@@ -141,7 +141,7 @@ static inline uint64_t add_and_fetch(volatile uint64_t *ptr, uint64_t v)
 static inline uint32_t add_and_fetch(volatile uint32_t *ptr, uint32_t v)
 {
 #if ELEVELDB_IS_SOLARIS
-    return atomic_add_32_nv(ptr);
+    return atomic_add_32_nv(ptr, v);
 #else
     return __sync_add_and_fetch(ptr, v);
 #endif
