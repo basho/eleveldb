@@ -20,9 +20,7 @@ encode_k2([],                    Bin) -> Bin;
 encode_k2([{timestamp, Ts} | T], Bin) -> encode_k2(T, append(<<Ts:64>>, Bin));
 encode_k2([{double, F}     | T], Bin) -> encode_k2(T, append(<<F:64/float>>,  Bin));
 encode_k2([{sint64, I}     | T], Bin) -> encode_k2(T, append(<<I:64/integer>>, Bin));
-encode_k2([{varchar, B}    | T], Bin) when is_binary(B) -> encode_k2(T, append(B, Bin));
-encode_k2([{binary, L}     | T], Bin) when is_list(L)   -> B = list_to_binary(L),
-                                                           encode_k2(T, append(B, Bin)).
+encode_k2([{varchar, B}    | T], Bin) when is_binary(B) -> encode_k2(T, append(B, Bin)).
 
 encode_record(Record) -> 
     msgpack:pack(Record, [{format, jsx}]).
