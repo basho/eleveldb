@@ -75,12 +75,36 @@ DataType::Type Extractor::tsAtomToType(std::string tsAtom, bool throwIfInvalid)
 {
     DataType::Type type = DataType::UNKNOWN;
 
-    if(tsAtom == "binary") {
+    // Used to be 'binary', now it's 'varchar'
+
+    if(tsAtom == "varchar") {
         type = DataType::BIN;
+
+        // But someone will probably still try to use 'binary' somewhere!
+
+    } else if(tsAtom == "binary") {
+        type = DataType::BIN;
+
+        // Used to be 'integer', now it's 'sint64'
+
+    } else if(tsAtom == "sint64") {
+        type = DataType::INT64;
+
+        // But someone will probably still try to use 'integer' somewhere!
+
     } else if(tsAtom == "integer") {
         type = DataType::INT64;
+
+        // Used to be 'float', now it's 'double'
+
+    } else if(tsAtom == "double") {
+        type = DataType::DOUBLE;
+
+        // But someone will probably still try to use 'float' somewhere!
+
     } else if(tsAtom == "float") {
         type = DataType::DOUBLE;
+
     } else if(tsAtom == "boolean") {
         type = DataType::BOOL;
     } else if(tsAtom == "timestamp") {
