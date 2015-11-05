@@ -559,6 +559,20 @@ intOps_test() ->
     Res.
 
 %%------------------------------------------------------------
+%% Test sint64 operations, because now that's what we're calling integers
+%%------------------------------------------------------------
+
+sint64Ops_test() ->
+    io:format("sint64Ops_test~n"),
+    F = <<"f1">>,
+    Val = 3,
+    PutFn = fun putKeyNormalOps/1,
+    EvalFn = fun defaultEvalFn/1,
+    Res = allOps({F, {Val}, sint64, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
 %% Test binary operations
 %%------------------------------------------------------------
 
@@ -573,6 +587,21 @@ binaryOps_test() ->
     Res.
 
 %%------------------------------------------------------------
+%% Test varchar operations, because that's what were now calling
+%% binary
+%%------------------------------------------------------------
+
+varcharOps_test() ->
+    io:format("varcharOps_test~n"),
+    F = <<"f2">>,
+    Val = <<"test3">>,
+    PutFn = fun putKeyNormalOps/1,
+    EvalFn = fun defaultEvalFn/1,
+    Res = eqOpsOnly({F, {Val}, varchar, PutFn, EvalFn}) and (anyCompOps({F, {Val}, varchar, PutFn, EvalFn}) == false),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
 %% Test float operations
 %%------------------------------------------------------------
 
@@ -583,6 +612,21 @@ floatOps_test() ->
     PutFn = fun putKeyNormalOps/1,
     EvalFn = fun defaultEvalFn/1,
     Res = allOps({F, {Val}, float, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% Test double operations, because that's what we're now calling
+%% 'float'
+%%------------------------------------------------------------
+
+doubleOps_test() ->
+    io:format("doubleOps_test~n"),
+    F = <<"f3">>,
+    Val = 3.0,
+    PutFn = fun putKeyNormalOps/1,
+    EvalFn = fun defaultEvalFn/1,
+    Res = allOps({F, {Val}, double, PutFn, EvalFn}),
     ?assert(Res),
     Res.
 
@@ -620,7 +664,7 @@ anyOps_test() ->
 %%------------------------------------------------------------
 
 normalOpsTests() ->
-    intOps_test() and binaryOps_test() and boolOps_test() and floatOps_test() and anyOps_test() and timestampOps_test().
+    intOps_test() and sint64Ops_test() and binaryOps_test() and varcharOps_test() and boolOps_test() and floatOps_test() and doubleOps_test() and anyOps_test() and timestampOps_test().
 
 %%=======================================================================
 %% Test AND + OR comparators
