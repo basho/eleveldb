@@ -545,20 +545,6 @@ timestampOps_test() ->
     Res.
 
 %%------------------------------------------------------------
-%% Test integer operations
-%%------------------------------------------------------------
-
-intOps_test() ->
-    io:format("intOps_test~n"),
-    F = <<"f1">>,
-    Val = 3,
-    PutFn = fun putKeyNormalOps/1,
-    EvalFn = fun defaultEvalFn/1,
-    Res = allOps({F, {Val}, integer, PutFn, EvalFn}),
-    ?assert(Res),
-    Res.
-
-%%------------------------------------------------------------
 %% Test sint64 operations, because now that's what we're calling integers
 %%------------------------------------------------------------
 
@@ -569,20 +555,6 @@ sint64Ops_test() ->
     PutFn = fun putKeyNormalOps/1,
     EvalFn = fun defaultEvalFn/1,
     Res = allOps({F, {Val}, sint64, PutFn, EvalFn}),
-    ?assert(Res),
-    Res.
-
-%%------------------------------------------------------------
-%% Test binary operations
-%%------------------------------------------------------------
-
-binaryOps_test() ->
-    io:format("binaryOps_test~n"),
-    F = <<"f2">>,
-    Val = <<"test3">>,
-    PutFn = fun putKeyNormalOps/1,
-    EvalFn = fun defaultEvalFn/1,
-    Res = eqOpsOnly({F, {Val}, binary, PutFn, EvalFn}) and (anyCompOps({F, {Val}, binary, PutFn, EvalFn}) == false),
     ?assert(Res),
     Res.
 
@@ -598,20 +570,6 @@ varcharOps_test() ->
     PutFn = fun putKeyNormalOps/1,
     EvalFn = fun defaultEvalFn/1,
     Res = eqOpsOnly({F, {Val}, varchar, PutFn, EvalFn}) and (anyCompOps({F, {Val}, varchar, PutFn, EvalFn}) == false),
-    ?assert(Res),
-    Res.
-
-%%------------------------------------------------------------
-%% Test float operations
-%%------------------------------------------------------------
-
-floatOps_test() ->
-    io:format("floatOps_test~n"),
-    F = <<"f3">>,
-    Val = 3.0,
-    PutFn = fun putKeyNormalOps/1,
-    EvalFn = fun defaultEvalFn/1,
-    Res = allOps({F, {Val}, float, PutFn, EvalFn}),
     ?assert(Res),
     Res.
 
@@ -664,7 +622,7 @@ anyOps_test() ->
 %%------------------------------------------------------------
 
 normalOpsTests() ->
-    intOps_test() and sint64Ops_test() and binaryOps_test() and varcharOps_test() and boolOps_test() and floatOps_test() and doubleOps_test() and anyOps_test() and timestampOps_test().
+    sint64Ops_test() and varcharOps_test() and boolOps_test() and doubleOps_test() and anyOps_test() and timestampOps_test().
 
 %%=======================================================================
 %% Test AND + OR comparators
@@ -676,8 +634,8 @@ normalOpsTests() ->
 
 andOps_test() ->
     io:format("andOps_test~n"),
-    Cond1 = {'>', {field, <<"f1">>, integer}, {const, 2}},
-    Cond2 = {'=', {field, <<"f3">>, float},   {const, 4.0}},
+    Cond1 = {'>', {field, <<"f1">>, sint64}, {const, 2}},
+    Cond2 = {'=', {field, <<"f3">>, double}, {const, 4.0}},
     Filter = {'and_', Cond1, Cond2},
     PutFn  = fun sut:putKeyNormalOps/1,
     Keys = streamFoldTest(Filter, PutFn),
@@ -693,8 +651,8 @@ andOps_test() ->
 
 orOps_test() ->
     io:format("orOps_test~n"),
-    Cond1 = {'>', {field, <<"f1">>, integer}, {const, 2}},
-    Cond2 = {'=', {field, <<"f3">>, float},   {const, 4.0}},
+    Cond1 = {'>', {field, <<"f1">>, sint64}, {const, 2}},
+    Cond2 = {'=', {field, <<"f3">>, double}, {const, 4.0}},
     Filter = {'or_', Cond1, Cond2},
     PutFn  = fun sut:putKeyNormalOps/1,
     Keys = streamFoldTest(Filter, PutFn),
@@ -738,7 +696,7 @@ badInt_test() ->
     Val = 0,
     PutFn = fun putKeyAbnormalOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
     ?assert(Res),
     Res.
 
@@ -765,7 +723,7 @@ badBinary_test() ->
     F = <<"f2">>,
     Val = <<"test">>,
     PutFn = fun putKeyAbnormalOps/1,
-    Res = neqOps({F, {Val}, binary, PutFn, fun({N,_}) -> N == 4 end}),
+    Res = neqOps({F, {Val}, varchar, PutFn, fun({N,_}) -> N == 4 end}),
     ?assert(Res),
     Res.
 
@@ -779,7 +737,7 @@ badFloat_test() ->
     Val = 0.0,
     PutFn = fun putKeyAbnormalOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, float, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, double, PutFn, EvalFn}),
     ?assert(Res),
     Res.
 
@@ -860,7 +818,7 @@ missingKey_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun defaultEvalFn/1,
-    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
     ?assert(Res),
     Res.
 
@@ -870,7 +828,7 @@ missingFirstKey_test() ->
     Val = 0,
     PutFn = fun putKeyFirstMissingOps/1,
     EvalFn = fun defaultEvalFn/1,
-    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
     ?assert(Res),
     Res.
 
@@ -880,7 +838,7 @@ emptyKey_test() ->
     Val = 0,
     PutFn = fun putKeyEmptyOps/1,
     EvalFn = fun defaultEvalFn/1,
-    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
     ?assert(Res),
     Res.
 
@@ -890,7 +848,7 @@ emptyFirstKey_test() ->
     Val = 0,
     PutFn = fun putKeyFirstEmptyOps/1,
     EvalFn = fun defaultEvalFn/1,
-    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
     ?assert(Res),
     Res.
 
@@ -905,7 +863,7 @@ filterRefMissingKey_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
     ?assert(Res),
     Res.
 
@@ -919,7 +877,7 @@ filterRefWrongType_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, integer, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
     ?assert(Res),
     Res.
 
@@ -1094,7 +1052,7 @@ noEncodingOptions_test() ->
     try
 	N = 100,
 	putKeysObj(N),
-	Filter = {'>', {field, <<"f1">>, integer}, {const, 1}},
+	Filter = {'>', {field, <<"f1">>, sint64}, {const, 1}},
 	Opts=[{fold_method, streaming},
 	      {range_filter, Filter}],
 	
@@ -1129,7 +1087,7 @@ badEncodingOptions_test() ->
     try
 	N = 100,
 	putKeysObj(N),
-	Filter = {'>', {field, <<"f1">>, integer}, {const, 1}},
+	Filter = {'>', {field, <<"f1">>, sint64}, {const, 1}},
 	Opts=[{fold_method, streaming},
 	      {range_filter, Filter},
 	      {encoding, unknown}],
@@ -1176,7 +1134,7 @@ allTests() ->
 
 readKeysFromTable(Table) ->    
 
-    Cond1 = {'=', {field, <<"user">>, binary},    {const, <<"user_1">>}},
+    Cond1 = {'=', {field, <<"user">>, varchar},   {const, <<"user_1">>}},
     Cond2 = {'<', {field, <<"time">>, timestamp}, {const, 11000000}},
     Cond3 = {'>', {field, <<"time">>, timestamp}, {const,  9990000}},
     Filter = {'and_', Cond1, {'and_', Cond2, Cond3}},
