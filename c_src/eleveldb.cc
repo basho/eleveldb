@@ -551,11 +551,17 @@ ERL_NIF_TERM parse_streaming_option(ErlNifEnv* env, ERL_NIF_TERM item,
 
         } else if (option[0] == eleveldb::ATOM_RANGE_FILTER) {
 
-	    // Store the rangefilter spec and environment to parse later
+            //------------------------------------------------------------
+            // For the filter terms, opts is used merely as a
+            // convenience container.  The filter will be parsed in
+            // RangeScanTask constructor before these terms go out of
+            // scope of the NIF, so we do not need to safe copy them
+            // here
+            //------------------------------------------------------------
 
-	    opts.useRangeFilter_  = true;
-            opts.rangeFilterSpec_ = option[1];
+            opts.useRangeFilter_  = true;
             opts.env_             = env;
+            opts.rangeFilterSpec_ = option[1];
         }
     }
 
