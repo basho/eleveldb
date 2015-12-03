@@ -389,7 +389,11 @@ getKeyVal(B,K,V) ->
     Contents.
 
 %%------------------------------------------------------------
-%% Fold over keys using streaming folds
+%% Fold over keys using streaming folds.
+%%
+%% Now that eleveldb behavior has been changed to throw errors on
+%% unsupported operators, we trap them and return an empty list
+%%
 %%------------------------------------------------------------
 
 streamFoldTest(Filter, PutKeyFun) ->
@@ -407,9 +411,16 @@ streamFoldTest(Filter, PutKeyFun) ->
 		 [getKeyVal(K,V) | Acc]
 	 end,
 
-    Acc = eleveldb:fold(Ref, FF, [], Opts),
-    ok = eleveldb:close(Ref),
-    lists:reverse(Acc).
+    try 
+	Acc = eleveldb:fold(Ref, FF, [], Opts),
+	ok = eleveldb:close(Ref),
+	lists:reverse(Acc)
+    catch
+	error:_Error ->
+	    io:format(user, "Caught an error: closing db~n", []),
+	    ok = eleveldb:close(Ref),
+	    []
+    end.
 
 get_field(Field, List) ->
     lists:keyfind(Field, 1, List).
@@ -926,25 +937,6 @@ streamFoldTestOpts(Opts, FoldFun) ->
 
 %%------------------------------------------------------------
 %% Make sure that we iterate over the right number of keys when
-%% iterating over all keys
-%%------------------------------------------------------------
-
-scanAll_test() ->
-    io:format("scanAll_test~n"),
-    N = 100,
-    putKeysObj(N),
-    Opts=[{fold_method, streaming}],
-    FoldFun = fun({K,V}, Acc) -> 
-		      [getKeyVal(K,V) | Acc]
-	      end,
-    Keys = streamFoldTestOpts(Opts, FoldFun),
-    Len = length(Keys),
-    Res = (Len =:= N),
-    ?assert(Res),
-    Res.
-
-%%------------------------------------------------------------
-%% Make sure that we iterate over the right number of keys when
 %% requesting start and end keys
 %%------------------------------------------------------------
 
@@ -964,6 +956,25 @@ scanSome_test() ->
     Keys = streamFoldTestOpts(Opts, FoldFun),
     Len = length(Keys),
     Res = (Len =:= N-2),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% Make sure that we iterate over the right number of keys when
+%% iterating over all keys
+%%------------------------------------------------------------
+
+scanAll_test() ->
+    io:format("scanAll_test~n"),
+    N = 100,
+    putKeysObj(N),
+    Opts=[{fold_method, streaming}],
+    FoldFun = fun({K,V}, Acc) -> 
+		      [getKeyVal(K,V) | Acc]
+	      end,
+    Keys = streamFoldTestOpts(Opts, FoldFun),
+    Len = length(Keys),
+    Res = (Len =:= N),
     ?assert(Res),
     Res.
 

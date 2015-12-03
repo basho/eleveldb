@@ -785,6 +785,35 @@ RangeScanTask::RangeScanTask(ErlNifEnv * caller_env,
         else {
             ThrowRuntimeError("An invalid object encoding was specified");
         }
+
+        //------------------------------------------------------------
+        // Since the data types are now passed with the filter, we no
+        // longer need to wait to decode some data to determine them,
+        // so parse the filter up-front.  Note that to use the code
+        // as-is, we need to set extractor_->typesParsed_ to true as
+        // if we had parsed the datatypes
+        //------------------------------------------------------------
+
+        bool throwIfBadFilter = true;
+        
+        //------------------------------------------------------------
+        // The code allows for individual filter conditions to be bad,
+        // i.e., conditions that reference fields that don't exist, or
+        // compare field values to constants of the wrong type.
+        //
+        // If throwIfBadFilter is set to true, these are treated as fatal
+        // errors, halting execution of the loop.
+        // 
+        // If on the other hand, throwIfBadFilter is set to false, bad
+        // filter conditions are ignored (always true), and the rest of
+        // the filter will be evaluated anyway
+        //------------------------------------------------------------
+        
+        extractor_->typesParsed_ = true;
+
+        range_filter_ = parse_range_filter_opts(options_.env_, 
+                                                options_.rangeFilterSpec_, 
+                                                *(extractor_), throwIfBadFilter);
     }
     
     if(!sync_obj_) {
@@ -898,21 +927,6 @@ work_result RangeScanTask::operator()()
     size_t out_offset = 0;
     size_t num_read   = 0;
 
-    //------------------------------------------------------------ 
-    // The code allows for individual filter conditions to be bad,
-    // i.e., conditions that reference fields that don't exist, or
-    // compare field values to constants of the wrong type.
-    //
-    // If throwIfBadFilter is set to true, these are treated as fatal
-    // errors, halting execution of the loop.
-    // 
-    // If on the other hand, throwIfBadFilter is set to false, bad
-    // filter conditions are ignored (always true), and the rest of
-    // the filter will be evaluated anyway
-    //------------------------------------------------------------
-
-    bool throwIfBadFilter = true;
-
     //------------------------------------------------------------
     // Skip if not including first key and first key exists
     //------------------------------------------------------------
@@ -958,8 +972,10 @@ work_result RangeScanTask::operator()()
 
 	//------------------------------------------------------------
 	// Else keep going; shove the next entry in the batch, but
-	// only if it passes any user-specified filter
-	// ------------------------------------------------------------
+	// only if it passes any user-specified filter.  We default to
+	// filter_passed = true, in case we are not using a filter,
+	// which will cause all keys to be returned
+	//------------------------------------------------------------
 
         leveldb::Slice key   = iter->key();
         leveldb::Slice value = iter->value();
@@ -972,100 +988,54 @@ work_result RangeScanTask::operator()()
 
         if(options_.useRangeFilter_) {
 
-	  try {
-
-	    //------------------------------------------------------------
-	    // If the filter has not yet been parsed, check the data
-	    // types of all fields in this key, then parse the filter,
-	    // so we know which templatized versions of the
-	    // ExpressionNodes to use.  If the data can't be decoded,
-	    // set filter_passed to false to ignore this key.
-	    // ------------------------------------------------------------
-
-	    if(!extractor_->typesParsed_) {
+            try {
 
                 //------------------------------------------------------------
-                // Only attempt to parse the data if it is correctly
-                // formatted, otherwise we would throw an error. 
+                // Now extract relevant fields of this object prior to
+                // evaluating the filter. We check if the range filter is
+                // non-NULL, because passing a filter specification that
+                // refers to invalid fields can result in a NULL
+                // expression tree.  In this case, we don't bother
+                // extracting the data or evaluating the filter
                 //------------------------------------------------------------
 
-                if(extractor_->riakObjectContentsCanBeParsed(value.data(), value.size())) {
-             
-                    extractor_->parseRiakObjectTypes(value.data(), value.size());
+                if(range_filter_) {
 
                     //------------------------------------------------------------
-                    // Parse the filter here.  We trap the throw error
-                    // here and rethrow, so we can report an
-                    // informative error that the filter was malformed
+                    // Also check if the key can be parsed.  If TS-encoded
+                    // data and non-TS encoded data are interleaved, this
+                    // causes us to ignore the non-TS-encoded data
                     //------------------------------------------------------------
+                    
+                    if(extractor_->riakObjectContentsCanBeParsed(value.data(), value.size())) {
+                        
+                        extractor_->extractRiakObject(value.data(), value.size(), range_filter_);
+                        
+                        //------------------------------------------------------------
+                        // Now evaluate the filter, but only if we have a valid filter
+                        //------------------------------------------------------------
+                        
+                        filter_passed = range_filter_->evaluate();
 
-                    try {
-                        range_filter_ = 
-                            parse_range_filter_opts(options_.env_, 
-                                                    options_.rangeFilterSpec_, *(extractor_),
-                                                    throwIfBadFilter);
-                    } catch(std::runtime_error& err) {
-                        std::ostringstream os;
-                        os << err.what() << std::endl << "While processing filter: " 
-                           << ErlUtil::formatTerm(options_.env_, options_.rangeFilterSpec_);
-
-                        ThrowRuntimeError(os.str());
+                    } else {
+                        filter_passed = false;
                     }
-
-                    //------------------------------------------------------------
-                    // If this value can't be parsed, set
-                    // filter_passed to false, which will ignore the
-                    // key
-                    //------------------------------------------------------------
-
-                } else {
-                    filter_passed = false;
                 }
-            }
-
-	    //------------------------------------------------------------
-	    // Now extract relevant fields of this object prior to
-	    // evaluating the filter. We check if the range filter is
-	    // non-NULL, because passing a filter specification that
-	    // refers to invalid fields can result in a NULL
-	    // expression tree.  In this case, we don't bother
-	    // extracting the data or evaluating the filter
-	    //------------------------------------------------------------
-
-            if(range_filter_) {
 
                 //------------------------------------------------------------
-                // Also check if the key can be parsed.  If TS-encoded
-                // data and non-TS encoded data are interleaved, this
-                // causes us to ignore the non-TS-encoded data
+                // Trap errors thrown during filter parsing or value
+                // extraction, and propagate to erlang
                 //------------------------------------------------------------
-
-                if(extractor_->riakObjectContentsCanBeParsed(value.data(), value.size())) {
-
-                    extractor_->extractRiakObject(value.data(), value.size(), range_filter_);
-            
-                    //------------------------------------------------------------
-                    // Now evaluate the filter, but only if we have a valid filter
-                    //------------------------------------------------------------
-            
-                    filter_passed = range_filter_->evaluate();
-                }
+                
+            } catch(std::runtime_error& err) {
+                std::ostringstream os;
+                os << err.what() << std::endl << "While processing key: " 
+                   << ErlUtil::formatBinary((unsigned char*)key.data(), key.size());
+                
+                sendMsg(msg_env, ATOM_STREAMING_ERROR, pid, os.str());
+                return work_result(local_env(), ATOM_ERROR, ATOM_STREAMING_ERROR);
             }
-
-            //------------------------------------------------------------
-            // Trap errors thrown during filter parsing or value
-            // extraction, and propagate to erlang
-            //------------------------------------------------------------
-
-	  } catch(std::runtime_error& err) {
-              std::ostringstream os;
-              os << err.what() << std::endl << "While processing key: " 
-                 << ErlUtil::formatBinary((unsigned char*)key.data(), key.size());
-
-              sendMsg(msg_env, ATOM_STREAMING_ERROR, pid, os.str());
-              return work_result(local_env(), ATOM_ERROR, ATOM_STREAMING_ERROR);
-	  }
-
+            
         }
 
         if (filter_passed) {

@@ -343,8 +343,16 @@ DataType::Type Extractor::cTypeOf(ErlNifEnv* env, ERL_NIF_TERM tuple, bool throw
                     
                     // Overwrite any inferences we may have made from parsing the data
                     
-                    field_types_[fieldName] = tsAtomToCtype(type, throwIfInvalid);
-                    
+                    DataType::Type specType = tsAtomToCtype(type, throwIfInvalid);
+
+                    field_types_[fieldName] = specType;
+
+                    // NB: Now that we are not inferring data types
+                    // from the decoded data, set expr_fields_ to the
+                    // explicit type, for use during data extraction
+
+                    expr_fields_[fieldName] = specType;
+
                     // And return the type
                     
                     return tsAtomToCtype(type, throwIfInvalid);
