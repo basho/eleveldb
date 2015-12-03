@@ -22,8 +22,6 @@
 
 #include <syslog.h>
 
-#define EMLTEST 
-
 #ifndef __ELEVELDB_DETAIL_HPP
     #include "detail.hpp"
 #endif

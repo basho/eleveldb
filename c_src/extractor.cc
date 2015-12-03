@@ -130,9 +130,8 @@ DataType::Type Extractor::cTypeOf(std::string fieldName)
     // If the field wasn't found, we don't know what type this field is
     //------------------------------------------------------------
 
-    if(field_types_.find(fieldName) == field_types_.end()) {
+    if(field_types_.find(fieldName) == field_types_.end())
         return DataType::UNKNOWN;
-    }
 
     //------------------------------------------------------------
     // Else retrieve the stored type, potentially converting to a
@@ -298,8 +297,7 @@ DataType::Type Extractor::cTypeOf(ErlNifEnv* env, ERL_NIF_TERM tuple, bool throw
 
             if(!(op == eleveldb::filter::FIELD_OP || op == eleveldb::filter::CONST_OP)) {
                 if(throwIfInvalid)
-                    ThrowRuntimeError("Invalid operand type: '" << op 
-                                      << "' while parsing expression: '" 
+                    ThrowRuntimeError("Invalid operand type: '" << op << "' while parsing expression: '" 
                                       << ErlUtil::formatTerm(env, tuple) << "'");
             }
 
@@ -315,16 +313,14 @@ DataType::Type Extractor::cTypeOf(ErlNifEnv* env, ERL_NIF_TERM tuple, bool throw
                 // If this is a constant expression, we defer to the field value
                 // against which we will be comparing it
                 
-                if(op == eleveldb::filter::CONST_OP) {
+                if(op == eleveldb::filter::CONST_OP)
                     return DataType::CONST;
-                }
                 
                 // Else a field -- parse the field name, and return the type of
                 // the datum for that field
                 
-                if(op == eleveldb::filter::FIELD_OP) {
+                if(op == eleveldb::filter::FIELD_OP)
                     return cTypeOf(fieldName);
-                }
 
             //------------------------------------------------------------
             // Check 3-tuples
@@ -348,13 +344,14 @@ DataType::Type Extractor::cTypeOf(ErlNifEnv* env, ERL_NIF_TERM tuple, bool throw
                     // Overwrite any inferences we may have made from parsing the data
                     
                     DataType::Type specType = tsAtomToCtype(type, throwIfInvalid);
-                    expr_fields_[fieldName] = specType;
-
-                    // NB: Now that we are not inferring data types
-                    // from the decoded data, set field_types_ to the
-                    // explicit type, for use during data extraction
 
                     field_types_[fieldName] = specType;
+
+                    // NB: Now that we are not inferring data types
+                    // from the decoded data, set expr_fields_ to the
+                    // explicit type, for use during data extraction
+
+                    expr_fields_[fieldName] = specType;
 
                     // And return the type
                     
@@ -364,8 +361,7 @@ DataType::Type Extractor::cTypeOf(ErlNifEnv* env, ERL_NIF_TERM tuple, bool throw
         }
 
         if(throwIfInvalid)
-            ThrowRuntimeError("Invalid field or const specifier: " 
-                              << ErlUtil::formatTerm(env, tuple));
+            ThrowRuntimeError("Invalid field or const specifier: " << ErlUtil::formatTerm(env, tuple));
 
     } catch(std::runtime_error& err) {
         if(throwIfInvalid)
