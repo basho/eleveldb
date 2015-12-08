@@ -26,6 +26,7 @@
          get/3,
          put/4,
          async_put/5,
+         sync_put/5,
          delete/3,
          write/3,
          fold/4,
@@ -228,6 +229,16 @@ async_put(Ref, Context, Key, Value, Opts) ->
 
 -spec async_write(reference(), db_ref(), write_actions(), write_options()) -> ok.
 async_write(_CallerRef, _Ref, _Updates, _Opts) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec sync_put(db_ref(), reference(), binary(), binary(), write_options()) -> ok.
+sync_put(Ref, Context, Key, Value, Opts) ->
+    Updates = [{put, Key, Value}],
+    sync_write(Context, Ref, Updates, Opts),
+    ok.
+
+-spec sync_write(reference(), db_ref(), write_actions(), write_options()) -> ok.
+sync_write(_CallerRef, _Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
 -spec async_iterator(reference(), db_ref(), itr_options()) -> ok.
