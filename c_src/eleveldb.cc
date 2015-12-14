@@ -780,33 +780,28 @@ sync_write(
     if(NULL == db_ptr->m_Db)
         return send_reply(env, caller_ref, error_einval(env));
 
-    // Construct a write batch:
-    leveldb::WriteBatch* batch = new leveldb::WriteBatch;
+    //------------------------------------------------------------
+    // Replace OTF object-creation with stack-based objects
+    //------------------------------------------------------------
 
+    leveldb::WriteOptions opts;
+    leveldb::WriteBatch batch;
+    
+    fold(env, argv[3], parse_write_option, opts);
+    
     // Seed the batch's data:
-    ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, *batch);
+
+    ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, batch);
     if(eleveldb::ATOM_OK != result)
     {
-        return send_reply(env, caller_ref,
-                          enif_make_tuple3(env, eleveldb::ATOM_ERROR, caller_ref,
-                                           enif_make_tuple2(env, eleveldb::ATOM_BAD_WRITE_ACTION,
-                                                            result)));
+        return enif_make_tuple3(env, eleveldb::ATOM_ERROR, caller_ref,
+                                enif_make_tuple2(env, eleveldb::ATOM_BAD_WRITE_ACTION,
+                                                 result));
     }   // if
+    
+    leveldb::Status status = db_ptr->m_Db->Write(opts, &batch);
 
-    leveldb::WriteOptions* opts = new leveldb::WriteOptions;
-    fold(env, argv[3], parse_write_option, *opts);
-
-    eleveldb::WorkTask* work_item = new eleveldb::WriteTask(env, caller_ref,
-                                                            db_ptr.get(), batch, opts);
-    work_result status = (*work_item)();
-
-    //------------------------------------------------------------
-    // Free the allocated object.  Also frees the WriteBatch and WriteOptions objects
-    //------------------------------------------------------------
-
-    delete work_item;
-
-    return status.result();
+    return (status.ok() ? ATOM_OK : error_tuple(env, ATOM_ERROR_DB_WRITE, status));
 }
 
 ERL_NIF_TERM
