@@ -72,6 +72,7 @@ static ErlNifFunc nif_funcs[] =
 
     {"async_open", 3, eleveldb::async_open},
     {"async_write", 4, eleveldb::async_write},
+    {"sync_write", 4, eleveldb::sync_write},
     {"async_get", 4, eleveldb::async_get},
 
     {"async_iterator", 3, eleveldb::async_iterator},
@@ -751,6 +752,56 @@ async_write(
     eleveldb::WorkTask* work_item = new eleveldb::WriteTask(env, caller_ref,
                                                             db_ptr.get(), batch, opts);
     return submit_to_thread_queue(work_item, env, caller_ref);
+}
+
+ERL_NIF_TERM
+sync_write(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    const ERL_NIF_TERM& caller_ref = argv[0];
+    const ERL_NIF_TERM& handle_ref = argv[1];
+    const ERL_NIF_TERM& action_ref = argv[2];
+    const ERL_NIF_TERM& opts_ref   = argv[3];
+
+    ReferencePtr<DbObject> db_ptr;
+
+    db_ptr.assign(DbObject::RetrieveDbObject(env, handle_ref));
+
+    if(NULL==db_ptr.get()
+       || !enif_is_list(env, action_ref)
+       || !enif_is_list(env, opts_ref))
+    {
+        return enif_make_badarg(env);
+    }
+
+    // is this even possible?
+    if(NULL == db_ptr->m_Db)
+        return send_reply(env, caller_ref, error_einval(env));
+
+    //------------------------------------------------------------
+    // Replace OTF object-creation with stack-based objects
+    //------------------------------------------------------------
+
+    leveldb::WriteOptions opts;
+    leveldb::WriteBatch batch;
+    
+    fold(env, argv[3], parse_write_option, opts);
+    
+    // Seed the batch's data:
+
+    ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, batch);
+    if(eleveldb::ATOM_OK != result)
+    {
+        return enif_make_tuple3(env, eleveldb::ATOM_ERROR, caller_ref,
+                                enif_make_tuple2(env, eleveldb::ATOM_BAD_WRITE_ACTION,
+                                                 result));
+    }   // if
+    
+    leveldb::Status status = db_ptr->m_Db->Write(opts, &batch);
+
+    return (status.ok() ? ATOM_OK : error_tuple(env, ATOM_ERROR_DB_WRITE, status));
 }
 
 ERL_NIF_TERM
