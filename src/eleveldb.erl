@@ -231,12 +231,12 @@ async_put(Ref, Context, Key, Value, Opts) ->
 async_write(_CallerRef, _Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
--spec sync_put(db_ref(), reference(), binary(), binary(), write_options()) -> ok.
+-spec sync_put(db_ref(), reference(), binary(), binary(), write_options()) -> ok | {error, any()}.
 sync_put(Ref, Context, Key, Value, Opts) ->
     Updates = [{put, Key, Value}],
     sync_write(Context, Ref, Updates, Opts).
 
--spec sync_write(reference(), db_ref(), write_actions(), write_options()) -> ok.
+-spec sync_write(reference(), db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
 sync_write(_CallerRef, _Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
