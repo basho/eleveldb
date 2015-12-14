@@ -798,7 +798,7 @@ sync_write(
 
     eleveldb::WorkTask* work_item = new eleveldb::WriteTask(env, caller_ref,
                                                             db_ptr.get(), batch, opts);
-    (*work_item)();
+    work_result status = (*work_item)();
 
     //------------------------------------------------------------
     // Free the allocated object.  Also frees the WriteBatch and WriteOptions objects
@@ -806,7 +806,7 @@ sync_write(
 
     delete work_item;
 
-    return eleveldb::ATOM_OK;
+    return status.result();
 }
 
 ERL_NIF_TERM

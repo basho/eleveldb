@@ -234,8 +234,7 @@ async_write(_CallerRef, _Ref, _Updates, _Opts) ->
 -spec sync_put(db_ref(), reference(), binary(), binary(), write_options()) -> ok.
 sync_put(Ref, Context, Key, Value, Opts) ->
     Updates = [{put, Key, Value}],
-    sync_write(Context, Ref, Updates, Opts),
-    ok.
+    sync_write(Context, Ref, Updates, Opts).
 
 -spec sync_write(reference(), db_ref(), write_actions(), write_options()) -> ok.
 sync_write(_CallerRef, _Ref, _Updates, _Opts) ->
