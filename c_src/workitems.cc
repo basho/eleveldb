@@ -911,7 +911,7 @@ work_result RangeScanTask::operator()()
     read_options.fill_cache = options_.fill_cache;
     read_options.verify_checksums = options_.verify_checksums;
 
-    leveldb::Iterator* iter        = m_DbPtr->m_Db->NewIterator(read_options);
+    std::auto_ptr<leveldb::Iterator> iter(m_DbPtr->m_Db->NewIterator(read_options));
     const leveldb::Comparator* cmp = m_DbPtr->m_DbOptions->comparator;
 
     const leveldb::Slice skey_slice(start_key_);
@@ -923,6 +923,8 @@ work_result RangeScanTask::operator()()
     enif_get_local_pid(env, caller_pid_term, &pid);
 
     ErlNifBinary bin;
+    bool binaryAllocated = false;
+
     const size_t initial_bin_size = size_t(options_.max_batch_bytes * 1.1);
     size_t out_offset = 0;
     size_t num_read   = 0;
@@ -1052,8 +1054,10 @@ work_result RangeScanTask::operator()()
             // Allocate the output data array if this is the first data
 	    // (i.e., if out_offset == 0)
 
-            if(out_offset == 0)
+            if(out_offset == 0) {
                 enif_alloc_binary(initial_bin_size, &bin);
+                binaryAllocated = true;
+            }
 
 	    //------------------------------------------------------------
             // If we need more space, allocate it exactly since that means we
@@ -1113,7 +1117,7 @@ work_result RangeScanTask::operator()()
 
     sendMsg(msg_env, ATOM_STREAMING_END, pid);
 
-    if(out_offset)
+    if(binaryAllocated)
         enif_release_binary(&bin);
 
     enif_free_env(msg_env);
