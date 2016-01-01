@@ -10,3 +10,4 @@ https://github.com/basho/riak/wiki/Basho-repository-management
 In summary, the "develop" branch contains the most recently reviewed
 engineering work.  The "master" branch contains the most recently
 released work, i.e. distributed as part of a Riak release.
+
