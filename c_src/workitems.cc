@@ -1035,6 +1035,12 @@ work_result RangeScanTask::operator()()
                    << ErlUtil::formatBinary((unsigned char*)key.data(), key.size());
                 
                 sendMsg(msg_env, ATOM_STREAMING_ERROR, pid, os.str());
+
+                if(binaryAllocated)
+                    enif_release_binary(&bin);
+
+                enif_free_env(msg_env);
+
                 return work_result(local_env(), ATOM_ERROR, ATOM_STREAMING_ERROR);
             }
             
