@@ -67,7 +67,9 @@ case "$1" in
             (cd snappy-$SNAPPY_VSN && ./configure --prefix=$BASEDIR/system --libdir=$BASEDIR/system/lib --with-pic)
         fi
 
-        (cd snappy-$SNAPPY_VSN && $MAKE && $MAKE install)
+        if [ ! -f system/lib/libsnappy.a ]; then
+            (cd snappy-$SNAPPY_VSN && $MAKE && $MAKE install)
+        fi
 
         export CFLAGS="$CFLAGS -I $BASEDIR/system/include"
         export CXXFLAGS="$CXXFLAGS -I $BASEDIR/system/include"
