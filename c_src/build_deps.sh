@@ -40,6 +40,7 @@ case "$1" in
         if [ -d leveldb ]; then
             (cd leveldb && $MAKE clean)
         fi
+        rm -f ../priv/leveldb_repair ../priv/sst_scan ../priv/sst_rewrite ../priv/perf_dump
         ;;
 
     test)
@@ -66,7 +67,9 @@ case "$1" in
             (cd snappy-$SNAPPY_VSN && ./configure --prefix=$BASEDIR/system --libdir=$BASEDIR/system/lib --with-pic)
         fi
 
-        (cd snappy-$SNAPPY_VSN && $MAKE && $MAKE install)
+        if [ ! -f system/lib/libsnappy.a ]; then
+            (cd snappy-$SNAPPY_VSN && $MAKE && $MAKE install)
+        fi
 
         export CFLAGS="$CFLAGS -I $BASEDIR/system/include"
         export CXXFLAGS="$CXXFLAGS -I $BASEDIR/system/include"
@@ -79,7 +82,9 @@ case "$1" in
             (cd leveldb && git checkout $LEVELDB_VSN)
         fi
 
-        (cd leveldb && $MAKE all)
+        (cd leveldb && $MAKE -j 3 all)
+        (cd leveldb && $MAKE -j 3 tools)
+        (cp leveldb/perf_dump leveldb/sst_rewrite leveldb/sst_scan leveldb/leveldb_repair ../priv)
 
         ;;
 esac
