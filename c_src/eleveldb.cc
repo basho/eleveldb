@@ -452,15 +452,14 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (0<ret_val && ret_val<256)
                 opts.tiered_slow_prefix = buffer;
         }
-
-    }
-    else if (option[0] == eleveldb::ATOM_ANTIDOTE)
+        else if (option[0] == eleveldb::ATOM_ANTIDOTE)
         {
           if (option[1] == eleveldb::ATOM_TRUE)
             {
               opts.comparator = leveldb::GetAntidoteComparator();
             }
         }
+    }
 
     return eleveldb::ATOM_OK;
 }
