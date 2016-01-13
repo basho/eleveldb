@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "eleveldb.h"
+#include "antidote.h"
 
 #include "leveldb/db.h"
 #include "leveldb/comparator.h"
@@ -132,6 +133,7 @@ ERL_NIF_TERM ATOM_DELETE_THRESHOLD;
 ERL_NIF_TERM ATOM_TIERED_SLOW_LEVEL;
 ERL_NIF_TERM ATOM_TIERED_FAST_PREFIX;
 ERL_NIF_TERM ATOM_TIERED_SLOW_PREFIX;
+ERL_NIF_TERM ATOM_ANTIDOTE;
 }   // namespace eleveldb
 
 
@@ -452,6 +454,13 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         }
 
     }
+    else if (option[0] == eleveldb::ATOM_ANTIDOTE)
+        {
+          if (option[1] == eleveldb::ATOM_TRUE)
+            {
+              opts.comparator = leveldb::GetAntidoteComparator();
+            }
+        }
 
     return eleveldb::ATOM_OK;
 }
@@ -1260,6 +1269,7 @@ try
     ATOM(eleveldb::ATOM_TIERED_SLOW_LEVEL, "tiered_slow_level");
     ATOM(eleveldb::ATOM_TIERED_FAST_PREFIX, "tiered_fast_prefix");
     ATOM(eleveldb::ATOM_TIERED_SLOW_PREFIX, "tiered_slow_prefix");
+    ATOM(eleveldb::ATOM_ANTIDOTE, "antidote");
 #undef ATOM
 
 
