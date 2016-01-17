@@ -5,6 +5,7 @@
 #include "port/port.h"
 #include "util/logging.h"
 #include <iostream>
+#include <map>
 using namespace std;
 
 namespace leveldb {
@@ -48,8 +49,12 @@ namespace leveldb {
                 ac.remove_prefix(aKeySize);
                 bc.remove_prefix(bKeySize);
 
-                //return 1 for now
-                return 1;
+                // Check lists
+                int aVCSize = checkList(ac);
+                int bVCSize = checkList(bc);
+
+                // Parse and compare VCs
+                return compareVCs(parseVCMap(ac, aVCSize), parseVCMap(bc, bVCSize));
             }
 
             // Given a slice, checks that the first bytes match Erlang
@@ -84,17 +89,60 @@ namespace leveldb {
             static int checkList(Slice &s) {
                 // LIST_EXT = 108
                 assert(s[0] == (char) 108);
-                s.remove_prefix(1);
+                return parseInt(s);
+            }
 
-                // parse list size
-                unsigned char size[4];
-                size[3] = s[0];
-                size[2] = s[1];
-                size[1] = s[2];
-                size[0] = s[3];
+            static map<int, int> parseVCMap(Slice &s, int size) {
+                map<int, int> VC;
+                int key, value;
+                while(size > 0) {
+                    key = parseInt(s);
+                    value = parseInt(s);
+                    VC[key] = value;
+                }
+                return VC;
+            }
 
-                s.remove_prefix(4);
-                return *(int *)size;
+            // Given a Slice parses a SMALL_INTEGER_EXT (97) or INTEGER_EXT (98)
+            static int parseInt(Slice &s) {
+                assert(s[0] == (char) 97 || s[0] == (char) 98);
+                int res;
+                if (s[0] == (char) 97) {
+                    res = (int) s[1];
+                    s.remove_prefix(2);
+                } else {
+                    unsigned char size[4];
+                    size[3] = s[1];
+                    size[2] = s[2];
+                    size[1] = s[3];
+                    size[0] = s[4];
+
+                    s.remove_prefix(5);
+                    res = *(int *) size;
+                }
+                return res;
+            }
+
+            static int compareVCs(map<int, int> a, map<int, int> b) {
+                if (a.size() != b.size()) {
+                    // TODO check what to do in this case
+                    return 1;
+                }
+                map<int, int>::iterator keyIt;
+                for(map<int, int>::iterator iterator = a.begin();
+                                iterator != a.end(); iterator++) {
+                    keyIt = b.find(iterator->first);
+                    if(keyIt == b.end()) { // Key sets are !=
+                        // TODO check what to do in this case
+                        return 1;
+                    }
+                    if(iterator->second > keyIt->second) {
+                        continue;
+                    } else {
+                        return -1;
+                    }
+                }
+                return 1;
             }
 
             // No need to shorten keys since it's fixed size.
