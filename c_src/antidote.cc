@@ -28,7 +28,7 @@ namespace leveldb {
                     return 0;
                 }
 
-                Slice ac = Slice(a.data()), bc = Slice(b.data());
+                Slice ac = Slice(a.data(), a.size()), bc = Slice(b.data(), b.size());
 
                 // Trim Slices and compare Antidote keys (atoms)
                 int aKeySize = checkAndTrimFirstBytes(ac);
