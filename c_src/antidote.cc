@@ -68,6 +68,23 @@ namespace leveldb {
                 return (int) sc[0];
             }
 
+            // Given a slice, checks that a list follows, and returns its size.
+            static int checkList(Slice &s) {
+                // LIST_EXT = 108
+                assert(s[0] == (char) 108);
+                s.remove_prefix(1);
+
+                // parse list size
+                unsigned char size[4];
+                size[3] = s[0];
+                size[2] = s[1];
+                size[1] = s[2];
+                size[0] = s[3];
+
+                s.remove_prefix(4);
+                return *(int *)size;
+            }
+
             // No need to shorten keys since it's fixed size.
             virtual void FindShortestSeparator(std::string* start,
                 const Slice& limit) const {
