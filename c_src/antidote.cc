@@ -37,7 +37,19 @@ namespace leveldb {
                 Slice aKey = Slice(ac.data(), aKeySize);
                 Slice bKey = Slice(bc.data(), bKeySize);
 
-                return aKey.compare(bKey);
+                int key_compare = aKey.compare(bKey);
+
+                if(key_compare) {
+                    return key_compare;
+                }
+
+                // If keys are equal, continue with the vector clock
+                // First trim the key
+                ac.remove_prefix(aKeySize);
+                bc.remove_prefix(bKeySize);
+
+                //return 1 for now
+                return 1;
             }
 
             // Given a slice, checks that the first bytes match Erlang
