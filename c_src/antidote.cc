@@ -110,6 +110,7 @@ namespace leveldb {
                     key = parseInt(s);
                     value = parseInt(s);
                     VC[key] = value;
+                    size--;
                 }
                 return VC;
             }
@@ -146,7 +147,7 @@ namespace leveldb {
             static int compareVCs(map<int, int> a, map<int, int> b) {
                 if (a.size() != b.size()) {
                     // TODO check what to do in this case
-                    return 1;
+                    return -1;
                 }
                 map<int, int>::iterator keyIt;
                 for(map<int, int>::iterator iterator = a.begin();
@@ -154,15 +155,15 @@ namespace leveldb {
                     keyIt = b.find(iterator->first);
                     if(keyIt == b.end()) { // Key sets are !=
                         // TODO check what to do in this case
-                        return 1;
+                        return -1;
                     }
                     if(iterator->second > keyIt->second) {
                         continue;
                     } else {
-                        return -1;
+                        return 1;
                     }
                 }
-                return 1;
+                return -1;
             }
 
             // No need to shorten keys since it's fixed size.
