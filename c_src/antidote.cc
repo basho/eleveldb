@@ -106,11 +106,21 @@ namespace leveldb {
                 map<int, int> VC;
                 int key, value;
                 while(size > 0) {
+                    checkTwoElementTuple(s);
                     key = parseInt(s);
                     value = parseInt(s);
                     VC[key] = value;
                 }
                 return VC;
+            }
+
+            static void checkTwoElementTuple(Slice &s) {
+                // SMALL_TUPLE_EXT == 104
+                assert(s[0] == (char) 104);
+                s.remove_prefix(1);
+                // LENGTH == 2 (DC, clock)
+                assert(s[0] == (char) 2);
+                s.remove_prefix(1);
             }
 
             // Given a Slice parses a SMALL_INTEGER_EXT (97) or INTEGER_EXT (98)
