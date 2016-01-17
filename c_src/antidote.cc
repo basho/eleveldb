@@ -89,7 +89,17 @@ namespace leveldb {
             static int checkList(Slice &s) {
                 // LIST_EXT = 108
                 assert(s[0] == (char) 108);
-                return parseInt(s);
+                s.remove_prefix(1);
+
+                // parse list size
+                unsigned char size[4];
+                size[3] = s[0];
+                size[2] = s[1];
+                size[1] = s[2];
+                size[0] = s[3];
+
+                s.remove_prefix(4);
+                return *(int *)size;
             }
 
             static map<int, int> parseVCMap(Slice &s, int size) {
