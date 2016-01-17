@@ -28,15 +28,44 @@ namespace leveldb {
                     return 0;
                 }
 
-                Slice ac = Slice(a.data());//, bc = Slice(b.data());
+                Slice ac = Slice(a.data()), bc = Slice(b.data());
 
-                //Slice aname = Get32PrefData(ac), bname = Get32PrefData(bc);
+                // Trim Slices and compare Antidote keys (atoms)
+                int aKeySize = checkAndTrimFirstBytes(ac);
+                int bKeySize = checkAndTrimFirstBytes(bc);
 
-                //int set_cmp = aname.compare(bname);
+                Slice aKey = Slice(ac.data(), aKeySize);
+                Slice bKey = Slice(bc.data(), bKeySize);
 
-                cout << ac.ToString() << endl;
+                return aKey.compare(bKey);
+            }
 
-                return 1;
+            // Given a slice, checks that the first bytes match Erlang
+            // external format + Antidote key, which starts with an atom.
+            // Returns the size of the atom to read.
+            static int checkAndTrimFirstBytes(Slice &s) {
+                // External Term Format -> first byte = 131
+                assert(s[0] == (char) 131);
+                s.remove_prefix(1);
+
+                // SMALL_TUPLE_EXT = 104
+                assert(s[0] == (char) 104);
+                s.remove_prefix(1);
+
+                // ELEMENTS in tuple = not checked for now
+                // assert(res[0] == (char) 1);
+                s.remove_prefix(1);
+
+                // ATOM_EXT = 100
+                assert(s[0] == (char) 100);
+                s.remove_prefix(1);
+
+                // LENGTH of key
+                Slice sc = Slice(s.data(), 2);
+                s.remove_prefix(2);
+                sc.remove_prefix(1);
+
+                return (int) sc[0];
             }
 
             // No need to shorten keys since it's fixed size.
