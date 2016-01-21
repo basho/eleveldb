@@ -150,23 +150,33 @@ namespace leveldb {
                 return res;
             }
 
+            // This method returns -1 * the comparison value, since
+            // we are sorting keys from oldest to newest first.
             static int compareVCs(map<int, int> a, map<int, int> b) {
+                if (a.size() > b.size()) {
+                    // a is "newer" since it contains more keys.
+                    return -1;
+                }
+                if (a.size() < b.size()) {
+                    // b is "newer" since it contains more keys.
+                    return 1;
+                }
                 map<int, int>::iterator keyIt;
                 for(map<int, int>::iterator iterator = b.begin();
                                 iterator != b.end(); iterator++) {
                     keyIt = a.find(iterator->first);
                     if(keyIt == a.end()) { // Key sets are !=
-                        // we return -1 since a doesn't contain that key
+                        // we return 1 since a doesn't contain that key
                         // an therefore we should treat is as a 0.
                         return -1;
                     }
                     if(iterator->second > keyIt->second) {
                         continue;
                     } else {
-                        return 1;
+                        return -1;
                     }
                 }
-                return -1;
+                return 1;
             }
 
             // No need to shorten keys since it's fixed size.
