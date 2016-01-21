@@ -42,6 +42,12 @@ namespace leveldb {
 
                 if(key_compare) {
                     return key_compare;
+                } else {
+                    // If we are supplied with a key that only contains
+                    // the antidote key, we can't continue parsing, therefore
+                    // return -1 or 1 according to which key is the shorter.
+                    if ((ac.size() - aKeySize) == 0) return -1;
+                    if ((bc.size() - bKeySize) == 0) return 1;
                 }
 
                 // If keys are equal, continue with the vector clock
