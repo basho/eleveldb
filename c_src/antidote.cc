@@ -151,16 +151,13 @@ namespace leveldb {
             }
 
             static int compareVCs(map<int, int> a, map<int, int> b) {
-                if (a.size() != b.size()) {
-                    // TODO check what to do in this case
-                    return -1;
-                }
                 map<int, int>::iterator keyIt;
-                for(map<int, int>::iterator iterator = a.begin();
-                                iterator != a.end(); iterator++) {
-                    keyIt = b.find(iterator->first);
-                    if(keyIt == b.end()) { // Key sets are !=
-                        // TODO check what to do in this case
+                for(map<int, int>::iterator iterator = b.begin();
+                                iterator != b.end(); iterator++) {
+                    keyIt = a.find(iterator->first);
+                    if(keyIt == a.end()) { // Key sets are !=
+                        // we return -1 since a doesn't contain that key
+                        // an therefore we should treat is as a 0.
                         return -1;
                     }
                     if(iterator->second > keyIt->second) {
