@@ -135,7 +135,9 @@ namespace leveldb {
                 assert(s[0] == (char) 97 || s[0] == (char) 98);
                 int res;
                 if (s[0] == (char) 97) {
-                    res = (int) s[1];
+                    unsigned char size[1];
+                    size[0] = s[1];
+                    res = *(int *) size;
                     s.remove_prefix(2);
                 } else {
                     unsigned char size[4];
