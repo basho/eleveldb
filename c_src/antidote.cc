@@ -108,12 +108,13 @@ namespace leveldb {
                 return *(int *)size;
             }
 
-            static map<int, int> parseVCMap(Slice &s, int size) {
-                map<int, int> VC;
-                int key, value;
+            static map<string, int> parseVCMap(Slice &s, int size) {
+                map<string, int> VC;
+                int value;
+                string key;
                 while(size > 0) {
                     checkTwoElementTuple(s);
-                    key = parseInt(s);
+                    key = parseAtom(s);
                     value = parseInt(s);
                     VC[key] = value;
                     size--;
@@ -152,9 +153,26 @@ namespace leveldb {
                 return res;
             }
 
+            // Given a Slice parses an ATOM_EXT
+            static string parseAtom(Slice &s) {
+                // ATOM_EXT = 100
+                assert(s[0] == (char) 100);
+                s.remove_prefix(1);
+
+                // LENGTH
+                Slice sc = Slice(s.data(), 2);
+                s.remove_prefix(2);
+                sc.remove_prefix(1);
+
+                // Create the result string and trim its sice from the Slice.
+                string res (s.data(), sc[0]);
+                s.remove_prefix(sc[0]);
+                return res;
+            }
+
             // This method returns -1 * the comparison value, since
             // we are sorting keys from oldest to newest first.
-            static int compareVCs(map<int, int> a, map<int, int> b) {
+            static int compareVCs(map<string, int> a, map<string, int> b) {
                 if (a.size() > b.size()) {
                     // a is "newer" since it contains more keys.
                     return -1;
@@ -163,8 +181,8 @@ namespace leveldb {
                     // b is "newer" since it contains more keys.
                     return 1;
                 }
-                map<int, int>::iterator keyIt;
-                for(map<int, int>::iterator iterator = b.begin();
+                map<string, int>::iterator keyIt;
+                for(map<string, int>::iterator iterator = b.begin();
                                 iterator != b.end(); iterator++) {
                     keyIt = a.find(iterator->first);
                     if(keyIt == a.end()) { // Key sets are !=
