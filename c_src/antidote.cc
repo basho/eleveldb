@@ -194,7 +194,7 @@ namespace leveldb {
                     if(keyIt == a.end()) { // Key sets are !=
                         // we return 1 since a doesn't contain that key
                         // an therefore we should treat is as a 0.
-                        return -1;
+                        return 1;
                     }
                     if(iterator->second > keyIt->second) {
                         continue;
