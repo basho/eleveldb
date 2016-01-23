@@ -93,6 +93,12 @@ namespace leveldb {
 
             // Given a slice, checks that a list follows, and returns its size.
             static int checkList(Slice &s) {
+                // NIL_EXT = 106 (Empty list = Empty Snapshot)
+                if(s[0] == (char) 106) {
+                    s.remove_prefix(1);
+                    return 0;
+                }
+
                 // LIST_EXT = 108
                 assert(s[0] == (char) 108);
                 s.remove_prefix(1);
