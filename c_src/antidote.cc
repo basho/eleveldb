@@ -189,8 +189,8 @@ namespace leveldb {
                     s.remove_prefix(5);
                     intSize = *(int *) size;
                 }
-                // Clock time can't be negative
-                assert(s[0] == (char) 48);
+                // Clock time can't be negative, therfore this byte must be 0 
+                assert((int) s[0] == 0);
                 s.remove_prefix(1);
                 unsigned char current[1];
                 int originalSize = intSize;
