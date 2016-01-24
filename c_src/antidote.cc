@@ -6,6 +6,7 @@
 #include "util/logging.h"
 #include <iostream>
 #include <map>
+#include <cmath>
 using namespace std;
 
 namespace leveldb {
@@ -114,9 +115,9 @@ namespace leveldb {
                 return *(int *)size;
             }
 
-            static map<string, int> parseVCMap(Slice &s, int size) {
-                map<string, int> VC;
-                int value;
+            static map<string, unsigned long long int> parseVCMap(Slice &s, int size) {
+                map<string, unsigned long long int> VC;
+                unsigned long long int value;
                 string key;
                 while(size > 0) {
                     checkTwoElementTuple(s);
@@ -137,14 +138,25 @@ namespace leveldb {
                 s.remove_prefix(1);
             }
 
-            // Given a Slice parses a SMALL_INTEGER_EXT (97) or INTEGER_EXT (98)
-            static int parseInt(Slice &s) {
-                assert(s[0] == (char) 97 || s[0] == (char) 98);
-                int res;
+            // Given a Slice parses a SMALL_INTEGER_EXT (97), INTEGER_EXT (98)
+            // SMALL_BIG_EXT (110) or LARGE_BIG_EXT (111)
+            static unsigned long long int parseInt(Slice &s) {
+                assert(s[0] == (char) 97 || s[0] == (char) 98
+                    || s[0] == (char) 110 || s[0] == (char) 111);
+
+                if (s[0] == (char) 97 || s[0] == (char) 98) {
+                    return parseSmallInt(s);
+                }
+
+                return parseBigInt(s);
+            }
+
+            static unsigned long long int parseSmallInt(Slice &s) {
+                unsigned long long int res;
                 if (s[0] == (char) 97) {
                     unsigned char size[1];
                     size[0] = s[1];
-                    res = *(int *) size;
+                    res = *(unsigned long long int *) size;
                     s.remove_prefix(2);
                 } else {
                     unsigned char size[4];
@@ -154,9 +166,52 @@ namespace leveldb {
                     size[0] = s[4];
 
                     s.remove_prefix(5);
-                    res = *(int *) size;
+                    res = *(unsigned long long int *) size;
                 }
                 return res;
+            }
+
+            static unsigned long long int parseBigInt(Slice &s) {
+                int intSize;
+                unsigned long long int res = 0;
+                if (s[0] == (char) 110) {
+                    unsigned char size[1];
+                    size[0] = s[1];
+                    s.remove_prefix(2);
+                    intSize = *(int *) size;
+                } else {
+                    unsigned char size[4];
+                    size[3] = s[1];
+                    size[2] = s[2];
+                    size[1] = s[3];
+                    size[0] = s[4];
+
+                    s.remove_prefix(5);
+                    intSize = *(int *) size;
+                }
+                // Clock time can't be negative
+                assert(s[0] == (char) 48);
+                s.remove_prefix(1);
+                unsigned char current[1];
+                int originalSize = intSize;
+                while (intSize > 0) {
+                    res += ((*(int *) current) * power(256, originalSize - intSize));
+                    s.remove_prefix(1);
+                    intSize--;
+                }
+                return res;
+            }
+
+            static unsigned long long int power(unsigned long long int base, int exp) {
+                unsigned long long int result = 1ULL;
+                while(exp > 0) {
+                    if (exp & 1) {
+                        result *= (unsigned long long int) base;
+                    }
+                    exp >>= 1;
+                    base *= base;
+                }
+                return result;
             }
 
             // Given a Slice parses an ATOM_EXT
@@ -178,7 +233,8 @@ namespace leveldb {
 
             // This method returns -1 * the comparison value, since
             // we are sorting keys from oldest to newest first.
-            static int compareVCs(map<string, int> a, map<string, int> b) {
+            static int compareVCs(map<string, unsigned long long int> a,
+                 map<string, unsigned long long int> b) {
                 if (a.size() > b.size()) {
                     // a is "newer" since it contains more keys.
                     return -1;
@@ -187,8 +243,8 @@ namespace leveldb {
                     // b is "newer" since it contains more keys.
                     return 1;
                 }
-                map<string, int>::iterator keyIt;
-                for(map<string, int>::iterator iterator = b.begin();
+                map<string, unsigned long long int>::iterator keyIt;
+                for(map<string, unsigned long long int>::iterator iterator = b.begin();
                                 iterator != b.end(); iterator++) {
                     keyIt = a.find(iterator->first);
                     if(keyIt == a.end()) { // Key sets are !=
