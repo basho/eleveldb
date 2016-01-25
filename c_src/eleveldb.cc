@@ -132,6 +132,7 @@ ERL_NIF_TERM ATOM_DELETE_THRESHOLD;
 ERL_NIF_TERM ATOM_TIERED_SLOW_LEVEL;
 ERL_NIF_TERM ATOM_TIERED_FAST_PREFIX;
 ERL_NIF_TERM ATOM_TIERED_SLOW_PREFIX;
+ERL_NIF_TERM ATOM_CACHE_OBJECT_WARMING;
 }   // namespace eleveldb
 
 
@@ -449,6 +450,13 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             ret_val=enif_get_string(env, option[1], buffer, 256, ERL_NIF_LATIN1);
             if (0<ret_val && ret_val<256)
                 opts.tiered_slow_prefix = buffer;
+        }
+        else if (option[0] == eleveldb::ATOM_CACHE_OBJECT_WARMING)
+        {
+            if (option[1] == eleveldb::ATOM_TRUE)
+                opts.cache_object_warming = true;
+            else
+                opts.cache_object_warming = false;
         }
 
     }
@@ -1260,6 +1268,7 @@ try
     ATOM(eleveldb::ATOM_TIERED_SLOW_LEVEL, "tiered_slow_level");
     ATOM(eleveldb::ATOM_TIERED_FAST_PREFIX, "tiered_fast_prefix");
     ATOM(eleveldb::ATOM_TIERED_SLOW_PREFIX, "tiered_slow_prefix");
+    ATOM(eleveldb::ATOM_CACHE_OBJECT_WARMING, "cache_object_warming");
 #undef ATOM
 
 

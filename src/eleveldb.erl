@@ -102,7 +102,8 @@ init() ->
                          {delete_threshold, pos_integer()} |
                          {tiered_slow_level, pos_integer()} |
                          {tiered_fast_prefix, string()} |
-                         {tiered_slow_prefix, string()}].
+                         {tiered_slow_prefix, string()} |
+                         {cache_object_warming, boolean()}].
 
 -type read_options() :: [{verify_checksums, boolean()} |
                          {fill_cache, boolean()} |
@@ -300,7 +301,8 @@ option_types(open) ->
      {delete_threshold, integer},
      {tiered_slow_level, integer},
      {tiered_fast_prefix, any},
-     {tiered_slow_prefix, any}];
+     {tiered_slow_prefix, any},
+     {cache_object_warming, bool}];
 
 option_types(read) ->
     [{verify_checksums, bool},
