@@ -228,3 +228,11 @@
   {datatype, directory},
   hidden
 ]}.
+
+%% @doc Option to reopen list of sst table files that were active
+%% at the time the database was previously closed.
+{mapping, "leveldb.cache_object_warming", "eleveldb.cache_object_warming", [
+  {default, true},
+  {datatype, {enum, [true, false]}},
+  hidden
+]}.

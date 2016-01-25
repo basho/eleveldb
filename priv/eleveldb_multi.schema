@@ -155,3 +155,13 @@
   {datatype, directory},
   hidden
 ]}.
+
+%% @see leveldb.cache_object_warming
+{mapping,
+  "multi_backend.$name.leveldb.cache_object_warming",
+  "riak_kv.multi_backend", [
+  {default, true},
+  {datatype, {enum, [true, false]}},
+  hidden
+]}.
+
