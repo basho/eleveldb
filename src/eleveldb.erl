@@ -27,6 +27,7 @@
          put/4,
          async_put/5,
          sync_put/5,
+         sync_write/4,
          delete/3,
          write/3,
          fold/4,
@@ -41,8 +42,8 @@
          ts_key/1,
          parse_string/1,
          is_empty/1,
-	 encode/2,
-	 current_usec/0]).
+         encode/2,
+         current_usec/0]).
 
 %% for testing
 -export([
@@ -146,7 +147,7 @@ init() ->
 
 -type streaming_option() :: {max_batch_bytes, pos_integer()} |
                             {max_unacked_bytes, pos_integer() |
-			    {fill_cache, boolean()}}.
+                            {fill_cache, boolean()}}.
 
 -type streaming_options() :: [streaming_option()].
 
@@ -155,7 +156,7 @@ init() ->
 -type encoding() :: erlang | msgpack.
 
 -type fold_options() :: [read_option() |
-			 {encoding, encoding()} |
+                         {encoding, encoding()} |
                          {fold_method, fold_method()} |
                          {start_key, binary()} |
                          {end_key, binary() | undefined} |
@@ -319,7 +320,7 @@ do_streaming_batch(Bin, Fun, Acc) ->
 do_streaming_fold(StreamRef = {MsgRef, AckRef}, Fun, Acc) ->
     receive
         {streaming_error, MsgRef, ErrMsg} ->
-	    lager:error("Streaming error: ~s~n", [ErrMsg]),
+            lager:error("Streaming error: ~s~n", [ErrMsg]),
             Acc;
         {streaming_end, MsgRef} ->
             Acc;
