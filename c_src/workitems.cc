@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2013 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2015 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -22,14 +22,11 @@
 
 #include <syslog.h>
 
-#ifndef __ELEVELDB_DETAIL_HPP
-    #include "detail.hpp"
-#endif
-
 #ifndef INCL_WORKITEMS_H
     #include "workitems.h"
 #endif
 
+#include "leveldb/atomics.h"
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
 #include "leveldb/perf_count.h"
@@ -62,7 +59,7 @@ namespace eleveldb {
 
 
 WorkTask::WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref)
-    : terms_set(false), resubmit_work(false)
+    : terms_set(false)
 {
     if (NULL!=caller_env)
     {
@@ -83,7 +80,7 @@ WorkTask::WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref)
 
 
 WorkTask::WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref, DbObject * DbPtr)
-    : m_DbPtr(DbPtr), terms_set(false), resubmit_work(false)
+    : m_DbPtr(DbPtr), terms_set(false)
 {
     if (NULL!=caller_env)
     {
@@ -110,7 +107,7 @@ WorkTask::~WorkTask()
     // this is likely overkill in the present code, but seemed
     //  important at one time and leaving for safety
     env_ptr=local_env_;
-    if (compare_and_swap(&local_env_, env_ptr, (ErlNifEnv *)NULL)
+    if (leveldb::compare_and_swap(&local_env_, env_ptr, (ErlNifEnv *)NULL)
         && NULL!=env_ptr)
     {
         enif_free_env(env_ptr);
@@ -122,20 +119,25 @@ WorkTask::~WorkTask()
 
 
 void
-WorkTask::prepare_recycle()
+WorkTask::operator()()
 {
-    // does not work by default
-    resubmit_work=false;
-}  // WorkTask::prepare_recycle
+    // call the DoWork() method defined by the subclass
+    basho::async_nif::work_result result = DoWork();
+    if (result.is_set())
+    {
+        ErlNifPid pid;
+        if(0 != enif_get_local_pid(this->local_env(), this->pid(), &pid))
+        {
+            /* Assemble a notification of the following form:
+               { PID CallerHandle, ERL_NIF_TERM result } */
+            ERL_NIF_TERM result_tuple = enif_make_tuple2(this->local_env(),
+                                                         this->caller_ref(),
+                                                         result.result());
 
-
-void
-WorkTask::recycle()
-{
-    // does not work by default
-}   // WorkTask::recycle
-
-
+            enif_send(0, &pid, this->local_env(), result_tuple);
+        }
+    }
+}
 
 
 /**
@@ -154,7 +156,7 @@ OpenTask::OpenTask(
 
 
 work_result
-OpenTask::operator()()
+OpenTask::DoWork()
 {
     void * db_ptr_ptr;
     leveldb::DB *db(0);
@@ -174,7 +176,7 @@ OpenTask::operator()()
 
     return work_result(local_env(), ATOM_OK, result);
 
-}   // OpenTask::operator()
+}   // OpenTask::DoWork()
 
 
 
@@ -183,7 +185,7 @@ OpenTask::operator()()
  */
 
 work_result
-MoveTask::operator()()
+MoveTask::DoWork()
 {
     leveldb::Iterator* itr;
 
@@ -273,11 +275,11 @@ MoveTask::operator()()
         }   // else
     }   // if
 
-    // debug syslog(LOG_ERR, "                     MoveItem::operator() %d, %d, %d",
+    // debug syslog(LOG_ERR, "                     MoveItem::DoWork() %d, %d, %d",
     //              action, m_ItrWrap->m_StillUse, m_ItrWrap->m_HandoffAtomic);
 
     // who got back first, us or the erlang loop
-    if (compare_and_swap(&m_ItrWrap->m_HandoffAtomic, 0, 1))
+    if (leveldb::compare_and_swap(&m_ItrWrap->m_HandoffAtomic, 0, 1))
     {
         // this is prefetch of next iteration.  It returned faster than actual
         //  request to retrieve it.  Stop and wait for erlang to catch up.
@@ -291,7 +293,7 @@ MoveTask::operator()()
         if(NULL!=itr && itr->Valid())
         {
             if (PREFETCH==action && m_ItrWrap->m_PrefetchStarted)
-                prepare_recycle();
+                m_ResubmitWork=true;
 
             // erlang is waiting, send message
             if(m_ItrWrap->m_KeysOnly)
@@ -331,15 +333,6 @@ MoveTask::local_env()
 
 
 void
-MoveTask::prepare_recycle()
-{
-
-    resubmit_work=true;
-
-}  // MoveTask::prepare_recycle
-
-
-void
 MoveTask::recycle()
 {
     // test for race condition of simultaneous delete & recycle
@@ -349,7 +342,7 @@ MoveTask::recycle()
             enif_clear_env(local_env_);
 
         terms_set=false;
-        resubmit_work=false;
+        m_ResubmitWork=false;
 
         // only do this in non-race condition
         RefDec();
@@ -377,7 +370,7 @@ DestroyTask::DestroyTask(
 
 
 work_result
-DestroyTask::operator()()
+DestroyTask::DoWork()
 {
     leveldb::Status status = leveldb::DestroyDB(db_name, *open_options);
 
@@ -386,7 +379,7 @@ DestroyTask::operator()()
 
     return work_result(ATOM_OK);
 
-}   // DestroyTask::operator()
+}   // DestroyTask::DoWork()
 
 
 } // namespace eleveldb

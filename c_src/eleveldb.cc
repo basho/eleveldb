@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2014 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2015 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -41,10 +41,8 @@
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
 #include "leveldb/perf_count.h"
-
-#ifndef INCL_THREADING_H
-    #include "threading.h"
-#endif
+#define LEVELDB_PLATFORM_POSIX
+#include "util/hot_threads.h"
 
 #ifndef INCL_WORKITEMS_H
     #include "workitems.h"
@@ -56,7 +54,7 @@
 
 #include "work_result.hpp"
 
-#include "detail.hpp"
+#include "leveldb/atomics.h"
 
 static ErlNifFunc nif_funcs[] =
 {
@@ -134,6 +132,7 @@ ERL_NIF_TERM ATOM_DELETE_THRESHOLD;
 ERL_NIF_TERM ATOM_TIERED_SLOW_LEVEL;
 ERL_NIF_TERM ATOM_TIERED_FAST_PREFIX;
 ERL_NIF_TERM ATOM_TIERED_SLOW_PREFIX;
+ERL_NIF_TERM ATOM_CACHE_OBJECT_WARMING;
 }   // namespace eleveldb
 
 
@@ -217,10 +216,13 @@ class eleveldb_priv_data
 {
 public:
     EleveldbOptions m_Opts;
-    eleveldb::eleveldb_thread_pool thread_pool;
+    leveldb::HotThreadPool thread_pool;
 
     explicit eleveldb_priv_data(EleveldbOptions & Options)
-    : m_Opts(Options), thread_pool(Options.m_EleveldbThreads)
+    : m_Opts(Options),
+      thread_pool(Options.m_EleveldbThreads, "Eleveldb",
+                  leveldb::ePerfElevelDirect, leveldb::ePerfElevelQueued,
+                  leveldb::ePerfElevelDequeued, leveldb::ePerfElevelWeighted)
         {}
 
 private:
@@ -449,6 +451,13 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (0<ret_val && ret_val<256)
                 opts.tiered_slow_prefix = buffer;
         }
+        else if (option[0] == eleveldb::ATOM_CACHE_OBJECT_WARMING)
+        {
+            if (option[1] == eleveldb::ATOM_TRUE)
+                opts.cache_object_warming = true;
+            else
+                opts.cache_object_warming = false;
+        }
 
     }
 
@@ -593,7 +602,7 @@ async_open(
     eleveldb::WorkTask *work_item = new eleveldb::OpenTask(env, caller_ref,
                                                               db_name, opts);
 
-    if(false == priv.thread_pool.submit(work_item))
+    if(false == priv.thread_pool.Submit(work_item))
     {
         delete work_item;
         return send_reply(env, caller_ref,
@@ -652,7 +661,7 @@ async_write(
     eleveldb::WorkTask* work_item = new eleveldb::WriteTask(env, caller_ref,
                                                             db_ptr.get(), batch, opts);
 
-    if(false == priv.thread_pool.submit(work_item))
+    if(false == priv.thread_pool.Submit(work_item))
     {
         delete work_item;
         return send_reply(env, caller_ref,
@@ -696,7 +705,7 @@ async_get(
 
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
-    if(false == priv.thread_pool.submit(work_item))
+    if(false == priv.thread_pool.Submit(work_item))
     {
         delete work_item;
         return send_reply(env, caller_ref,
@@ -744,7 +753,7 @@ async_iterator(
     // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
-    if(false == priv.thread_pool.submit(work_item))
+    if(false == priv.thread_pool.Submit(work_item))
     {
         delete work_item;
         return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
@@ -827,7 +836,7 @@ async_iterator_move(
     // case #2
     // before we launch a background job for "next iteration", see if there is a
     //  prefetch waiting for us
-    else if (eleveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
+    else if (leveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
     {
         // nope, no prefetch ... await a message to erlang queue
         ret_term = enif_make_copy(env, itr_ptr->itr_ref);
@@ -910,7 +919,7 @@ async_iterator_move(
             if(!enif_inspect_binary(env, action_or_target, &key))
             {
                 itr_ptr->ReleaseReuseMove();
-		itr_ptr->reuse_move=NULL;
+                itr_ptr->reuse_move=NULL;
                 return enif_make_tuple2(env, ATOM_EINVAL, caller_ref);
             }   // if
 
@@ -919,10 +928,10 @@ async_iterator_move(
 
         eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
-        if(false == priv.thread_pool.submit(move_item))
+        if(false == priv.thread_pool.Submit(move_item))
         {
             itr_ptr->ReleaseReuseMove();
-	    itr_ptr->reuse_move=NULL;
+            itr_ptr->reuse_move=NULL;
             return enif_make_tuple2(env, ATOM_ERROR, caller_ref);
         }   // if
     }   // if
@@ -963,7 +972,7 @@ async_close(
         // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
         eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
-        if(false == priv.thread_pool.submit(work_item))
+        if(false == priv.thread_pool.Submit(work_item))
         {
             delete work_item;
             return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
@@ -1007,7 +1016,7 @@ async_iterator_close(
         // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
         eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
-        if(false == priv.thread_pool.submit(work_item))
+        if(false == priv.thread_pool.Submit(work_item))
         {
             delete work_item;
             return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
@@ -1049,7 +1058,7 @@ async_destroy(
     eleveldb::WorkTask *work_item = new eleveldb::DestroyTask(env, caller_ref,
                                                               db_name, opts);
 
-    if(false == priv.thread_pool.submit(work_item))
+    if(false == priv.thread_pool.Submit(work_item))
     {
         delete work_item;
         return send_reply(env, caller_ref,
@@ -1259,6 +1268,7 @@ try
     ATOM(eleveldb::ATOM_TIERED_SLOW_LEVEL, "tiered_slow_level");
     ATOM(eleveldb::ATOM_TIERED_FAST_PREFIX, "tiered_fast_prefix");
     ATOM(eleveldb::ATOM_TIERED_SLOW_PREFIX, "tiered_slow_prefix");
+    ATOM(eleveldb::ATOM_CACHE_OBJECT_WARMING, "cache_object_warming");
 #undef ATOM
 
 

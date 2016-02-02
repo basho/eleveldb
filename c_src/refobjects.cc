@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2014 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2015 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -19,9 +19,6 @@
 // under the License.
 //
 // -------------------------------------------------------------------
-#ifndef __ELEVELDB_DETAIL_HPP
-    #include "detail.hpp"
-#endif
 
 #ifndef INCL_REFOBJECTS_H
     #include "refobjects.h"
@@ -31,6 +28,7 @@
     #include "workitems.h"
 #endif
 
+#include "leveldb/atomics.h"
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
 
@@ -42,9 +40,8 @@ namespace eleveldb {
  */
 
 RefObject::RefObject()
-    : m_RefCount(0)
 {
-        leveldb::gPerfCounters->Inc(leveldb::ePerfElevelRefCreate);
+    leveldb::gPerfCounters->Inc(leveldb::ePerfElevelRefCreate);
 }   // RefObject::RefObject
 
 
@@ -54,53 +51,20 @@ RefObject::~RefObject()
 }   // RefObject::~RefObject
 
 
-uint32_t
-RefObject::RefInc()
-{
-
-    return(eleveldb::inc_and_fetch(&m_RefCount));
-
-}   // RefObject::RefInc
-
-
-uint32_t
-RefObject::RefDec()
-{
-    uint32_t current_refs;
-
-    current_refs=eleveldb::dec_and_fetch(&m_RefCount);
-    if (0==current_refs)
-        delete this;
-
-    return(current_refs);
-
-}   // RefObject::RefDec
-
-
 /**
  * Erlang reference object
  */
 
 ErlRefObject::ErlRefObject()
-    : m_ErlangThisPtr(NULL), m_CloseRequested(0)
+    : m_ErlangThisPtr(NULL), m_CloseRequested(0),
+      m_CloseMutex(true), // true => creates a mutex that can be locked recursively
+      m_CloseCond(&m_CloseMutex)
 {
-    pthread_mutexattr_t attr;
-
-    pthread_mutexattr_init(&attr);
-    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(&m_CloseMutex, &attr);
-    pthread_cond_init(&m_CloseCond, NULL);
-    pthread_mutexattr_destroy(&attr);
-
 }   // ErlRefObject::ErlRefObject
 
 
 ErlRefObject::~ErlRefObject()
 {
-    pthread_cond_destroy(&m_CloseCond);
-    pthread_mutex_destroy(&m_CloseMutex);
-
-
 }   // ErlRefObject::~ErlRefObject
 
 
@@ -116,11 +80,11 @@ ErlRefObject::ClaimCloseFromCThread()
     //  This reduces number of times C code might look into Erlang heap memory
     //  that has garbage collected
     erlang_ptr=m_ErlangThisPtr;
-    if (compare_and_swap((void**)&m_ErlangThisPtr, (void *)erlang_ptr, (void *)NULL)
+    if (leveldb::compare_and_swap((void**)&m_ErlangThisPtr, (void *)erlang_ptr, (void *)NULL)
         && NULL!=erlang_ptr)
     {
         // now test if this C thread preceded Erlang in claiming the close operation
-        ret_flag=compare_and_swap((void **)erlang_ptr, (void *)this,(void *) NULL);
+        ret_flag=leveldb::compare_and_swap((void **)erlang_ptr, (void *)this,(void *) NULL);
     }   // if
 
     return(ret_flag);
@@ -136,15 +100,16 @@ ErlRefObject::InitiateCloseRequest()
     Shutdown();
 
     // WAIT for shutdown to complete
-    pthread_mutex_lock(&m_CloseMutex);
-
-    // one ref from construction, one ref from broadcast in RefDec below
-    //  (only wait if RefDec has not signaled)
-    if (1<m_RefCount && 1==m_CloseRequested)
     {
-        pthread_cond_wait(&m_CloseCond, &m_CloseMutex);
-    }   // while
-    pthread_mutex_unlock(&m_CloseMutex);
+        leveldb::MutexLock lock(&m_CloseMutex);
+
+        // one ref from construction, one ref from broadcast in RefDec below
+        //  (only wait if RefDec has not signaled)
+        if (1<m_RefCount && 1==m_CloseRequested)
+        {
+            m_CloseCond.Wait();
+        }
+    } // unlock m_CloseMutex
 
     m_CloseRequested=3;
     RefDec();
@@ -159,33 +124,35 @@ ErlRefObject::RefDec()
 {
     uint32_t cur_count;
 
-    pthread_mutex_lock(&m_CloseMutex);
-    cur_count=eleveldb::dec_and_fetch(&m_RefCount);
-
-    if (cur_count<2 && 1==m_CloseRequested)
     {
-        bool flag;
+        leveldb::MutexLock lock(&m_CloseMutex);
 
-        // state 2 is sign that all secondary references have cleared
-        m_CloseRequested=2;
+        cur_count=leveldb::dec_and_fetch(&m_RefCount);
 
-        // is there really more than one ref count now?
-        flag=(0<m_RefCount);
-        if (flag)
+        if (cur_count<2 && 1==m_CloseRequested)
         {
-            RefObject::RefInc();
-            pthread_cond_broadcast(&m_CloseCond);
-        }   // if
+            bool flag;
 
-        // this "flag" and ref count dance is to ensure
-        //  that the mutex unlock is called on all threads
-        //  before destruction.
-        if (flag)
-            RefObject::RefDec();
-        else
-            cur_count=0;
-    }   // if
-    pthread_mutex_unlock(&m_CloseMutex);
+            // state 2 is sign that all secondary references have cleared
+            m_CloseRequested=2;
+
+            // is there really more than one ref count now?
+            flag=(0<m_RefCount);
+            if (flag)
+            {
+                RefObject::RefInc();
+                m_CloseCond.SignalAll();
+            }   // if
+
+            // this "flag" and ref count dance is to ensure
+            //  that the mutex unlock is called on all threads
+            //  before destruction.
+            if (flag)
+                RefObject::RefDec();
+            else
+                cur_count=0;
+        }   // if
+    } // unlock m_CloseMutex
 
     if (0==cur_count)
     {
@@ -295,7 +262,7 @@ DbObject::DbObjectResourceCleanup(
     db_ptr=*erl_ptr;
 
     // is Erlang first to initiate close?
-    if (compare_and_swap(erl_ptr, db_ptr, (DbObject *)NULL)
+    if (leveldb::compare_and_swap(erl_ptr, db_ptr, (DbObject *)NULL)
         && NULL!=db_ptr)
     {
         db_ptr->InitiateCloseRequest();
@@ -353,7 +320,7 @@ DbObject::Shutdown()
 
         // lock the ItrList
         {
-            MutexLock lock(m_ItrMutex);
+            leveldb::MutexLock lock(&m_ItrMutex);
 
             if (!m_ItrList.empty())
             {
@@ -368,7 +335,7 @@ DbObject::Shutdown()
         if (again)
         {
             // follow protocol, only one thread calls Initiate
-//            if (compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr, (ItrObject *)NULL))
+//            if (leveldb::compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr, (ItrObject *)NULL))
             if (itr_ptr->ClaimCloseFromCThread())
                 itr_ptr->ItrObject::InitiateCloseRequest();
         }   // if
@@ -384,7 +351,7 @@ DbObject::AddReference(
     ItrObject * ItrPtr)
 {
     bool ret_flag;
-    MutexLock lock(m_ItrMutex);
+    leveldb::MutexLock lock(&m_ItrMutex);
 
     ret_flag=(0==m_CloseRequested);
 
@@ -400,7 +367,7 @@ void
 DbObject::RemoveReference(
     ItrObject * ItrPtr)
 {
-    MutexLock lock(m_ItrMutex);
+    leveldb::MutexLock lock(&m_ItrMutex);
 
     m_ItrList.remove(ItrPtr);
 
@@ -517,7 +484,7 @@ ItrObject::ItrObjectResourceCleanup(
     itr_ptr=*erl_ptr;
 
     // is Erlang first to initiate close?
-    if (compare_and_swap(erl_ptr, itr_ptr, (ItrObject *)NULL)
+    if (leveldb::compare_and_swap(erl_ptr, itr_ptr, (ItrObject *)NULL)
         && NULL!=itr_ptr)
     {
         itr_ptr->InitiateCloseRequest();
@@ -587,7 +554,7 @@ ItrObject::ReleaseReuseMove()
     // move pointer off ItrObject first, then decrement ...
     //  otherwise there is potential for infinite loop
     ptr=(MoveTask *)reuse_move;
-    if (compare_and_swap(&reuse_move, ptr, (MoveTask *)NULL)
+    if (leveldb::compare_and_swap(&reuse_move, ptr, (MoveTask *)NULL)
         && NULL!=ptr)
     {
         ptr->RefDec();
