@@ -88,6 +88,10 @@ case "$1" in
             fi
         fi
 
+        # hack issue where high level make is running -j 4
+        #  and causes build errors in leveldb
+        export MAKEFLAGS=
+
         (cd leveldb && $MAKE -j 3 all)
         (cd leveldb && $MAKE -j 3 tools)
         (cp leveldb/perf_dump leveldb/sst_rewrite leveldb/sst_scan leveldb/leveldb_repair ../priv)
