@@ -8,7 +8,7 @@ if [ `uname -s` = 'SunOS' -a "${POSIX_SHELL}" != "true" ]; then
 fi
 unset POSIX_SHELL # clear it so if we invoke other scripts, they run as ksh as well
 
-LEVELDB_VSN="2.0.14"
+LEVELDB_VSN="2.0.15"
 
 SNAPPY_VSN="1.0.4"
 
@@ -58,7 +58,7 @@ case "$1" in
         if [ ! -d leveldb ]; then
             git clone git://github.com/basho/leveldb
             (cd leveldb && git checkout $LEVELDB_VSN)
-            if [ $BASHO_EE = "1" ]; then
+            if [ "$BASHO_EE" = "1" ]; then
                 (cd leveldb && git submodule update --init)
             fi
         fi
