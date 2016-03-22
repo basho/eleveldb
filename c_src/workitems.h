@@ -27,15 +27,14 @@
 
 #include "leveldb/db.h"
 #include "leveldb/write_batch.h"
-
 #include "extractor.h"
 #include "filter.h"
-
 #include "Encoding.h"
 
-#ifndef INCL_MUTEX_H
-    #include "mutex.h"
-#endif
+#define LEVELDB_PLATFORM_POSIX
+#include "port/port.h"
+#include "util/mutexlock.h"
+#include "util/thread_tasks.h"
 
 #ifndef __WORK_RESULT_HPP
     #include "work_result.hpp"
@@ -49,7 +48,6 @@
     #include "refobjects.h"
 #endif
 
-
 namespace eleveldb {
 
 /* Type returned from a work task: */
@@ -60,11 +58,9 @@ typedef basho::async_nif::work_result   work_result;
 /**
  * Virtual base class for async NIF work items:
  */
-class WorkTask : public RefObject
+class WorkTask : public leveldb::ThreadTask
 {
-public:
-
-protected:
+ protected:
     ReferencePtr<DbObject> m_DbPtr;             //!< access to database, and holds reference
 
     ErlNifEnv      *local_env_;
@@ -72,31 +68,31 @@ protected:
     ERL_NIF_TERM   caller_pid_term;
     bool           terms_set;
 
-    bool resubmit_work;           //!< true if this work item is loaded for prefetch
-
     ErlNifPid local_pid;   // maintain for task lifetime (JFW)
 
  public:
-
     WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref);
 
     WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref, DbObject * DbPtr);
 
     virtual ~WorkTask();
 
-    virtual void prepare_recycle();
-    virtual void recycle();
+    // this is the method called from the thread pool's worker thread; it
+    // calls DoWork(), implemented in the subclass, and returns the result
+    // of the work to the caller
+    virtual void operator()();
 
     virtual ErlNifEnv *local_env()         { return local_env_; }
 
     // call local_env() since the virtual creates the data in MoveTask
     const ERL_NIF_TERM& caller_ref()       { local_env(); return caller_ref_term; }
     const ERL_NIF_TERM& pid()              { local_env(); return caller_pid_term; }
-    bool resubmit() const {return(resubmit_work);}
 
-    virtual work_result operator()()     = 0;
+ protected:
+    // this is the method that does the real work for this task
+    virtual work_result DoWork() = 0;
 
-private:
+ private:
     WorkTask();
     WorkTask(const WorkTask &);
     WorkTask & operator=(const WorkTask &);
@@ -120,7 +116,8 @@ public:
 
     virtual ~OpenTask() {};
 
-    virtual work_result operator()();
+protected:
+    virtual work_result DoWork();
 
 private:
     OpenTask();
@@ -149,7 +146,8 @@ public:
 
     virtual ~WriteTask();
 
-    virtual work_result operator()();
+protected:
+    virtual work_result DoWork();
 
 private:
     WriteTask();
@@ -210,7 +208,7 @@ public:
 
     virtual ~GetTask();
 
-    virtual work_result operator()();
+    virtual work_result DoWork();
 
 };  // class GetTask
 
@@ -236,7 +234,7 @@ public:
 
     virtual ~IterTask();
 
-    virtual work_result operator()();
+    virtual work_result DoWork();
 
 };  // class IterTask
 
@@ -268,12 +266,12 @@ public:
 
     virtual ~MoveTask();
 
-    virtual work_result operator()();
-
     virtual ErlNifEnv *local_env();
 
-    virtual void prepare_recycle();
     virtual void recycle();
+
+protected:
+    virtual work_result DoWork();
 
 };  // class MoveTask
 
@@ -293,7 +291,7 @@ public:
 
     virtual ~CloseTask();
 
-    virtual work_result operator()();
+    virtual work_result DoWork();
 
 };  // class CloseTask
 
@@ -313,7 +311,7 @@ public:
 
     virtual ~ItrCloseTask();
 
-    virtual work_result operator()();
+    virtual work_result DoWork();
 
 };  // class ItrCloseTask
 
@@ -334,7 +332,8 @@ public:
 
     virtual ~DestroyTask() {};
 
-    virtual work_result operator()();
+protected:
+    virtual work_result DoWork();
 
 private:
     DestroyTask();
@@ -457,8 +456,7 @@ public:
                   SyncObject* sync_obj);
     
     virtual ~RangeScanTask();
-    virtual work_result operator()();
-    
+
     static void CreateSyncHandleType(ErlNifEnv* env);
     static SyncHandle* CreateSyncHandle(const RangeScanOptions & options);
     static SyncHandle* RetrieveSyncHandle(ErlNifEnv* env, ERL_NIF_TERM term);
@@ -473,7 +471,9 @@ public:
                               ErlNifBinary* bin);
 
 protected:
-    
+
+    virtual work_result DoWork();
+
     RangeScanOptions options_;
     std::string start_key_;
     std::string end_key_;

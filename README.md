@@ -14,3 +14,4 @@ released work, i.e. distributed as part of a Riak release.
 NOTE: When adding a new header dependency in the c_src directory,
 make sure you run `make clean` and then `make` in order to ensure
 rebar picks up your new header dependency.
+

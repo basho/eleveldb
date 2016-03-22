@@ -228,3 +228,14 @@
   {datatype, directory},
   hidden
 ]}.
+
+%% @doc This parameter enables/disables logic that saves a list
+%% of cached objects (currently only open .sst file names) at
+%% database close.  The list is used on the next open to pre-populate
+%% the cache.  This typically eliminates heavy latencies associated
+%% with .sst files opening for early user requests.
+{mapping, "leveldb.cache_object_warming", "eleveldb.cache_object_warming", [
+  {default, true},
+  {datatype, {enum, [true, false]}},
+  hidden
+]}.
