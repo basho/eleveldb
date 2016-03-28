@@ -29,10 +29,9 @@
 #include "leveldb/db.h"
 #include "leveldb/write_batch.h"
 #include "leveldb/perf_count.h"
-
-#ifndef INCL_THREADING_H
-    #include "threading.h"
-#endif
+#include "util/refobject_base.h"
+#define LEVELDB_PLATFORM_POSIX
+#include "port/port.h"
 
 #ifndef __WORK_RESULT_HPP
     #include "work_result.hpp"
@@ -49,21 +48,12 @@ namespace eleveldb {
  * Base class for any object that offers RefInc / RefDec interface
  */
 
-class RefObject
+class RefObject : public leveldb::RefObjectBase
 {
-public:
-
-protected:
-    volatile uint32_t m_RefCount;     //!< simple count of reference, auto delete at zero
-
 public:
     RefObject();
 
     virtual ~RefObject();
-
-    virtual uint32_t RefInc();
-
-    virtual uint32_t RefDec();
 
 private:
     RefObject(const RefObject&);              // nocopy
@@ -88,10 +78,8 @@ public:
     // 3 final RefDec and destructor executing
     volatile uint32_t m_CloseRequested;
 
-    // It would be nice if leveldb's port::* container objects could be
-    //  be used here.  But requires detailed work relating to build_config.mk
-    pthread_mutex_t m_CloseMutex;        //!< for condition wait
-    pthread_cond_t  m_CloseCond;         //!< for notification of user's finish
+    leveldb::port::Mutex   m_CloseMutex;        //!< for condition wait
+    leveldb::port::CondVar m_CloseCond;         //!< for notification of user's finish
 
 protected:
 
@@ -181,7 +169,7 @@ public:
 
     leveldb::Options * m_DbOptions;
 
-    Mutex m_ItrMutex;                         //!< mutex protecting m_ItrList
+    leveldb::port::Mutex m_ItrMutex;                         //!< mutex protecting m_ItrList
     std::list<class ItrObject *> m_ItrList;   //!< ItrObjects holding ref count to this
 
 protected:
