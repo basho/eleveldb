@@ -30,6 +30,10 @@ namespace leveldb {
                     return 0;
                 }
 
+                if ((a[3] != (char) 100) || (b[3] != (char) 100)) {
+                    return 1;
+                }
+
                 Slice ac = Slice(a.data(), a.size()), bc = Slice(b.data(), b.size());
 
                 // Trim Slices and compare Antidote keys (atoms)
@@ -61,7 +65,7 @@ namespace leveldb {
                 int bVCSize = checkList(bc);
 
                 // Parse and compare VCs
-                return compareVCs(parseVCMap(ac, aVCSize), parseVCMap(bc, bVCSize));
+                return compareVCs(ac, aVCSize, bc, bVCSize);
             }
 
             // Given a slice, checks that the first bytes match Erlang
@@ -113,20 +117,6 @@ namespace leveldb {
 
                 s.remove_prefix(4);
                 return *(int *)size;
-            }
-
-            static map<string, unsigned long long int> parseVCMap(Slice &s, int size) {
-                map<string, unsigned long long int> VC;
-                unsigned long long int value;
-                string key;
-                while(size > 0) {
-                    checkTwoElementTuple(s);
-                    key = parseAtom(s);
-                    value = parseInt(s);
-                    VC[key] = value;
-                    size--;
-                }
-                return VC;
             }
 
             static void checkTwoElementTuple(Slice &s) {
@@ -189,7 +179,7 @@ namespace leveldb {
                     s.remove_prefix(5);
                     intSize = *(int *) size;
                 }
-                // Clock time can't be negative, therfore this byte must be 0
+                // Clock time can't be negative, therefore this byte must be 0
                 assert((int) s[0] == 0);
                 s.remove_prefix(1);
                 unsigned char current[1];
@@ -223,7 +213,7 @@ namespace leveldb {
                 s.remove_prefix(2);
                 sc.remove_prefix(1);
 
-                // Create the result string and trim its sice from the Slice.
+                // Create the result string and trim its size from the Slice.
                 string res (s.data(), sc[0]);
                 s.remove_prefix(sc[0]);
                 return res;
@@ -231,32 +221,60 @@ namespace leveldb {
 
             // This method returns -1 * the comparison value, since
             // we are sorting keys from oldest to newest first.
-            static int compareVCs(map<string, unsigned long long int> a,
-                 map<string, unsigned long long int> b) {
-                if (a.size() > b.size()) {
-                    // a is "newer" since it contains more keys.
-                    return -1;
+            static int compareVCs(Slice a, int aVCSize, Slice b, int bVCSize) {
+                // If any of them is an empty snapshot,
+                // return the comparison of the sizes
+                if (aVCSize == 0 || bVCSize == 0) {
+                    return sizeComparison(aVCSize, bVCSize);
                 }
-                if (a.size() < b.size()) {
-                    // b is "newer" since it contains more keys.
-                    return 1;
+                unsigned long long int valueA, valueB;
+                string keyA, keyB;
+                int aSize = aVCSize, bSize = bVCSize;
+                // Iterate the vector clocks and compare them
+                while(aSize > 0 && bSize > 0) {
+                    checkTwoElementTuple(a);
+                    checkTwoElementTuple(b);
+                    keyA = parseAtom(a);
+                    keyB = parseAtom(b);
+                    valueA = parseInt(a);
+                    valueB = parseInt(b);
+
+                    // Keys are sorted, so we leverage that
+                    if(keyA.compare(keyB) == 0) {
+                        // Same key
+                        if(valueB == valueA) {
+                            // Values for this key are equal,
+                            // continue to next key
+                            aSize--;
+                            bSize--;
+                            continue;
+                        }
+                        // Values are different, so return the comparison
+                        if(valueB > valueA) {
+                            return 1;
+                        } else {
+                            return -1;
+                        }
+                    } else {
+                        // Key is different so return the comparison
+                        return keyA.compare(keyB);
+                    }
                 }
-                map<string, unsigned long long int>::iterator keyIt;
-                for(map<string, unsigned long long int>::iterator iterator = b.begin();
-                                iterator != b.end(); iterator++) {
-                    keyIt = a.find(iterator->first);
-                    if(keyIt == a.end()) { // Key sets are !=
-                        // we return 1 since a doesn't contain that key
-                        // an therefore we should treat is as a 0.
+                // VCs are the same until now
+                // Check if any of them has more keys
+                return sizeComparison(aSize, bSize);
+            }
+
+            static int sizeComparison(int sizeA, int sizeB) {
+                if (sizeA == 0 && sizeB == 0){
+                    return 0;
+                } else {
+                    if (sizeA > 0 && sizeB == 0) {
+                        return -1;
+                    } else {
                         return 1;
                     }
-                    if(iterator->second > keyIt->second) {
-                        continue;
-                    } else {
-                        return -1;
-                    }
                 }
-                return 1;
             }
 
             // No need to shorten keys since it's fixed size.
