@@ -105,9 +105,14 @@ init() ->
                          {tiered_slow_prefix, string()} |
                          {cache_object_warming, boolean()}].
 
--type read_options() :: [{verify_checksums, boolean()} |
-                         {fill_cache, boolean()} |
-                         {iterator_refresh, boolean()}].
+-type read_option() :: {verify_checksums, boolean()} |
+                       {fill_cache, boolean()} |
+                       {iterator_refresh, boolean()}.
+
+-type read_options() :: [read_option()].
+
+-type fold_option()  :: {first_key, Key::binary()}.
+-type fold_options() :: [read_option() | fold_option()].
 
 -type write_options() :: [{sync, boolean()}].
 
@@ -229,7 +234,7 @@ async_iterator_close(_CallerRef, _IRef) ->
 
 %% Fold over the keys and values in the database
 %% will throw an exception if the database is closed while the fold runs
--spec fold(db_ref(), fold_fun(), any(), read_options()) -> any().
+-spec fold(db_ref(), fold_fun(), any(), fold_options()) -> any().
 fold(Ref, Fun, Acc0, Opts) ->
     {ok, Itr} = iterator(Ref, Opts),
     do_fold(Itr, Fun, Acc0, Opts).
