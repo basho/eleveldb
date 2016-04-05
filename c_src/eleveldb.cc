@@ -883,7 +883,8 @@ async_iterator_move(
         //  reuse ... but the current Iterator is good
         itr_ptr->ReleaseReuseMove();
 
-        if (eleveldb::MoveTask::PREFETCH_STOP != action )
+        if (eleveldb::MoveTask::PREFETCH_STOP != action
+            && itr_ptr->m_Iter->Valid())
         {
             submit_new_request=true;
         }   // if
