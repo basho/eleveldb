@@ -305,6 +305,7 @@ MoveTask::DoWork()
         }   // if
         else
         {
+            m_ItrWrap->m_PrefetchStarted=false;
             return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
         }   // else
 
