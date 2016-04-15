@@ -839,6 +839,7 @@ async_iterator_move(
     else if (leveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
     {
         // nope, no prefetch ... await a message to erlang queue
+        //  NOTE:  "else" clause of MoveTask::DoWork() could be running simultaneously
         ret_term = enif_make_copy(env, itr_ptr->itr_ref);
 
         // leave m_HandoffAtomic as 1 so first response is via message
@@ -856,8 +857,13 @@ async_iterator_move(
             submit_new_request=false;
         }   // else
 
-        // redundant ... but clarifying where it really belongs in logic pattern
-        itr_ptr->m_Iter->m_PrefetchStarted=(eleveldb::MoveTask::PREFETCH_STOP != action );
+        // using compare_and_swap has a hardware locking "set only if still in same state as before"
+        //  (this is an absolute must since worker thread could change to false if
+        //   hits end of key space and its execution overlaps this block's execution)
+        leveldb::compare_and_swap(&itr_ptr->m_Iter->m_PrefetchStarted,
+                                  prefetch_state,
+                                  (eleveldb::MoveTask::PREFETCH_STOP != action )
+                                  && itr_ptr->m_Iter->Valid());
     }   // else if
 
     // case #3
@@ -865,6 +871,7 @@ async_iterator_move(
     {
         // why yes there is.  copy the key/value info into a return tuple before
         //  we launch the iterator for "next" again
+        //  NOTE:  worker thread is inactive at this time
         if(!itr_ptr->m_Iter->Valid())
             ret_term=enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
