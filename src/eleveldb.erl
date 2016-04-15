@@ -120,7 +120,7 @@ init() ->
                           {delete, Key::binary()} |
                           clear].
 
--type iterator_action() :: first | last | next | prev | prefetch | binary().
+-type iterator_action() :: first | last | next | prev | prefetch | prefetch_stop | binary().
 
 -opaque db_ref() :: binary().
 
