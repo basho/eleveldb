@@ -305,7 +305,9 @@ MoveTask::DoWork()
         }   // if
         else
         {
-            m_ItrWrap->m_PrefetchStarted=false;
+            // using compare_and_swap as a hardware locking "set to false"
+            //  (a little heavy handed, but not executed often)
+            leveldb::compare_and_swap(&m_ItrWrap->m_PrefetchStarted, true, false);
             return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
         }   // else
 
