@@ -76,8 +76,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--import(lager,[info/2]).
-
 %% This cannot be a separate function. Code must be inline to trigger
 %% Erlang compiler's use of optimized selective receive.
 -define(WAIT_FOR_REPLY(Ref),
@@ -321,7 +319,7 @@ do_streaming_batch(Bin, Fun, Acc) ->
 do_streaming_fold(StreamRef = {MsgRef, AckRef}, Fun, Acc) ->
     receive
         {streaming_error, MsgRef, ErrMsg} ->
-            lager:error("Streaming error: ~s~n", [ErrMsg]),
+            lager:error("Streaming error: ~p\n", [ErrMsg]),
             Acc;
         {streaming_end, MsgRef} ->
             Acc;
