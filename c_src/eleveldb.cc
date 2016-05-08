@@ -861,11 +861,11 @@ async_iterator_move(
         // using compare_and_swap has a hardware locking "set only if still in same state as before"
         //  (this is an absolute must since worker thread could change to false if
         //   hits end of key space and its execution overlaps this block's execution)
-	int cas_temp((eleveldb::MoveTask::PREFETCH_STOP != action )  // needed for Solaris CAS
-		     && itr_ptr->m_Iter->Valid());
+        int cas_temp((eleveldb::MoveTask::PREFETCH_STOP != action )  // needed for Solaris CAS
+                     && itr_ptr->m_Iter->Valid());
         leveldb::compare_and_swap(&itr_ptr->m_Iter->m_PrefetchStarted,
                                   prefetch_state,
-				  cas_temp);
+                                  cas_temp);
     }   // else if
 
     // case #3
