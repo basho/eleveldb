@@ -218,7 +218,8 @@ public:
     leveldb::Iterator * m_Iterator;
     volatile uint32_t m_HandoffAtomic;        //!< matthew's atomic foreground/background prefetch flag.
     bool m_KeysOnly;                          //!< only return key values
-    volatile bool m_PrefetchStarted;          //!< true after first prefetch command
+    // m_PrefetchStarted must use uint32_t instead of bool for Solaris CAS operations
+    volatile uint32_t m_PrefetchStarted;          //!< true after first prefetch command
     leveldb::ReadOptions m_Options;           //!< local copy of ItrObject::options
     ERL_NIF_TERM itr_ref;                     //!< shared copy of ItrObject::itr_ref
 
