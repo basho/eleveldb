@@ -226,19 +226,19 @@ MoveTask::DoWork()
     }   // if
 
     // hung iterator debug
-    else
     {
         struct timeval tv;
 
         gettimeofday(&tv, NULL);
-
-        if ((m_ItrWrap->m_LastLogReport + 300) < tv.tv_sec)
+        
+        // 14400 is 4 hours in seconds ... 60*60*4
+        if ((m_ItrWrap->m_LastLogReport + 14400) < tv.tv_sec && NULL!=m_ItrWrap->get())
         {
             m_ItrWrap->LogIterator();
             m_ItrWrap->m_LastLogReport=tv.tv_sec;
         }   // if
+    }
 
-    }   // else
     // back to normal operation
     if(NULL == itr)
         return work_result(local_env(), ATOM_ERROR, ATOM_ITERATOR_CLOSED);
