@@ -337,7 +337,10 @@ DbObject::Shutdown()
             // follow protocol, only one thread calls Initiate
 //            if (leveldb::compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr, (ItrObject *)NULL))
             if (itr_ptr->ClaimCloseFromCThread())
+            {
+                itr_ptr->m_Iter->LogIterator();
                 itr_ptr->ItrObject::InitiateCloseRequest();
+            }   // if
         }   // if
     } while(again);
 
@@ -389,11 +392,36 @@ LevelIteratorWrapper::LevelIteratorWrapper(
     : m_DbPtr(ItrPtr->m_DbPtr.get()), m_ItrPtr(ItrPtr), m_Snapshot(NULL), m_Iterator(NULL),
       m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false),
       m_Options(Options), itr_ref(itr_ref),
-      m_IteratorStale(0), m_StillUse(true)
+      m_IteratorStale(0), m_StillUse(true),
+      m_IteratorCreated(0), m_LastLogReport(0), m_MoveCount(0)
 {
-    RebuildIterator();
-};
+    struct timeval tv;
 
+    gettimeofday(&tv, NULL);
+    m_IteratorCreated=tv.tv_sec;
+    m_LastLogReport=tv.tv_sec;
+
+    RebuildIterator();
+
+}   // LevelIteratorWrapper::LevelIteratorWrapper
+
+/**
+ * put info about this iterator into leveldb LOG
+ */
+
+void
+LevelIteratorWrapper::LogIterator()
+{
+    struct tm created;
+
+    localtime_r(&m_IteratorCreated, &created);
+    leveldb::Log(m_DbPtr->m_Db->GetLogger(),
+                 "Iterator created %d/%d/%d %d:%d:%d, move operations %zd (%p)",
+                 created.tm_mon, created.tm_mday, created.tm_year-100,
+                 created.tm_hour, created.tm_min, created.tm_sec,
+                 m_MoveCount, m_Iterator);
+
+}   // LevelIteratorWrapper::LogIterator()
 
 
 /**
@@ -487,6 +515,7 @@ ItrObject::ItrObjectResourceCleanup(
     if (leveldb::compare_and_swap(erl_ptr, itr_ptr, (ItrObject *)NULL)
         && NULL!=itr_ptr)
     {
+        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);
         itr_ptr->InitiateCloseRequest();
     }   // if
 

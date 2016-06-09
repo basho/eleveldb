@@ -191,7 +191,7 @@ MoveTask::DoWork()
 
     itr=m_ItrWrap->get();
 
-
+    ++m_ItrWrap->m_MoveCount;
 //
 // race condition of prefetch clearing db iterator while
 //  async_iterator_move looking at it.
@@ -224,6 +224,20 @@ MoveTask::DoWork()
             }   // if
         }   // if
     }   // if
+
+    // hung iterator debug
+    {
+        struct timeval tv;
+
+        gettimeofday(&tv, NULL);
+        
+        // 14400 is 4 hours in seconds ... 60*60*4
+        if ((m_ItrWrap->m_LastLogReport + 14400) < tv.tv_sec && NULL!=m_ItrWrap->get())
+        {
+            m_ItrWrap->LogIterator();
+            m_ItrWrap->m_LastLogReport=tv.tv_sec;
+        }   // if
+    }
 
     // back to normal operation
     if(NULL == itr)
