@@ -131,8 +131,10 @@ public:
 
     ~ReferencePtr()
     {
-        if (NULL!=t)
-            t->RefDec();
+        TargetT * temp_ptr(t);
+        t=NULL;
+        if (NULL!=temp_ptr)
+            temp_ptr->RefDec();
     }
 
     void assign(TargetT * _t)
@@ -233,6 +235,9 @@ public:
     time_t m_LastLogReport;                   //!< LOG message was last written
     size_t m_MoveCount;                       //!< number of calls to MoveItem
 
+    // read by Erlang thread, maintained by eleveldb MoveItem::DoWork
+    volatile bool m_IsValid;                  //!< iterator state after last operation
+
     LevelIteratorWrapper(ItrObject * ItrPtr, bool KeysOnly,
                          leveldb::ReadOptions & Options, ERL_NIF_TERM itr_ref);
 
@@ -242,9 +247,12 @@ public:
     }   // ~LevelIteratorWrapper
 
     leveldb::Iterator * get() {return(m_Iterator);};
-    leveldb::Iterator * operator->() {return(m_Iterator);};
 
-    bool Valid() {return(NULL!=m_Iterator && m_Iterator->Valid());};
+    volatile bool Valid() {return(m_IsValid);};
+    void SetValid(bool flag) {m_IsValid=flag;};
+
+    // warning, only valid with Valid() otherwise potential
+    //   segfault if iterator purged to fix AAE'ism
     leveldb::Slice key() {return(m_Iterator->key());};
     leveldb::Slice value() {return(m_Iterator->value());};
 
