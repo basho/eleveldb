@@ -1,3 +1,9 @@
+github.com tag 2.0.22 - June 21, 2016
+-------------------------------------
+ - branch mv-iter-valid (PR 199): adjust recent code accessing iterator->Valid() where
+   underlying iterator could be deleted ... now cache Valid().
+ - eleveldb only, no leveldb changes
+
 github.com tag 2.0.21 - June 17, 2016
 -------------------------------------
  - update to leveldb 2.0.21 (correct hot threads for iterator hang)
