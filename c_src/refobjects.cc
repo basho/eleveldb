@@ -393,7 +393,7 @@ LevelIteratorWrapper::LevelIteratorWrapper(
       m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false),
       m_Options(Options), itr_ref(itr_ref),
       m_IteratorStale(0), m_StillUse(true),
-      m_IteratorCreated(0), m_LastLogReport(0), m_MoveCount(0)
+      m_IteratorCreated(0), m_LastLogReport(0), m_MoveCount(0), m_IsValid(false)
 {
     struct timeval tv;
 
