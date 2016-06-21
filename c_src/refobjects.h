@@ -228,6 +228,11 @@ public:
     time_t m_IteratorStale;                   //!< time iterator should refresh
     bool m_StillUse;                          //!< true if no error or key end seen
 
+    // debug data for hung iteratos
+    time_t m_IteratorCreated;                 //!< time constructor called
+    time_t m_LastLogReport;                   //!< LOG message was last written
+    size_t m_MoveCount;                       //!< number of calls to MoveItem
+
     LevelIteratorWrapper(ItrObject * ItrPtr, bool KeysOnly,
                          leveldb::ReadOptions & Options, ERL_NIF_TERM itr_ref);
 
@@ -272,6 +277,9 @@ public:
         m_Options.snapshot = m_Snapshot;
         m_Iterator = m_DbPtr->m_Db->NewIterator(m_Options);
     }   // RebuildIterator
+
+    // hung iterator debug
+    void LogIterator();
 
 private:
     LevelIteratorWrapper(const LevelIteratorWrapper &);            // no copy
