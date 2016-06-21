@@ -230,7 +230,7 @@ MoveTask::DoWork()
         struct timeval tv;
 
         gettimeofday(&tv, NULL);
-        
+
         // 14400 is 4 hours in seconds ... 60*60*4
         if ((m_ItrWrap->m_LastLogReport + 14400) < tv.tv_sec && NULL!=m_ItrWrap->get())
         {
@@ -271,6 +271,9 @@ MoveTask::DoWork()
             break;
 
     }   // switch
+
+    // set state for Erlang side to read
+    m_ItrWrap->SetValid(itr->Valid());
 
     // Post processing before telling the world the results
     //  (while only one thread might be looking at objects)
