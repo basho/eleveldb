@@ -261,15 +261,19 @@ public:
     {
         if (NULL!=m_Snapshot)
         {
-            // leveldb performs actual "delete" call on m_Shapshot's pointer
-            m_DbPtr->m_Db->ReleaseSnapshot(m_Snapshot);
+            const leveldb::Snapshot * temp_snap(m_Snapshot);
+
             m_Snapshot=NULL;
+            // leveldb performs actual "delete" call on m_Shapshot's pointer
+            m_DbPtr->m_Db->ReleaseSnapshot(temp_snap);
         }   // if
 
         if (NULL!=m_Iterator)
         {
-            delete m_Iterator;
+            leveldb::Iterator * temp_iter(m_Iterator);
+
             m_Iterator=NULL;
+            delete temp_iter;
         }   // if
     }   // PurgeIterator
 
