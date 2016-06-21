@@ -230,11 +230,7 @@ MoveTask::DoWork()
         struct timeval tv;
 
         gettimeofday(&tv, NULL);
-<<<<<<< HEAD
 
-=======
-        
->>>>>>> eleveldb 2.0.20 contains temporary changes for debugging hung iterator problem.
         // 14400 is 4 hours in seconds ... 60*60*4
         if ((m_ItrWrap->m_LastLogReport + 14400) < tv.tv_sec && NULL!=m_ItrWrap->get())
         {
