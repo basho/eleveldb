@@ -239,3 +239,31 @@
   {datatype, {enum, [true, false]}},
   hidden
 ]}.
+
+%% @doc Enable global expiry.  All leveldb databases / vnodes
+%% will use same expiry_minutes and whole_file_expiry settings.
+%% Same settings apply to all leveldb instances in multi_backend.
+{mapping, "leveldb.expiry_enabled", "eleveldb.expiry_enabled", [
+  {default, off},
+  {datatype, flag},
+  hidden
+]}.
+
+%% @doc Minutes until object expires.  Gives number of minutes
+%% a stored key/value will stay within the database before automatic
+%% deletion.  Zero disables expiry by age (minutes) feature
+{mapping, "leveldb.expiry_minutes", "eleveldb.expiry_minutes", [
+  {default, 0},
+  {datatype, integer},
+  hidden
+]}.
+
+%% @doc Expire entire .sst table file.  Authorizes leveldb to
+%% eliminate entire files that contain expired data (delete files
+%% instead of removing expired key/values during compaction).
+{mapping, "leveldb.whole_file_expiry", "eleveldb.whole_file_expiry", [
+  {default, off},
+  {datatype, flag},
+  hidden
+]}.
+
