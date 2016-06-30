@@ -897,7 +897,8 @@ async_iterator_move(
     const ERL_NIF_TERM& action_or_target = argv[2];
     ERL_NIF_TERM ret_term;
 
-    bool submit_new_request(true), prefetch_state;
+    bool submit_new_request(true);
+    int prefetch_state;      // not bool for Solaris CAS
 
     ReferencePtr<ItrObject> itr_ptr;
 
@@ -961,6 +962,7 @@ async_iterator_move(
     else if (leveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
     {
         // nope, no prefetch ... await a message to erlang queue
+        //  NOTE:  "else" clause of MoveTask::DoWork() could be running simultaneously
         ret_term = enif_make_copy(env, itr_ptr->itr_ref);
 
         // leave m_HandoffAtomic as 1 so first response is via message
@@ -978,8 +980,14 @@ async_iterator_move(
             submit_new_request=false;
         }   // else
 
-        // redundant ... but clarifying where it really belongs in logic pattern
-        itr_ptr->m_Iter->m_PrefetchStarted=(eleveldb::MoveTask::PREFETCH_STOP != action );
+        // using compare_and_swap has a hardware locking "set only if still in same state as before"
+        //  (this is an absolute must since worker thread could change to false if
+        //   hits end of key space and its execution overlaps this block's execution)
+        int cas_temp((eleveldb::MoveTask::PREFETCH_STOP != action )  // needed for Solaris CAS
+                     && itr_ptr->m_Iter->Valid());
+        leveldb::compare_and_swap(&itr_ptr->m_Iter->m_PrefetchStarted,
+                                  prefetch_state,
+                                  cas_temp);
     }   // else if
 
     // case #3
@@ -987,6 +995,7 @@ async_iterator_move(
     {
         // why yes there is.  copy the key/value info into a return tuple before
         //  we launch the iterator for "next" again
+        //  NOTE:  worker thread is inactive at this time
         if(!itr_ptr->m_Iter->Valid())
             ret_term=enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
@@ -1005,7 +1014,8 @@ async_iterator_move(
         //  reuse ... but the current Iterator is good
         itr_ptr->ReleaseReuseMove();
 
-        if (eleveldb::MoveTask::PREFETCH_STOP != action )
+        if (eleveldb::MoveTask::PREFETCH_STOP != action
+            && itr_ptr->m_Iter->Valid())
         {
             submit_new_request=true;
         }   // if
@@ -1118,6 +1128,7 @@ async_iterator_close(
 
     if(NULL==itr_ptr.get() || 0!=itr_ptr->m_CloseRequested)
     {
+       leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
        return enif_make_badarg(env);
     }
 
@@ -1403,10 +1414,12 @@ eleveldb_repair(
     const ERL_NIF_TERM argv[])
 {
     char name[4096];
-    if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1))
+    if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1)
+        && enif_is_list(env, argv[1]))
     {
         // Parse out the options
         leveldb::Options opts;
+        fold(env, argv[1], parse_open_option, opts);
 
         leveldb::Status status = leveldb::RepairDB(name, opts);
         if (!status.ok())

@@ -134,9 +134,7 @@ init() ->
 
 -type itr_options() :: [read_option() | itr_option()].
 
--type read_options() :: [{verify_checksums, boolean()} |
-                         {fill_cache, boolean()} |
-                         {iterator_refresh, boolean()}].
+-type read_options() :: [read_option() | itr_option()].
 
 -type write_options() :: [{sync, boolean()}].
 
@@ -164,7 +162,7 @@ init() ->
                          {limit, pos_integer()} |
                          streaming_option()].
 
--type iterator_action() :: first | last | next | prev | prefetch | binary().
+-type iterator_action() :: first | last | next | prev | prefetch | prefetch_stop | binary().
 
 -opaque db_ref() :: binary().
 
@@ -360,6 +358,7 @@ parse_string(Size, Shift, <<0:1, N:7, Bin/binary>>) ->
 %%
 %% will also throw an exception if there is an error parsing a
 %% range_filter passed as part of the streaming options
+
 -spec fold(db_ref(), fold_fun(), any(), fold_options()) -> any().
 fold(Ref, Fun, Acc0, Opts) ->
     case proplists:get_value(fold_method, Opts, iterator) of

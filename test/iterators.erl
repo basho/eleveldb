@@ -37,7 +37,10 @@ iterator_test_() ->
         prev_test_case(Ref),
         seek_and_next_test_case(Ref),
         basic_prefetch_test_case(Ref),
-        seek_and_prefetch_test_case(Ref)
+        seek_and_prefetch_test_case(Ref),
+        aae_prefetch1(Ref),
+        aae_prefetch2(Ref),
+        aae_prefetch3(Ref)
        ]
        end}]
     }.
@@ -97,7 +100,47 @@ seek_and_prefetch_test_case(Ref) ->
             ?assertEqual({ok, <<"a">>, <<"w">>},eleveldb:iterator_move(I, <<"a">>)),
             ?assertEqual({ok, <<"b">>, <<"x">>},eleveldb:iterator_move(I, prefetch)),
             ?assertEqual({ok, <<"c">>, <<"y">>},eleveldb:iterator_move(I, prefetch_stop)),
-            ?assertEqual({ok, <<"d">>, <<"z">>},eleveldb:iterator_move(I, prefetch))
+            ?assertEqual({ok, <<"d">>, <<"z">>},eleveldb:iterator_move(I, prefetch)),
+            ?assertEqual({error,invalid_iterator},eleveldb:iterator_move(I, prefetch_stop)),
+            ?assertEqual({ok, <<"a">>, <<"w">>},eleveldb:iterator_move(I, <<"a">>)),
+            ?assertEqual({ok, <<"b">>, <<"x">>},eleveldb:iterator_move(I, prefetch)),
+            ?assertEqual({ok, <<"c">>, <<"y">>},eleveldb:iterator_move(I, prefetch)),
+            ?assertEqual({ok, <<"d">>, <<"z">>},eleveldb:iterator_move(I, prefetch)),
+            ?assertEqual({error,invalid_iterator},eleveldb:iterator_move(I, prefetch)),
+            ?assertEqual({error,invalid_iterator},eleveldb:iterator_move(I, prefetch_stop)),
+            ?assertEqual({error,invalid_iterator},eleveldb:iterator_move(I, prefetch_stop)),
+            ?assertEqual({error,invalid_iterator},eleveldb:iterator_move(I, prefetch_stop)),
+            ?assertEqual({ok, <<"a">>, <<"w">>},eleveldb:iterator_move(I, <<"a">>))
+    end.
+
+aae_prefetch1(Ref) ->
+    fun() ->
+            {ok, I} = eleveldb:iterator(Ref, []),
+            ?assertEqual({ok, <<"b">>, <<"x">>},eleveldb:iterator_move(I, <<"b">>)),
+            ?assertEqual({ok, <<"c">>, <<"y">>},eleveldb:iterator_move(I, prefetch_stop)),
+
+            {ok, J} = eleveldb:iterator(Ref, []),
+            ?assertEqual({error, invalid_iterator},eleveldb:iterator_move(J, <<"z">>)),
+            ?assertEqual({error, invalid_iterator},eleveldb:iterator_move(J, prefetch_stop))
+    end.
+
+aae_prefetch2(Ref) ->
+    fun() ->
+            {ok, I} = eleveldb:iterator(Ref, []),
+            ?assertEqual({ok, <<"b">>, <<"x">>},eleveldb:iterator_move(I, <<"b">>)),
+            ?assertEqual({ok, <<"c">>, <<"y">>},eleveldb:iterator_move(I, prefetch)),
+            ?assertEqual({ok, <<"d">>, <<"z">>},eleveldb:iterator_move(I, prefetch_stop)),
+
+            {ok, J} = eleveldb:iterator(Ref, []),
+            ?assertEqual({error, invalid_iterator},eleveldb:iterator_move(J, <<"z">>)),
+            ?assertEqual({error, invalid_iterator},eleveldb:iterator_move(J, prefetch)),
+            ?assertEqual({error, invalid_iterator},eleveldb:iterator_move(J, prefetch_stop))
+    end.
+
+aae_prefetch3(Ref) ->
+    fun() ->
+            {ok, I} = eleveldb:iterator(Ref, []),
+            ?assertEqual({error,invalid_iterator},eleveldb:iterator_move(I, prefetch_stop))
     end.
 
 -endif.
