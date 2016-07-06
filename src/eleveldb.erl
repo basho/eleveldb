@@ -103,7 +103,11 @@ init() ->
                          {tiered_slow_level, pos_integer()} |
                          {tiered_fast_prefix, string()} |
                          {tiered_slow_prefix, string()} |
-                         {cache_object_warming, boolean()}].
+                         {cache_object_warming, boolean()} |
+                         {expiry_enabled, boolean()} |
+                         {expiry_minutes, pos_integer()} |
+                         {whole_file_expiry, boolean()}
+                        ].
 
 -type read_option() :: {verify_checksums, boolean()} |
                        {fill_cache, boolean()} |
@@ -307,7 +311,10 @@ option_types(open) ->
      {tiered_slow_level, integer},
      {tiered_fast_prefix, any},
      {tiered_slow_prefix, any},
-     {cache_object_warming, bool}];
+     {cache_object_warming, bool},
+     {expiry_enabled, bool},
+     {expiry_minutes, integer},
+     {whole_file_expiry, bool}];
 
 option_types(read) ->
     [{verify_checksums, bool},

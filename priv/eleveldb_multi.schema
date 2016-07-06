@@ -165,3 +165,24 @@
   hidden
 ]}.
 
+%% @see leveldb.expiry_enabled
+{mapping, "multi_backend.$name.leveldbexpiry_enabled", "riak_kv.multi_backend", [
+  {default, off},
+  {datatype, flag},
+  hidden
+]}.
+
+%% @see leveldb.expiry_minutes
+{mapping, "multi_backend.$name.leveldbexpiry_minutes", "riak_kv.multi_backend", [
+  {default, 0},
+  {datatype, integer},
+  hidden
+]}.
+
+%% @see leveldb.whole_file_expiry
+{mapping, "multi_backend.$name.leveldbwhole_file_expiry", "riak_kv.multi_backend", [
+  {default, off},
+  {datatype, flag},
+  hidden
+]}.
+

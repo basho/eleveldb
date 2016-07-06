@@ -43,6 +43,7 @@
 #include "leveldb/perf_count.h"
 #define LEVELDB_PLATFORM_POSIX
 #include "util/hot_threads.h"
+#include "leveldb_os/expiry_os.h"
 
 #ifndef INCL_WORKITEMS_H
     #include "workitems.h"
@@ -133,6 +134,9 @@ ERL_NIF_TERM ATOM_TIERED_SLOW_LEVEL;
 ERL_NIF_TERM ATOM_TIERED_FAST_PREFIX;
 ERL_NIF_TERM ATOM_TIERED_SLOW_PREFIX;
 ERL_NIF_TERM ATOM_CACHE_OBJECT_WARMING;
+ERL_NIF_TERM ATOM_EXPIRY_ENABLED;
+ERL_NIF_TERM ATOM_EXPIRY_MINUTES;
+ERL_NIF_TERM ATOM_WHOLE_FILE_EXPIRY;
 }   // namespace eleveldb
 
 
@@ -217,6 +221,8 @@ class eleveldb_priv_data
 public:
     EleveldbOptions m_Opts;
     leveldb::HotThreadPool thread_pool;
+    leveldb::ExpiryPtr_t m_ExpiryModule;    // only populated if expiry options seen
+                                            //  (self deleting pointer)
 
     explicit eleveldb_priv_data(EleveldbOptions & Options)
     : m_Opts(Options),
@@ -459,6 +465,45 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                 opts.cache_object_warming = false;
         }
 
+        else if (option[0] == eleveldb::ATOM_EXPIRY_ENABLED)
+        {
+            if (option[1] == eleveldb::ATOM_TRUE)
+            {
+                if (NULL==opts.expiry_module.get())
+                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = true;
+            }   // if
+            else
+            {
+                if (NULL!=opts.expiry_module.get())
+                    ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = false;
+            }   // else
+        }   // else if
+        else if (option[0] == eleveldb::ATOM_EXPIRY_MINUTES)
+        {
+            unsigned long minutes(0);
+            if (enif_get_ulong(env, option[1], &minutes))
+            {
+                if (NULL==opts.expiry_module.get())
+                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_minutes = minutes;
+            }   // if
+        }   // else if
+        else if (option[0] == eleveldb::ATOM_WHOLE_FILE_EXPIRY)
+        {
+            if (option[1] == eleveldb::ATOM_TRUE)
+            {
+                if (NULL==opts.expiry_module.get())
+                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = true;
+            }   // if
+            else
+            {
+                if (NULL!=opts.expiry_module.get())
+                    ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = false;
+            }   // else
+        }   // else if
+
     }
 
     return eleveldb::ATOM_OK;
@@ -568,8 +613,13 @@ async_open(
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
     leveldb::Options *opts = new leveldb::Options;
+    opts->expiry_module.assign(priv.m_ExpiryModule.get());
+
     fold(env, argv[2], parse_open_option, *opts);
+
     opts->fadvise_willneed = priv.m_Opts.m_FadviseWillNeed;
+    if (NULL==priv.m_ExpiryModule.get() && NULL!=opts->expiry_module.get())
+        priv.m_ExpiryModule.assign(opts->expiry_module.get());
 
     // convert total_leveldb_mem to byte count if it arrived as percent
     //  This happens now because there is no guarantee as to when the total_memory
@@ -1282,6 +1332,9 @@ try
     ATOM(eleveldb::ATOM_TIERED_FAST_PREFIX, "tiered_fast_prefix");
     ATOM(eleveldb::ATOM_TIERED_SLOW_PREFIX, "tiered_slow_prefix");
     ATOM(eleveldb::ATOM_CACHE_OBJECT_WARMING, "cache_object_warming");
+    ATOM(eleveldb::ATOM_EXPIRY_ENABLED, "expiry_enabled");
+    ATOM(eleveldb::ATOM_EXPIRY_MINUTES, "expiry_minutes");
+    ATOM(eleveldb::ATOM_WHOLE_FILE_EXPIRY, "whole_file_expiry");
 #undef ATOM
 
 
