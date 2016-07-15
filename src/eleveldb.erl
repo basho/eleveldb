@@ -103,11 +103,20 @@ init() ->
                          {tiered_slow_level, pos_integer()} |
                          {tiered_fast_prefix, string()} |
                          {tiered_slow_prefix, string()} |
-                         {cache_object_warming, boolean()}].
+                         {cache_object_warming, boolean()} |
+                         {expiry_enabled, boolean()} |
+                         {expiry_minutes, pos_integer()} |
+                         {whole_file_expiry, boolean()}
+                        ].
 
--type read_options() :: [{verify_checksums, boolean()} |
-                         {fill_cache, boolean()} |
-                         {iterator_refresh, boolean()}].
+-type read_option() :: {verify_checksums, boolean()} |
+                       {fill_cache, boolean()} |
+                       {iterator_refresh, boolean()}.
+
+-type read_options() :: [read_option()].
+
+-type fold_option()  :: {first_key, Key::binary()}.
+-type fold_options() :: [read_option() | fold_option()].
 
 -type write_options() :: [{sync, boolean()}].
 
@@ -115,7 +124,7 @@ init() ->
                           {delete, Key::binary()} |
                           clear].
 
--type iterator_action() :: first | last | next | prev | prefetch | binary().
+-type iterator_action() :: first | last | next | prev | prefetch | prefetch_stop | binary().
 
 -opaque db_ref() :: binary().
 
@@ -229,7 +238,7 @@ async_iterator_close(_CallerRef, _IRef) ->
 
 %% Fold over the keys and values in the database
 %% will throw an exception if the database is closed while the fold runs
--spec fold(db_ref(), fold_fun(), any(), read_options()) -> any().
+-spec fold(db_ref(), fold_fun(), any(), fold_options()) -> any().
 fold(Ref, Fun, Acc0, Opts) ->
     {ok, Itr} = iterator(Ref, Opts),
     do_fold(Itr, Fun, Acc0, Opts).
@@ -302,7 +311,10 @@ option_types(open) ->
      {tiered_slow_level, integer},
      {tiered_fast_prefix, any},
      {tiered_slow_prefix, any},
-     {cache_object_warming, bool}];
+     {cache_object_warming, bool},
+     {expiry_enabled, bool},
+     {expiry_minutes, integer},
+     {whole_file_expiry, bool}];
 
 option_types(read) ->
     [{verify_checksums, bool},

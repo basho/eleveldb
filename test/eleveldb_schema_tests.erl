@@ -1,8 +1,14 @@
 -module(eleveldb_schema_tests).
 
--include_lib("eunit/include/eunit.hrl").
--compile(export_all).
+%%
+%% The following 2 lines are only activated during builbot
+%%  unit tests.  The buildbot script executes the following:
+%%    sed -i -e 's/% #!sed //' rebar.config test/eleveldb_schema_tests.erl
+%%
+% #!sed -include_lib("eunit/include/eunit.hrl").
+% #!sed -compile(export_all).
 
+-compile(nowarn_unused_function).
 
 %% basic schema test will check to make sure that all defaults from
 %% the schema make it into the generated app.config

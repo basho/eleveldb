@@ -58,7 +58,7 @@ case "$1" in
         if [ ! -d leveldb ]; then
             git clone git://github.com/basho/leveldb
             (cd leveldb && git checkout $LEVELDB_VSN)
-            if [ $BASHO_EE = "1" ]; then
+            if [ "$BASHO_EE" = "1" ]; then
                 (cd leveldb && git submodule update --init)
             fi
         fi

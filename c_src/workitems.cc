@@ -191,7 +191,7 @@ MoveTask::DoWork()
 
     itr=m_ItrWrap->get();
 
-
+    ++m_ItrWrap->m_MoveCount;
 //
 // race condition of prefetch clearing db iterator while
 //  async_iterator_move looking at it.
@@ -225,6 +225,20 @@ MoveTask::DoWork()
         }   // if
     }   // if
 
+    // hung iterator debug
+    {
+        struct timeval tv;
+
+        gettimeofday(&tv, NULL);
+
+        // 14400 is 4 hours in seconds ... 60*60*4
+        if ((m_ItrWrap->m_LastLogReport + 14400) < tv.tv_sec && NULL!=m_ItrWrap->get())
+        {
+            m_ItrWrap->LogIterator();
+            m_ItrWrap->m_LastLogReport=tv.tv_sec;
+        }   // if
+    }
+
     // back to normal operation
     if(NULL == itr)
         return work_result(local_env(), ATOM_ERROR, ATOM_ITERATOR_CLOSED);
@@ -257,6 +271,9 @@ MoveTask::DoWork()
             break;
 
     }   // switch
+
+    // set state for Erlang side to read
+    m_ItrWrap->SetValid(itr->Valid());
 
     // Post processing before telling the world the results
     //  (while only one thread might be looking at objects)
@@ -305,6 +322,9 @@ MoveTask::DoWork()
         }   // if
         else
         {
+            // using compare_and_swap as a hardware locking "set to false"
+            //  (a little heavy handed, but not executed often)
+            leveldb::compare_and_swap(&m_ItrWrap->m_PrefetchStarted, (int)true, (int)false);
             return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
         }   // else
 
