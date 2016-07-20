@@ -89,7 +89,7 @@ init() ->
                          {block_size_steps, pos_integer()} |
                          {paranoid_checks, boolean()} |
                          {verify_compactions, boolean()} |
-                         {compression, boolean()} |
+                         {compression, atom()} |
                          {use_bloomfilter, boolean() | pos_integer()} |
                          {total_memory, pos_integer()} |
                          {total_leveldb_mem, pos_integer()} |
@@ -297,7 +297,7 @@ option_types(open) ->
      {block_size_steps, integer},
      {paranoid_checks, bool},
      {verify_compactions, bool},
-     {compression, bool},
+     {compression, any},  %% how to do a list of atoms?
      {use_bloomfilter, any},
      {total_memory, integer},
      {total_leveldb_mem, integer},

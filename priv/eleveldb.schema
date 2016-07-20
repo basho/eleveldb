@@ -158,8 +158,8 @@
 %% changed at any time, but will not impact data on disk until
 %% next time a file requires compaction.
 {mapping, "leveldb.compression", "eleveldb.compression", [
-  {default, on},
-  {datatype, flag},
+  {default, snappy},
+  {datatype, {enum, [on, off, true, false, snappy, lz4]}},
   hidden
 ]}.
 

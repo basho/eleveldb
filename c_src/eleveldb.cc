@@ -119,6 +119,10 @@ ERL_NIF_TERM ATOM_VERIFY_COMPACTIONS;
 ERL_NIF_TERM ATOM_ERROR_DB_DESTROY;
 ERL_NIF_TERM ATOM_KEYS_ONLY;
 ERL_NIF_TERM ATOM_COMPRESSION;
+ERL_NIF_TERM ATOM_ON;
+ERL_NIF_TERM ATOM_OFF;
+ERL_NIF_TERM ATOM_SNAPPY;
+ERL_NIF_TERM ATOM_LZ4;
 ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
 ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 ERL_NIF_TERM ATOM_TOTAL_MEMORY;
@@ -353,14 +357,15 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         }
         else if (option[0] == eleveldb::ATOM_COMPRESSION)
         {
-            if (option[1] == eleveldb::ATOM_TRUE)
-            {
+            if (option[1] == eleveldb::ATOM_ON || option[1] == eleveldb::ATOM_TRUE
+                || option[1] == eleveldb::ATOM_SNAPPY )
                 opts.compression = leveldb::kSnappyCompression;
-            }
+
+            else if (option[1] == eleveldb::ATOM_LZ4)
+                opts.compression = leveldb::kLZ4Compression;
+
             else
-            {
                 opts.compression = leveldb::kNoCompression;
-            }
         }
         else if (option[0] == eleveldb::ATOM_USE_BLOOMFILTER)
         {
@@ -1318,6 +1323,10 @@ try
     ATOM(eleveldb::ATOM_ERROR_DB_REPAIR, "error_db_repair");
     ATOM(eleveldb::ATOM_KEYS_ONLY, "keys_only");
     ATOM(eleveldb::ATOM_COMPRESSION, "compression");
+    ATOM(eleveldb::ATOM_ON, "on");
+    ATOM(eleveldb::ATOM_OFF, "off");
+    ATOM(eleveldb::ATOM_SNAPPY, "snappy");
+    ATOM(eleveldb::ATOM_LZ4, "lz4");
     ATOM(eleveldb::ATOM_USE_BLOOMFILTER, "use_bloomfilter");
     ATOM(eleveldb::ATOM_TOTAL_MEMORY, "total_memory");
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_leveldb_mem");
