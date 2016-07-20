@@ -359,13 +359,19 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         {
             if (option[1] == eleveldb::ATOM_ON || option[1] == eleveldb::ATOM_TRUE
                 || option[1] == eleveldb::ATOM_SNAPPY )
+            {
                 opts.compression = leveldb::kSnappyCompression;
+            }   // if
 
             else if (option[1] == eleveldb::ATOM_LZ4)
+            {
                 opts.compression = leveldb::kLZ4Compression;
+            }   // else if
 
             else
+            {
                 opts.compression = leveldb::kNoCompression;
+            }   // else
         }
         else if (option[0] == eleveldb::ATOM_USE_BLOOMFILTER)
         {
