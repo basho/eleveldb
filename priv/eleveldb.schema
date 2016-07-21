@@ -176,8 +176,7 @@
     case Setting of
       false -> false;
       true ->
-        cuttlefish:conf_get("leveldb.compression.algorithm", Conf, snappy);
-      _Default -> snappy
+        cuttlefish:conf_get("leveldb.compression.algorithm", Conf, snappy)
     end
  end}.
 
