@@ -65,7 +65,7 @@
                 Reply
         end).
 
--define(COMPRESSION_ENUM, [snappy, lz4]).
+-define(COMPRESSION_ENUM, [snappy, lz4, false]).
 
 -spec init() -> ok | {error, any()}.
 init() ->
@@ -82,6 +82,7 @@ init() ->
              end,
     erlang:load_nif(SoName, application:get_all_env(eleveldb)).
 
+-type compression_algorithm() :: snappy | lz4 | false.
 -type open_options() :: [{create_if_missing, boolean()} |
                          {error_if_exists, boolean()} |
                          {write_buffer_size, pos_integer()} |
@@ -91,7 +92,7 @@ init() ->
                          {block_size_steps, pos_integer()} |
                          {paranoid_checks, boolean()} |
                          {verify_compactions, boolean()} |
-                         {compression, atom()} |
+                         {compression, [compression_algorithm()]} |
                          {use_bloomfilter, boolean() | pos_integer()} |
                          {total_memory, pos_integer()} |
                          {total_leveldb_mem, pos_integer()} |
@@ -288,7 +289,6 @@ is_empty(Ref) ->
 is_empty_int(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
--type compression_algorithm() :: snappy | lz4.
 -spec option_types(open | read | write) -> [{atom(), bool | integer | [compression_algorithm()] | any}].
 option_types(open) ->
     [{create_if_missing, bool},
@@ -390,6 +390,7 @@ validate_type({_Key, integer}, Value) when is_integer(Value) -> true;
 validate_type({_Key, any}, _Value)                           -> true;
 validate_type({_Key, ?COMPRESSION_ENUM}, snappy)             -> true;
 validate_type({_Key, ?COMPRESSION_ENUM}, lz4)                -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, false)              -> true;
 validate_type(_, _)                                          -> false.
 
 
