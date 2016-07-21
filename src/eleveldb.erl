@@ -65,6 +65,8 @@
                 Reply
         end).
 
+-define(COMPRESSION_ENUM, [snappy, lz4]).
+
 -spec init() -> ok | {error, any()}.
 init() ->
     SoName = case code:priv_dir(?MODULE) of
@@ -286,7 +288,7 @@ is_empty(Ref) ->
 is_empty_int(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
--spec option_types(open | read | write) -> [{atom(), bool | integer | any}].
+-spec option_types(open | read | write) -> [{atom(), bool | integer | [atom()] | any}].
 option_types(open) ->
     [{create_if_missing, bool},
      {error_if_exists, bool},
@@ -297,7 +299,7 @@ option_types(open) ->
      {block_size_steps, integer},
      {paranoid_checks, bool},
      {verify_compactions, bool},
-     {compression, any},  %% how to do a list of atoms?
+     {compression, ?COMPRESSION_ENUM},
      {use_bloomfilter, any},
      {total_memory, integer},
      {total_leveldb_mem, integer},
@@ -385,6 +387,8 @@ validate_type({_Key, bool}, true)                            -> true;
 validate_type({_Key, bool}, false)                           -> true;
 validate_type({_Key, integer}, Value) when is_integer(Value) -> true;
 validate_type({_Key, any}, _Value)                           -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, snappy)             -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, lz4)                -> true;
 validate_type(_, _)                                          -> false.
 
 
