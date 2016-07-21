@@ -151,8 +151,6 @@ compression_schema_test() ->
     ok.
 
 
-
-
 multi_backend_test() ->
     Conf = [
             {["multi_backend", "default", "storage_backend"], leveldb},
@@ -183,6 +181,28 @@ multi_backend_test() ->
     cuttlefish_unit:assert_config(DefaultBackend, "fadvise_willneed", false),
     cuttlefish_unit:assert_config(DefaultBackend, "delete_threshold", 1000),
     ok.
+
+multi_compression_test() ->
+    Conf = [
+            {["multi_backend", "FruitLoops", "leveldb", "compression"], off},
+
+            {["multi_backend", "Trix", "leveldb", "compression"], on},
+            {["multi_backend", "Trix", "leveldb", "compression", "algorithm"], lz4}
+           ],
+    Config = cuttlefish_unit:generate_templated_config(
+               ["../priv/eleveldb.schema", "../priv/eleveldb_multi.schema", "../test/multi_backend.schema"],
+               Conf, context(), predefined_schema()),
+
+    MultiBackendConfig = proplists:get_value(multi_backend, proplists:get_value(riak_kv, Config)),
+
+    {<<"FruitLoops">>, riak_kv_eleveldb_backend, FruitLoopsBackend} = lists:keyfind(<<"FruitLoops">>, 1, MultiBackendConfig),
+    cuttlefish_unit:assert_config(FruitLoopsBackend, "compression", false),
+
+    {<<"Trix">>, riak_kv_eleveldb_backend, TrixBackend} = lists:keyfind(<<"Trix">>, 1, MultiBackendConfig),
+    cuttlefish_unit:assert_config(TrixBackend, "compression", lz4),
+
+    ok.
+
 
 %% this context() represents the substitution variables that rebar
 %% will use during the build process.  riak_core's schema file is
