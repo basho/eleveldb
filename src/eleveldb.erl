@@ -288,7 +288,8 @@ is_empty(Ref) ->
 is_empty_int(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
--spec option_types(open | read | write) -> [{atom(), bool | integer | [atom()] | any}].
+-type compression_algorithm() :: snappy | lz4.
+-spec option_types(open | read | write) -> [{atom(), bool | integer | [compression_algorithm()] | any}].
 option_types(open) ->
     [{create_if_missing, bool},
      {error_if_exists, bool},
