@@ -90,7 +90,7 @@ override_schema_test() ->
     cuttlefish_unit:assert_config(Config, "eleveldb.eleveldb_threads", 7),
     cuttlefish_unit:assert_config(Config, "eleveldb.fadvise_willneed", true),
     cuttlefish_unit:assert_config(Config, "eleveldb.delete_threshold", 0),
-    cuttlefish_unit:assert_config(Config, "eleveldb.compression", off),
+    cuttlefish_unit:assert_config(Config, "eleveldb.compression", false),
     cuttlefish_unit:assert_config(Config, "eleveldb.tiered_slow_level", 2),
     cuttlefish_unit:assert_config(Config, "eleveldb.tiered_fast_prefix", "/mnt/speedy"),
     cuttlefish_unit:assert_config(Config, "eleveldb.tiered_slow_prefix", "/mnt/slowpoke"),
@@ -101,6 +101,57 @@ override_schema_test() ->
     %% for multibackend needs to be revisited.
     cuttlefish_unit:assert_not_configured(Config, "riak_kv.multi_backend"),
     ok.
+
+
+compression_schema_test() ->
+    %% Case1:  compression disabled, use of algorithm ignored
+    Case1 = [
+            {["leveldb", "compression"], off},
+            {["leveldb", "compression", "algorithm"], lz4}
+           ],
+
+    Config1 = cuttlefish_unit:generate_templated_config(
+        ["../priv/eleveldb.schema"], Case1, context(), predefined_schema()),
+
+    cuttlefish_unit:assert_config(Config1, "eleveldb.compression", false),
+
+    %% Case2:  compression enabled, should pick snappy as default algorithm
+    Case2 = [
+            {["leveldb", "compression"], on}
+           ],
+
+    Config2 = cuttlefish_unit:generate_templated_config(
+        ["../priv/eleveldb.schema"], Case2, context(), predefined_schema()),
+
+    cuttlefish_unit:assert_config(Config2, "eleveldb.compression", snappy),
+
+
+    %% Case3:  compression enabled, explicitly set lz4 as algorithm
+    Case3 = [
+            {["leveldb", "compression"], on},
+            {["leveldb", "compression", "algorithm"], lz4}
+           ],
+    Config3 = cuttlefish_unit:generate_templated_config(
+        ["../priv/eleveldb.schema"], Case3, context(), predefined_schema()),
+
+    cuttlefish_unit:assert_config(Config3, "eleveldb.compression", lz4),
+
+
+    %% Case4:  compression enabled, explicitly set snappy as algorithm
+    Case4 = [
+            {["leveldb", "compression"], on},
+            {["leveldb", "compression", "algorithm"], snappy}
+           ],
+    Config4 = cuttlefish_unit:generate_templated_config(
+        ["../priv/eleveldb.schema"], Case4, context(), predefined_schema()),
+
+    cuttlefish_unit:assert_config(Config4, "eleveldb.compression", snappy),
+
+
+    ok.
+
+
+
 
 multi_backend_test() ->
     Conf = [
