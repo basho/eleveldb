@@ -121,6 +121,14 @@
   hidden
 ]}.
 
+{mapping,
+  "multi_backend.$name.leveldb.compression.algorithm",
+  "riak_kv.multi_backend", [
+  {default, snappy},
+  {datatype, {enum, [snappy, lz4]}},
+  hidden
+]}.
+
 %% @see leveldb.delete_threshold
 {mapping,
   "multi_backend.$name.leveldb.compaction.trigger.tombstone_count",

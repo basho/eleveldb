@@ -163,6 +163,24 @@
   hidden
 ]}.
 
+{mapping, "leveldb.compression.algorithm", "eleveldb.compression", [
+  {default, snappy},
+  {datatype, {enum, [snappy, lz4]}},
+  hidden
+]}.
+
+{translation,
+ "eleveldb.compression",
+ fun(Conf) ->
+  Setting = cuttlefish:conf_get("leveldb.compression", Conf),
+    case Setting of
+      false -> false;
+      true ->
+        cuttlefish:conf_get("leveldb.compression.algorithm", Conf, snappy)
+    end
+ end}.
+
+
 %% @doc Controls when a background compaction initiates solely
 %% due to the number of delete tombstones within an individual
 %% .sst table file.  Value of 'off' disables the feature.
