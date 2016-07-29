@@ -225,8 +225,6 @@ class eleveldb_priv_data
 public:
     EleveldbOptions m_Opts;
     leveldb::HotThreadPool thread_pool;
-    leveldb::ExpiryPtr_t m_ExpiryModule;    // only populated if expiry options seen
-                                            //  (self deleting pointer)
 
     explicit eleveldb_priv_data(EleveldbOptions & Options)
     : m_Opts(Options),
@@ -624,13 +622,10 @@ async_open(
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
     leveldb::Options *opts = new leveldb::Options;
-    opts->expiry_module.assign(priv.m_ExpiryModule.get());
 
     fold(env, argv[2], parse_open_option, *opts);
 
     opts->fadvise_willneed = priv.m_Opts.m_FadviseWillNeed;
-    if (NULL==priv.m_ExpiryModule.get() && NULL!=opts->expiry_module.get())
-        priv.m_ExpiryModule.assign(opts->expiry_module.get());
 
     // convert total_leveldb_mem to byte count if it arrived as percent
     //  This happens now because there is no guarantee as to when the total_memory
