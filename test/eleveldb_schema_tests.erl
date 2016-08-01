@@ -161,6 +161,38 @@ compression_schema_test() ->
     ok.
 
 
+expiry_minutes_schema_test() ->
+    %% Case1:
+    Case1 = [
+            {["leveldb", "expiration"], off},
+            {["leveldb", "expiration", "retention_time"], "2d"},
+            {["leveldb", "expiration", "mode"], whole_file}
+           ],
+
+    Config1 = cuttlefish_unit:generate_templated_config(
+        ["../priv/eleveldb.schema"], Case1, context(), predefined_schema()),
+
+    cuttlefish_unit:assert_config(Config1, "eleveldb.expiry_enabled", false),
+    cuttlefish_unit:assert_config(Config1, "eleveldb.expiry_minutes", 2880),
+    cuttlefish_unit:assert_config(Config1, "eleveldb.whole_file_expiry", true),
+
+    %% Case2:
+    Case2 = [
+            {["leveldb", "expiration"], on},
+            {["leveldb", "expiration", "retention_time"], unlimited},
+            {["leveldb", "expiration", "mode"], normal}
+           ],
+
+    Config2 = cuttlefish_unit:generate_templated_config(
+        ["../priv/eleveldb.schema"], Case2, context(), predefined_schema()),
+
+    cuttlefish_unit:assert_config(Config2, "eleveldb.expiry_enabled", true),
+    cuttlefish_unit:assert_config(Config2, "eleveldb.expiry_minutes", 0),
+    cuttlefish_unit:assert_config(Config2, "eleveldb.whole_file_expiry", false),
+
+    ok.
+
+
 multi_backend_test() ->
     Conf = [
             {["multi_backend", "default", "storage_backend"], leveldb},
