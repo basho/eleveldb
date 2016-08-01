@@ -46,6 +46,7 @@
 #include "leveldb/perf_count.h"
 #define LEVELDB_PLATFORM_POSIX
 #include "util/hot_threads.h"
+#include "leveldb_os/expiry_os.h"
 
 #ifndef INCL_WORKITEMS_H
     #include "workitems.h"
@@ -127,6 +128,10 @@ ERL_NIF_TERM ATOM_VERIFY_COMPACTIONS;
 ERL_NIF_TERM ATOM_ERROR_DB_DESTROY;
 ERL_NIF_TERM ATOM_KEYS_ONLY;
 ERL_NIF_TERM ATOM_COMPRESSION;
+ERL_NIF_TERM ATOM_ON;
+ERL_NIF_TERM ATOM_OFF;
+ERL_NIF_TERM ATOM_SNAPPY;
+ERL_NIF_TERM ATOM_LZ4;
 ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
 ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 ERL_NIF_TERM ATOM_TOTAL_MEMORY;
@@ -157,6 +162,9 @@ ERL_NIF_TERM ATOM_ENCODING;
 ERL_NIF_TERM ATOM_ERLANG_ENCODING;
 ERL_NIF_TERM ATOM_MSGPACK_ENCODING;
 ERL_NIF_TERM ATOM_CACHE_OBJECT_WARMING;
+ERL_NIF_TERM ATOM_EXPIRY_ENABLED;
+ERL_NIF_TERM ATOM_EXPIRY_MINUTES;
+ERL_NIF_TERM ATOM_WHOLE_FILE_EXPIRY;
 }   // namespace eleveldb
 
 using std::nothrow;
@@ -245,6 +253,8 @@ public:
     EleveldbOptions m_Opts;
     leveldb::HotThreadPool thread_pool;
     leveldb::HotThreadPool stream_thread_pool;
+    leveldb::ExpiryPtr_t m_ExpiryModule;    // only populated if expiry options seen
+                                            //  (self deleting pointer)
 
     explicit eleveldb_priv_data(EleveldbOptions & Options)
     : m_Opts(Options),
@@ -388,14 +398,21 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         }
         else if (option[0] == eleveldb::ATOM_COMPRESSION)
         {
-            if (option[1] == eleveldb::ATOM_TRUE)
+            if (option[1] == eleveldb::ATOM_ON || option[1] == eleveldb::ATOM_TRUE
+                || option[1] == eleveldb::ATOM_SNAPPY )
             {
                 opts.compression = leveldb::kSnappyCompression;
-            }
+            }   // if
+
+            else if (option[1] == eleveldb::ATOM_LZ4)
+            {
+                opts.compression = leveldb::kLZ4Compression;
+            }   // else if
+
             else
             {
                 opts.compression = leveldb::kNoCompression;
-            }
+            }   // else
         }
         else if (option[0] == eleveldb::ATOM_USE_BLOOMFILTER)
         {
@@ -499,6 +516,45 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             else
                 opts.cache_object_warming = false;
         }
+
+        else if (option[0] == eleveldb::ATOM_EXPIRY_ENABLED)
+        {
+            if (option[1] == eleveldb::ATOM_TRUE)
+            {
+                if (NULL==opts.expiry_module.get())
+                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = true;
+            }   // if
+            else
+            {
+                if (NULL!=opts.expiry_module.get())
+                    ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = false;
+            }   // else
+        }   // else if
+        else if (option[0] == eleveldb::ATOM_EXPIRY_MINUTES)
+        {
+            unsigned long minutes(0);
+            if (enif_get_ulong(env, option[1], &minutes))
+            {
+                if (NULL==opts.expiry_module.get())
+                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_minutes = minutes;
+            }   // if
+        }   // else if
+        else if (option[0] == eleveldb::ATOM_WHOLE_FILE_EXPIRY)
+        {
+            if (option[1] == eleveldb::ATOM_TRUE)
+            {
+                if (NULL==opts.expiry_module.get())
+                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = true;
+            }   // if
+            else
+            {
+                if (NULL!=opts.expiry_module.get())
+                    ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = false;
+            }   // else
+        }   // else if
 
     }
 
@@ -683,8 +739,13 @@ async_open(
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
     leveldb::Options *opts = new leveldb::Options;
+    opts->expiry_module.assign(priv.m_ExpiryModule.get());
+
     fold(env, argv[2], parse_open_option, *opts);
+
     opts->fadvise_willneed = priv.m_Opts.m_FadviseWillNeed;
+    if (NULL==priv.m_ExpiryModule.get() && NULL!=opts->expiry_module.get())
+        priv.m_ExpiryModule.assign(opts->expiry_module.get());
 
     // convert total_leveldb_mem to byte count if it arrived as percent
     //  This happens now because there is no guarantee as to when the total_memory
@@ -1546,6 +1607,10 @@ try
     ATOM(eleveldb::ATOM_ERROR_DB_REPAIR, "error_db_repair");
     ATOM(eleveldb::ATOM_KEYS_ONLY, "keys_only");
     ATOM(eleveldb::ATOM_COMPRESSION, "compression");
+    ATOM(eleveldb::ATOM_ON, "on");
+    ATOM(eleveldb::ATOM_OFF, "off");
+    ATOM(eleveldb::ATOM_SNAPPY, "snappy");
+    ATOM(eleveldb::ATOM_LZ4, "lz4");
     ATOM(eleveldb::ATOM_USE_BLOOMFILTER, "use_bloomfilter");
     ATOM(eleveldb::ATOM_TOTAL_MEMORY, "total_memory");
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_leveldb_mem");
@@ -1575,6 +1640,9 @@ try
     ATOM(eleveldb::ATOM_ERLANG_ENCODING,  Encoding::encodingAtom(Encoding::ERLANG).c_str());
     ATOM(eleveldb::ATOM_MSGPACK_ENCODING, Encoding::encodingAtom(Encoding::MSGPACK).c_str());
     ATOM(eleveldb::ATOM_CACHE_OBJECT_WARMING, "cache_object_warming");
+    ATOM(eleveldb::ATOM_EXPIRY_ENABLED, "expiry_enabled");
+    ATOM(eleveldb::ATOM_EXPIRY_MINUTES, "expiry_minutes");
+    ATOM(eleveldb::ATOM_WHOLE_FILE_EXPIRY, "whole_file_expiry");
 #undef ATOM
 
 
