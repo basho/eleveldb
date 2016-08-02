@@ -9,3 +9,6 @@ github.com tag 2.0.21 - June 17, 2016
  - update to leveldb 2.0.21 (correct hot threads for iterator hang)
  - temporary iterator debug code still in this release
 
+github.com tag 2.0.10
+-------------------------------------
+ - version shipped with 2.1.3

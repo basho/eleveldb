@@ -43,4 +43,3 @@ For those who need more control over the process of iterating over records, you 
 
 Either use `prefetch`/`prefetch_stop` or `next`/`prev`.  Do not intermix `prefetch` and `next`/`prev`.  You must `prefetch_stop` after one or more `prefetch` operations before using any of the other operations (`seek`, `next`, `prev`).
 
-

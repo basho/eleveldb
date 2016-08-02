@@ -413,15 +413,6 @@ LevelIteratorWrapper::LevelIteratorWrapper(
 void
 LevelIteratorWrapper::LogIterator()
 {
-    struct tm created;
-
-    localtime_r(&m_IteratorCreated, &created);
-    leveldb::Log(m_DbPtr->m_Db->GetLogger(),
-                 "Iterator created %d/%d/%d %d:%d:%d, move operations %zd (%p)",
-                 created.tm_mon, created.tm_mday, created.tm_year-100,
-                 created.tm_hour, created.tm_min, created.tm_sec,
-                 m_MoveCount, m_Iterator);
-
 }   // LevelIteratorWrapper::LogIterator()
 
 
