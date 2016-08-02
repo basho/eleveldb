@@ -253,8 +253,6 @@ public:
     EleveldbOptions m_Opts;
     leveldb::HotThreadPool thread_pool;
     leveldb::HotThreadPool stream_thread_pool;
-    leveldb::ExpiryPtr_t m_ExpiryModule;    // only populated if expiry options seen
-                                            //  (self deleting pointer)
 
     explicit eleveldb_priv_data(EleveldbOptions & Options)
     : m_Opts(Options),
@@ -517,19 +515,23 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                 opts.cache_object_warming = false;
         }
 
+        // Note: I'm changing the logic of these options settings from
+        // the original mv-expiry-schema2 branch so that the expiry
+        // module is created and assigned if _any_ expiry option is
+        // specified (in that branch, it was only assigned when
+        // expiry_enabled was detected.  For other options, the
+        // pointer was checked and the value assigned only if the
+        // pointer was not NULL).
+        //
+        // Otherwise, if any expiry option is specified before
+        // expiry_enabled, the module won't exist at that point, and
+        // the option will be lost!
+        
         else if (option[0] == eleveldb::ATOM_EXPIRY_ENABLED)
         {
-            if (option[1] == eleveldb::ATOM_TRUE)
-            {
-                if (NULL==opts.expiry_module.get())
-                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
-                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = true;
-            }   // if
-            else
-            {
-                if (NULL!=opts.expiry_module.get())
-                    ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = false;
-            }   // else
+            if (NULL==opts.expiry_module.get())
+                opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+            ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = (option[1] == eleveldb::ATOM_TRUE);
         }   // else if
         else if (option[0] == eleveldb::ATOM_EXPIRY_MINUTES)
         {
@@ -543,17 +545,9 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         }   // else if
         else if (option[0] == eleveldb::ATOM_WHOLE_FILE_EXPIRY)
         {
-            if (option[1] == eleveldb::ATOM_TRUE)
-            {
-                if (NULL==opts.expiry_module.get())
-                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
-                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = true;
-            }   // if
-            else
-            {
-                if (NULL!=opts.expiry_module.get())
-                    ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = false;
-            }   // else
+            if (NULL==opts.expiry_module.get())
+                opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+            ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = (option[1] == eleveldb::ATOM_TRUE);
         }   // else if
 
     }
@@ -606,17 +600,17 @@ ERL_NIF_TERM parse_streaming_option(ErlNifEnv* env, ERL_NIF_TERM item,
             if (enif_get_uint(env, option[1], &limit))
                 opts.limit = limit;
 
-	    //------------------------------------------------------------
-	    // ATOM_ENCODING specifies which extractor to use
-	    //------------------------------------------------------------
+            //------------------------------------------------------------
+            // ATOM_ENCODING specifies which extractor to use
+            //------------------------------------------------------------
 
         } else if (option[0] == eleveldb::ATOM_ENCODING) {
             opts.encodingType_ = Encoding::typeOf(ErlUtil::getString(env, option[1]), true);
 
-	    //------------------------------------------------------------
-	    // ATOM_RANGE_FILTER specifies a filter.  Defer parsing
-	    // this until we read the first key
-	    //------------------------------------------------------------
+            //------------------------------------------------------------
+            // ATOM_RANGE_FILTER specifies a filter.  Defer parsing
+            // this until we read the first key
+            //------------------------------------------------------------
 
         } else if (option[0] == eleveldb::ATOM_RANGE_FILTER) {
 
@@ -739,13 +733,10 @@ async_open(
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
     leveldb::Options *opts = new leveldb::Options;
-    opts->expiry_module.assign(priv.m_ExpiryModule.get());
 
     fold(env, argv[2], parse_open_option, *opts);
 
     opts->fadvise_willneed = priv.m_Opts.m_FadviseWillNeed;
-    if (NULL==priv.m_ExpiryModule.get() && NULL!=opts->expiry_module.get())
-        priv.m_ExpiryModule.assign(opts->expiry_module.get());
 
     // convert total_leveldb_mem to byte count if it arrived as percent
     //  This happens now because there is no guarantee as to when the total_memory
@@ -1313,7 +1304,7 @@ streaming_start(ErlNifEnv * env,
         opts.checkOptions();
 
     } catch(std::runtime_error& err) {
-	ERL_NIF_TERM msg_str  = enif_make_string(env, err.what(), ERL_NIF_LATIN1);
+        ERL_NIF_TERM msg_str  = enif_make_string(env, err.what(), ERL_NIF_LATIN1);
         return enif_make_tuple3(env, eleveldb::ATOM_ERROR, reply_ref, msg_str);
     }
 
@@ -1341,7 +1332,7 @@ streaming_start(ErlNifEnv * env,
         work_item = new RangeScanTask(env, reply_ref, db_ptr.get(),
                                  start_key, end_key_ptr, opts, sync_handle->sync_obj_);
     } catch(std::runtime_error& err) {
-	ERL_NIF_TERM msg_str  = enif_make_string(env, err.what(), ERL_NIF_LATIN1);
+        ERL_NIF_TERM msg_str  = enif_make_string(env, err.what(), ERL_NIF_LATIN1);
         return enif_make_tuple3(env, eleveldb::ATOM_ERROR, reply_ref, msg_str);
     }
 
@@ -1352,7 +1343,7 @@ streaming_start(ErlNifEnv * env,
     {
         delete work_item; // TODO: May require fancier destruction.
         // TODO: Add thread pool submit error atom
-	ERL_NIF_TERM msg_str  = enif_make_string(env, "Error submitting task to the thread pool", ERL_NIF_LATIN1);
+        ERL_NIF_TERM msg_str  = enif_make_string(env, "Error submitting task to the thread pool", ERL_NIF_LATIN1);
         return enif_make_tuple3(env, eleveldb::ATOM_ERROR, reply_ref, msg_str);
     }
 

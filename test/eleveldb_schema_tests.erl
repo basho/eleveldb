@@ -37,6 +37,9 @@ basic_schema_test() ->
     cuttlefish_unit:assert_config(Config, "eleveldb.tiered_slow_level", 0),
     cuttlefish_unit:assert_not_configured(Config, "eleveldb.tiered_fast_prefix"),
     cuttlefish_unit:assert_not_configured(Config, "eleveldb.tiered_slow_prefix"),
+    cuttlefish_unit:assert_config(Config, "eleveldb.expiry_enabled", false),
+    cuttlefish_unit:assert_config(Config, "eleveldb.expiry_minutes", 0),
+    cuttlefish_unit:assert_config(Config, "eleveldb.whole_file_expiry", true),
 
     %% Make sure no multi_backend
     %% Warning: The following line passes by coincidence. It's because the
@@ -67,7 +70,10 @@ override_schema_test() ->
             {["leveldb", "compaction", "trigger", "tombstone_count"], off},
             {["leveldb", "tiered"], "2"},
             {["leveldb", "tiered", "path", "fast"], "/mnt/speedy"},
-            {["leveldb", "tiered", "path", "slow"], "/mnt/slowpoke"}
+            {["leveldb", "tiered", "path", "slow"], "/mnt/slowpoke"},
+            {["leveldb", "expiration"], on},
+            {["leveldb", "expiration", "retention_time"], "1d"},
+            {["leveldb", "expiration", "mode"], normal}
            ],
 
     %% The defaults are defined in ../priv/eleveldb.schema.
@@ -94,6 +100,10 @@ override_schema_test() ->
     cuttlefish_unit:assert_config(Config, "eleveldb.tiered_slow_level", 2),
     cuttlefish_unit:assert_config(Config, "eleveldb.tiered_fast_prefix", "/mnt/speedy"),
     cuttlefish_unit:assert_config(Config, "eleveldb.tiered_slow_prefix", "/mnt/slowpoke"),
+    cuttlefish_unit:assert_config(Config, "eleveldb.expiry_enabled", true),
+    cuttlefish_unit:assert_config(Config, "eleveldb.expiry_minutes", 1440),
+    cuttlefish_unit:assert_config(Config, "eleveldb.whole_file_expiry", false),
+
 
     %% Make sure no multi_backend
     %% Warning: The following line passes by coincidence. It's because the
@@ -151,6 +161,38 @@ compression_schema_test() ->
     ok.
 
 
+expiry_minutes_schema_test() ->
+    %% Case1:
+    Case1 = [
+            {["leveldb", "expiration"], off},
+            {["leveldb", "expiration", "retention_time"], "2d"},
+            {["leveldb", "expiration", "mode"], whole_file}
+           ],
+
+    Config1 = cuttlefish_unit:generate_templated_config(
+        ["../priv/eleveldb.schema"], Case1, context(), predefined_schema()),
+
+    cuttlefish_unit:assert_config(Config1, "eleveldb.expiry_enabled", false),
+    cuttlefish_unit:assert_config(Config1, "eleveldb.expiry_minutes", 2880),
+    cuttlefish_unit:assert_config(Config1, "eleveldb.whole_file_expiry", true),
+
+    %% Case2:
+    Case2 = [
+            {["leveldb", "expiration"], on},
+            {["leveldb", "expiration", "retention_time"], unlimited},
+            {["leveldb", "expiration", "mode"], normal}
+           ],
+
+    Config2 = cuttlefish_unit:generate_templated_config(
+        ["../priv/eleveldb.schema"], Case2, context(), predefined_schema()),
+
+    cuttlefish_unit:assert_config(Config2, "eleveldb.expiry_enabled", true),
+    cuttlefish_unit:assert_config(Config2, "eleveldb.expiry_minutes", 0),
+    cuttlefish_unit:assert_config(Config2, "eleveldb.whole_file_expiry", false),
+
+    ok.
+
+
 multi_backend_test() ->
     Conf = [
             {["multi_backend", "default", "storage_backend"], leveldb},
@@ -180,6 +222,9 @@ multi_backend_test() ->
     cuttlefish_unit:assert_config(DefaultBackend, "eleveldb_threads", 71),
     cuttlefish_unit:assert_config(DefaultBackend, "fadvise_willneed", false),
     cuttlefish_unit:assert_config(DefaultBackend, "delete_threshold", 1000),
+    cuttlefish_unit:assert_config(DefaultBackend, "expiry_enabled", false),
+    cuttlefish_unit:assert_config(DefaultBackend, "expiry_minutes", 0),
+    cuttlefish_unit:assert_config(DefaultBackend, "whole_file_expiry", true),
     ok.
 
 multi_compression_test() ->
