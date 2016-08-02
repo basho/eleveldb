@@ -518,14 +518,18 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         // Note: I'm changing the logic of these options settings from
         // the original mv-expiry-schema2 branch so that the expiry
         // module is created and assigned if _any_ expiry option is
-        // specified (in that branch, it was only assigned when
-        // expiry_enabled was detected.  For other options, the
-        // pointer was checked and the value assigned only if the
-        // pointer was not NULL).
+        // specified (in that branch, it is only assigned when
+        // expiry_enabled = true is detected, or a non-default value
+        // of other parameters is given).
         //
-        // Otherwise, if any expiry option is specified before
-        // expiry_enabled, the module won't exist at that point, and
-        // the option will be lost!
+        // The corectness of the above behavior is predicated on this
+        // code's view of the default parameters always being in sync
+        // with the leveldb::ExpiryModuleOS constructor.  For example,
+        // if that code were to change the default value of
+        // whole_file_expiry to true on construction, then specifying
+        // whole_file_expiry = false in the options prior to
+        // expiry_enabled = true would cause the former option to be
+        // lost.
         
         else if (option[0] == eleveldb::ATOM_EXPIRY_ENABLED)
         {
