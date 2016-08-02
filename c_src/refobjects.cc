@@ -413,10 +413,6 @@ LevelIteratorWrapper::LevelIteratorWrapper(
 void
 LevelIteratorWrapper::LogIterator()
 {
-    struct tm created;
-
-    localtime_r(&m_IteratorCreated, &created);
-
 }   // LevelIteratorWrapper::LogIterator()
 
 
