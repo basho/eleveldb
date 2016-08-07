@@ -126,6 +126,7 @@ ERL_NIF_TERM ATOM_LZ4;
 ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
 ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 ERL_NIF_TERM ATOM_TOTAL_MEMORY;
+ERL_NIF_TERM ATOM_MMAP_SIZE;
 ERL_NIF_TERM ATOM_TOTAL_LEVELDB_MEM;
 ERL_NIF_TERM ATOM_TOTAL_LEVELDB_MEM_PERCENT;
 ERL_NIF_TERM ATOM_BLOCK_CACHE_THRESHOLD;
@@ -271,13 +272,6 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
                  }
             }
         }
-        else if (option[0] == eleveldb::ATOM_LIMITED_DEVELOPER_MEM)
-        {
-            if (option[1] == eleveldb::ATOM_TRUE)
-                opts.m_LimitedDeveloper = true;
-            else
-                opts.m_LimitedDeveloper = false;
-        }
         else if (option[0] == eleveldb::ATOM_ELEVELDB_THREADS)
         {
             unsigned long temp;
@@ -402,6 +396,24 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                 {
                     gCurrentTotalMemory = 0;
                 }   // else if
+            }
+        }
+        // Deprecated! use mmap_size instead to emulate developer mem it allows
+        // a more finegrained control.
+        else if (option[0] == eleveldb::ATOM_LIMITED_DEVELOPER_MEM)
+        {
+          if (option[1] == eleveldb::ATOM_TRUE)
+            opts.mmap_size = 1024*1024*2;
+        }
+        else if (option[0] == eleveldb::ATOM_MMAP_SIZE)
+        {
+            unsigned long mmap_sz;
+            if (enif_get_ulong(env, option[1], &mmap_sz))
+            {
+                if (mmap_sz != 0)
+                 {
+                     opts.mmap_size = mmap_sz;
+                 }
             }
         }
         else if (option[0] == eleveldb::ATOM_TOTAL_LEVELDB_MEM)
@@ -1330,6 +1342,7 @@ try
     ATOM(eleveldb::ATOM_LZ4, "lz4");
     ATOM(eleveldb::ATOM_USE_BLOOMFILTER, "use_bloomfilter");
     ATOM(eleveldb::ATOM_TOTAL_MEMORY, "total_memory");
+    ATOM(eleveldb::ATOM_MMAP_SIZE, "mmap_size");
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_leveldb_mem");
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM_PERCENT, "total_leveldb_mem_percent");
     ATOM(eleveldb::ATOM_BLOCK_CACHE_THRESHOLD, "block_cache_threshold");
