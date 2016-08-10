@@ -65,6 +65,8 @@
                 Reply
         end).
 
+-define(COMPRESSION_ENUM, [snappy, lz4, false]).
+
 -spec init() -> ok | {error, any()}.
 init() ->
     SoName = case code:priv_dir(?MODULE) of
@@ -80,6 +82,7 @@ init() ->
              end,
     erlang:load_nif(SoName, application:get_all_env(eleveldb)).
 
+-type compression_algorithm() :: snappy | lz4 | false.
 -type open_options() :: [{create_if_missing, boolean()} |
                          {error_if_exists, boolean()} |
                          {write_buffer_size, pos_integer()} |
@@ -89,7 +92,7 @@ init() ->
                          {block_size_steps, pos_integer()} |
                          {paranoid_checks, boolean()} |
                          {verify_compactions, boolean()} |
-                         {compression, boolean()} |
+                         {compression, [compression_algorithm()]} |
                          {use_bloomfilter, boolean() | pos_integer()} |
                          {total_memory, pos_integer()} |
                          {total_leveldb_mem, pos_integer()} |
@@ -103,7 +106,11 @@ init() ->
                          {tiered_slow_level, pos_integer()} |
                          {tiered_fast_prefix, string()} |
                          {tiered_slow_prefix, string()} |
-                         {cache_object_warming, boolean()}].
+                         {cache_object_warming, boolean()} |
+                         {expiry_enabled, boolean()} |
+                         {expiry_minutes, pos_integer()} |
+                         {whole_file_expiry, boolean()}
+                        ].
 
 -type read_option() :: {verify_checksums, boolean()} |
                        {fill_cache, boolean()} |
@@ -282,7 +289,7 @@ is_empty(Ref) ->
 is_empty_int(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
--spec option_types(open | read | write) -> [{atom(), bool | integer | any}].
+-spec option_types(open | read | write) -> [{atom(), bool | integer | [compression_algorithm()] | any}].
 option_types(open) ->
     [{create_if_missing, bool},
      {error_if_exists, bool},
@@ -293,7 +300,7 @@ option_types(open) ->
      {block_size_steps, integer},
      {paranoid_checks, bool},
      {verify_compactions, bool},
-     {compression, bool},
+     {compression, ?COMPRESSION_ENUM},
      {use_bloomfilter, any},
      {total_memory, integer},
      {total_leveldb_mem, integer},
@@ -307,7 +314,10 @@ option_types(open) ->
      {tiered_slow_level, integer},
      {tiered_fast_prefix, any},
      {tiered_slow_prefix, any},
-     {cache_object_warming, bool}];
+     {cache_object_warming, bool},
+     {expiry_enabled, bool},
+     {expiry_minutes, integer},
+     {whole_file_expiry, bool}];
 
 option_types(read) ->
     [{verify_checksums, bool},
@@ -378,6 +388,9 @@ validate_type({_Key, bool}, true)                            -> true;
 validate_type({_Key, bool}, false)                           -> true;
 validate_type({_Key, integer}, Value) when is_integer(Value) -> true;
 validate_type({_Key, any}, _Value)                           -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, snappy)             -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, lz4)                -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, false)              -> true;
 validate_type(_, _)                                          -> false.
 
 
