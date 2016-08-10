@@ -412,10 +412,11 @@ LevelIteratorWrapper::LevelIteratorWrapper(
 void
 LevelIteratorWrapper::LogIterator()
 {
+#if 0 // available in different branch
     struct tm created;
 
     localtime_r(&m_IteratorCreated, &created);
-#if 0 // available in different branch
+
     leveldb::Log(m_DbPtr->m_Db->GetLogger(),
                  "Iterator created %d/%d/%d %d:%d:%d, move operations %zd (%p)",
                  created.tm_mon, created.tm_mday, created.tm_year-100,
