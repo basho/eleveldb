@@ -1,7 +1,11 @@
 github.com tag 2.0.25 - August 10, 2016
 ---------------------------------------
  - make LZ4 the default compression instead of Snappy.
-
+ - update compression flag in eleveldb.schema to support
+   choosing Snappy or LZ4
+ - add expiry settings to eleveldb.schema
+ - disable cuttlefish as dependency riak.conf
+ 
 github.com tag 2.0.22 - June 21, 2016
 -------------------------------------
  - branch mv-iter-valid (PR 199): adjust recent code accessing iterator->Valid() where
