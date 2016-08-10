@@ -164,7 +164,7 @@
 ]}.
 
 {mapping, "leveldb.compression.algorithm", "eleveldb.compression", [
-  {default, snappy},
+  {default, lz4},
   {datatype, {enum, [snappy, lz4]}},
   hidden
 ]}.
@@ -176,7 +176,7 @@
     case Setting of
       false -> false;
       true ->
-        cuttlefish:conf_get("leveldb.compression.algorithm", Conf, snappy)
+        cuttlefish:conf_get("leveldb.compression.algorithm", Conf, lz4)
     end
  end}.
 
