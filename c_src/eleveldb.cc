@@ -193,7 +193,7 @@ struct EleveldbOptions
     bool m_FadviseWillNeed;
 
     EleveldbOptions()
-        : m_EleveldbThreads(71),
+        : m_EleveldbThreads(7),
           m_LeveldbImmThreads(0), m_LeveldbBGWriteThreads(0),
           m_LeveldbOverlapThreads(0), m_LeveldbGroomingThreads(0),
           m_TotalMemPercent(0), m_TotalMem(0),
@@ -274,9 +274,18 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
         else if (option[0] == eleveldb::ATOM_LIMITED_DEVELOPER_MEM)
         {
             if (option[1] == eleveldb::ATOM_TRUE)
+            {
                 opts.m_LimitedDeveloper = true;
+
+                // lower thread count too if developer stuff.
+                //  each thread has 2Mbytes to 8Mbytes of stack
+                if (71==opts.m_EleveldbThreads)
+                    opts.m_EleveldbThreads=7;
+            }   // if
             else
+            {
                 opts.m_LimitedDeveloper = false;
+            }   // else
         }
         else if (option[0] == eleveldb::ATOM_ELEVELDB_THREADS)
         {

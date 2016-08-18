@@ -15,6 +15,13 @@
          %% REAL users will want this at 70%.
          {total_leveldb_mem_percent, 15},
 
+         %% how many worker threads for Erlang tasks
+         %%  passed to eleveldb.  Since eleveldb threads
+         %%  will block on I/O this is 71 for production.
+         %%  Setting 7 for non-production here since each
+         %%  thread has 2Mbytes to 8Mbytes of stack.
+         {eleveldb_threads, 7},
+
          %% Use bloom filter support by default
          {use_bloomfilter, true}
         ]}
