@@ -56,9 +56,9 @@ RefObject::~RefObject()
  */
 
 ErlRefObject::ErlRefObject()
-    : m_ErlangThisPtr(NULL), m_CloseRequested(0),
+    : m_ErlangThisPtr(NULL),
       m_CloseMutex(true), // true => creates a mutex that can be locked recursively
-      m_CloseCond(&m_CloseMutex)
+      m_CloseCond(&m_CloseMutex), m_CloseRequested(0)
 {
 }   // ErlRefObject::ErlRefObject
 
@@ -105,7 +105,7 @@ ErlRefObject::InitiateCloseRequest()
 
         // one ref from construction, one ref from broadcast in RefDec below
         //  (only wait if RefDec has not signaled)
-        if (1<m_RefCount && 1==m_CloseRequested)
+        if (1<GetRefCount() && 1==GetCloseRequested())
         {
             m_CloseCond.Wait();
         }
@@ -127,9 +127,9 @@ ErlRefObject::RefDec()
     {
         leveldb::MutexLock lock(&m_CloseMutex);
 
-        cur_count=leveldb::dec_and_fetch(&m_RefCount);
+        cur_count=RefObject::RefDecNoDelete();
 
-        if (cur_count<2 && 1==m_CloseRequested)
+        if (cur_count<2 && 1==GetCloseRequested())
         {
             bool flag;
 
@@ -137,7 +137,7 @@ ErlRefObject::RefDec()
             m_CloseRequested=2;
 
             // is there really more than one ref count now?
-            flag=(0<m_RefCount);
+            flag=(0<GetRefCount());
             if (flag)
             {
                 RefObject::RefInc();
@@ -148,7 +148,7 @@ ErlRefObject::RefDec()
             //  that the mutex unlock is called on all threads
             //  before destruction.
             if (flag)
-                RefObject::RefDec();
+                RefObject::RefDecNoDelete();
             else
                 cur_count=0;
         }   // if
@@ -156,7 +156,10 @@ ErlRefObject::RefDec()
 
     if (0==cur_count)
     {
-        assert(0!=m_CloseRequested);
+        // the following assert is a mining canary for double
+        //  delete of object.  Seen twice since 2013.  Likely
+        //  due to second RefDecNoDelete() call above having been RefDec()
+        assert(0!=GetCloseRequested());
         delete this;
     }   // if
 
@@ -488,8 +491,8 @@ ItrObject::RetrieveItrObject(
         if (NULL!=ret_ptr)
         {
             // has close been requested?
-            if (ret_ptr->m_CloseRequested
-                || (!ItrClosing && ret_ptr->m_DbPtr->m_CloseRequested))
+            if (ret_ptr->GetCloseRequested()
+                || (!ItrClosing && ret_ptr->m_DbPtr->GetCloseRequested()))
             {
                 // object already closing
                 ret_ptr=NULL;
