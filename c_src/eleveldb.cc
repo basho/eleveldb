@@ -193,7 +193,7 @@ struct EleveldbOptions
     bool m_FadviseWillNeed;
 
     EleveldbOptions()
-        : m_EleveldbThreads(7),
+        : m_EleveldbThreads(71),
           m_LeveldbImmThreads(0), m_LeveldbBGWriteThreads(0),
           m_LeveldbOverlapThreads(0), m_LeveldbGroomingThreads(0),
           m_TotalMemPercent(0), m_TotalMem(0),
