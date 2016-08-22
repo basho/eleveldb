@@ -46,8 +46,9 @@ namespace eleveldb {
 
 /**
  * Base class for any object that offers RefInc / RefDec interface
+ *  Today the class' sole purpose is to provide eleveldb specific
+ *  performance counters.
  */
-
 class RefObject : public leveldb::RefObjectBase
 {
 public:
@@ -76,7 +77,7 @@ public:
     leveldb::port::Mutex   m_CloseMutex;        //!< for condition wait
     leveldb::port::CondVar m_CloseCond;         //!< for notification of user's finish
 
-protected:
+private:  // private to force use of GetCloseRequest()
     // m_CloseRequested assumes m_CloseMutex held for writes
     // 1 once InitiateCloseRequest starts,
     // 2 other pointers to "this" released

@@ -240,7 +240,7 @@ DbObject::RetrieveDbObject(
         if (NULL!=ret_ptr)
         {
             // has close been requested?
-            if (0!=ret_ptr->m_CloseRequested)
+            if (0!=ret_ptr->GetCloseRequested())
             {
                 // object already closing
                 ret_ptr=NULL;
@@ -359,7 +359,7 @@ DbObject::AddReference(
     bool ret_flag;
     leveldb::MutexLock lock(&m_ItrMutex);
 
-    ret_flag=(0==m_CloseRequested);
+    ret_flag=(0==GetCloseRequested());
 
     if (ret_flag)
         m_ItrList.push_back(ItrPtr);

@@ -714,6 +714,8 @@ async_write(
     ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, *batch);
     if(eleveldb::ATOM_OK != result)
     {
+        // must manually delete batch on failure at this point,
+        //  later WriteTask object will own and delete
         delete batch;
         return send_reply(env, caller_ref,
                           enif_make_tuple3(env, eleveldb::ATOM_ERROR, caller_ref,
@@ -729,6 +731,7 @@ async_write(
 
     if(false == priv.thread_pool.Submit(work_item))
     {
+        // work_item contains "batch" and the delete below gets both memory allocations
         delete work_item;
         return send_reply(env, caller_ref,
                           enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
