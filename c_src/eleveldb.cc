@@ -274,9 +274,18 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
         else if (option[0] == eleveldb::ATOM_LIMITED_DEVELOPER_MEM)
         {
             if (option[1] == eleveldb::ATOM_TRUE)
+            {
                 opts.m_LimitedDeveloper = true;
+
+                // lower thread count too if developer stuff.
+                //  each thread has 2Mbytes to 8Mbytes of stack
+                if (71==opts.m_EleveldbThreads)
+                    opts.m_EleveldbThreads=7;
+            }   // if
             else
+            {
                 opts.m_LimitedDeveloper = false;
+            }   // else
         }
         else if (option[0] == eleveldb::ATOM_ELEVELDB_THREADS)
         {
@@ -705,6 +714,9 @@ async_write(
     ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, *batch);
     if(eleveldb::ATOM_OK != result)
     {
+        // must manually delete batch on failure at this point,
+        //  later WriteTask object will own and delete
+        delete batch;
         return send_reply(env, caller_ref,
                           enif_make_tuple3(env, eleveldb::ATOM_ERROR, caller_ref,
                                            enif_make_tuple2(env, eleveldb::ATOM_BAD_WRITE_ACTION,
@@ -719,6 +731,7 @@ async_write(
 
     if(false == priv.thread_pool.Submit(work_item))
     {
+        // work_item contains "batch" and the delete below gets both memory allocations
         delete work_item;
         return send_reply(env, caller_ref,
                           enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
@@ -789,7 +802,7 @@ async_iterator(
 
     db_ptr.assign(DbObject::RetrieveDbObject(env, dbh_ref));
 
-    if(NULL==db_ptr.get() || 0!=db_ptr->m_CloseRequested
+    if(NULL==db_ptr.get() || 0!=db_ptr->GetCloseRequested()
        || !enif_is_list(env, options_ref))
      {
         return enif_make_badarg(env);
@@ -838,7 +851,7 @@ async_iterator_move(
 
     itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_handle_ref));
 
-    if(NULL==itr_ptr.get() || 0!=itr_ptr->m_CloseRequested)
+    if(NULL==itr_ptr.get() || 0!=itr_ptr->GetCloseRequested())
         return enif_make_badarg(env);
 
     // Reuse ref from iterator creation
@@ -1021,7 +1034,7 @@ async_close(
 
     db_ptr.assign(DbObject::RetrieveDbObject(env, dbh_ref, &term_ok));
 
-    if(NULL==db_ptr.get() || 0!=db_ptr->m_CloseRequested)
+    if(NULL==db_ptr.get() || 0!=db_ptr->GetCloseRequested())
     {
        return enif_make_badarg(env);
     }
@@ -1067,7 +1080,7 @@ async_iterator_close(
 
     itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_ref));
 
-    if(NULL==itr_ptr.get() || 0!=itr_ptr->m_CloseRequested)
+    if(NULL==itr_ptr.get() || 0!=itr_ptr->GetCloseRequested())
     {
        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
        return enif_make_badarg(env);
