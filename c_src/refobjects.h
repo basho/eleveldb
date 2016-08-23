@@ -46,8 +46,9 @@ namespace eleveldb {
 
 /**
  * Base class for any object that offers RefInc / RefDec interface
+ *  Today the class' sole purpose is to provide eleveldb specific
+ *  performance counters.
  */
-
 class RefObject : public leveldb::RefObjectBase
 {
 public:
@@ -73,16 +74,15 @@ public:
     //  owns the shutdown (Erlang or async C)
     void * volatile * m_ErlangThisPtr;
 
+    leveldb::port::Mutex   m_CloseMutex;        //!< for condition wait
+    leveldb::port::CondVar m_CloseCond;         //!< for notification of user's finish
+
+private:  // private to force use of GetCloseRequest()
+    // m_CloseRequested assumes m_CloseMutex held for writes
     // 1 once InitiateCloseRequest starts,
     // 2 other pointers to "this" released
     // 3 final RefDec and destructor executing
     volatile uint32_t m_CloseRequested;
-
-    leveldb::port::Mutex   m_CloseMutex;        //!< for condition wait
-    leveldb::port::CondVar m_CloseCond;         //!< for notification of user's finish
-
-protected:
-
 
 public:
     ErlRefObject();
@@ -96,6 +96,10 @@ public:
     bool ClaimCloseFromCThread();
 
     void InitiateCloseRequest();
+
+    // memory fencing for reads
+    uint32_t GetCloseRequested()
+        {return(leveldb::add_and_fetch(&m_CloseRequested, (uint32_t)0));};
 
 private:
     ErlRefObject(const ErlRefObject&);              // nocopy
