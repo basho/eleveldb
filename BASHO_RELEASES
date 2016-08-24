@@ -1,0 +1,27 @@
+github.com tag 2.0.27 - August 22, 2016
+---------------------------------------
+mv-mem-fences:  fix iterator double delete bug in eleveldb and
+                build better memory fenced operations for referenced count objects.
+
+github.com tag 2.0.25 - August 10, 2016
+---------------------------------------
+ - make LZ4 the default compression instead of Snappy.
+ - update compression flag in eleveldb.schema to support
+   choosing Snappy or LZ4
+ - add expiry settings to eleveldb.schema
+ - disable cuttlefish as dependency riak.conf
+
+github.com tag 2.0.22 - June 21, 2016
+-------------------------------------
+ - branch mv-iter-valid (PR 199): adjust recent code accessing iterator->Valid() where
+   underlying iterator could be deleted ... now cache Valid().
+ - eleveldb only, no leveldb changes
+
+github.com tag 2.0.21 - June 17, 2016
+-------------------------------------
+ - update to leveldb 2.0.21 (correct hot threads for iterator hang)
+ - temporary iterator debug code still in this release
+
+github.com tag 2.0.10
+-------------------------------------
+ - version shipped with 2.1.3

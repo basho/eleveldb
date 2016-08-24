@@ -163,6 +163,24 @@
   hidden
 ]}.
 
+{mapping, "leveldb.compression.algorithm", "eleveldb.compression", [
+  {default, lz4},
+  {datatype, {enum, [snappy, lz4]}},
+  hidden
+]}.
+
+{translation,
+ "eleveldb.compression",
+ fun(Conf) ->
+  Setting = cuttlefish:conf_get("leveldb.compression", Conf),
+    case Setting of
+      false -> false;
+      true ->
+        cuttlefish:conf_get("leveldb.compression.algorithm", Conf, lz4)
+    end
+ end}.
+
+
 %% @doc Controls when a background compaction initiates solely
 %% due to the number of delete tombstones within an individual
 %% .sst table file.  Value of 'off' disables the feature.
@@ -228,3 +246,52 @@
   {datatype, directory},
   hidden
 ]}.
+
+%% @doc This parameter enables/disables logic that saves a list
+%% of cached objects (currently only open .sst file names) at
+%% database close.  The list is used on the next open to pre-populate
+%% the cache.  This typically eliminates heavy latencies associated
+%% with .sst files opening for early user requests.
+{mapping, "leveldb.cache_object_warming", "eleveldb.cache_object_warming", [
+  {default, true},
+  {datatype, {enum, [true, false]}},
+  hidden
+]}.
+
+%% @doc Enable global expiry.  All leveldb databases / vnodes
+%% will use same retention_time and/or whole_file_expiry settings.
+%% Settings are unique for each leveldb instances in multi_backend.
+{mapping, "leveldb.expiration", "eleveldb.expiry_enabled", [
+  {default, off},
+  {datatype, flag},
+  hidden
+]}.
+
+%% @doc Minutes until object expires.  Gives number of minutes
+%% a stored key/value will stay within the database before automatic
+%% deletion.  Set to unlimited to disable age based expiry.
+{mapping, "leveldb.expiration.retention_time", "eleveldb.expiry_minutes", [
+  {default, unlimited},
+  {datatype, [{duration, m}, {atom, unlimited}]},
+  hidden
+]}.
+
+{translation, "eleveldb.expiry_minutes",
+ fun(Conf) ->
+  case cuttlefish:conf_get("leveldb.expiration.retention_time", Conf) of
+    unlimited -> 0;
+    I -> I
+  end
+ end
+}.
+
+
+%% @doc Expire entire .sst table file.  Authorizes leveldb to
+%% eliminate entire files that contain expired data (delete files
+%% instead of removing expired key/values during compaction).
+{mapping, "leveldb.expiration.mode", "eleveldb.whole_file_expiry", [
+  {default, whole_file},
+  {datatype, {flag, whole_file, normal}},
+  hidden
+]}.
+

@@ -56,9 +56,9 @@ RefObject::~RefObject()
  */
 
 ErlRefObject::ErlRefObject()
-    : m_ErlangThisPtr(NULL), m_CloseRequested(0),
+    : m_ErlangThisPtr(NULL),
       m_CloseMutex(true), // true => creates a mutex that can be locked recursively
-      m_CloseCond(&m_CloseMutex)
+      m_CloseCond(&m_CloseMutex), m_CloseRequested(0)
 {
 }   // ErlRefObject::ErlRefObject
 
@@ -105,7 +105,7 @@ ErlRefObject::InitiateCloseRequest()
 
         // one ref from construction, one ref from broadcast in RefDec below
         //  (only wait if RefDec has not signaled)
-        if (1<m_RefCount && 1==m_CloseRequested)
+        if (1<GetRefCount() && 1==GetCloseRequested())
         {
             m_CloseCond.Wait();
         }
@@ -127,9 +127,9 @@ ErlRefObject::RefDec()
     {
         leveldb::MutexLock lock(&m_CloseMutex);
 
-        cur_count=leveldb::dec_and_fetch(&m_RefCount);
+        cur_count=RefObject::RefDecNoDelete();
 
-        if (cur_count<2 && 1==m_CloseRequested)
+        if (cur_count<2 && 1==GetCloseRequested())
         {
             bool flag;
 
@@ -137,7 +137,7 @@ ErlRefObject::RefDec()
             m_CloseRequested=2;
 
             // is there really more than one ref count now?
-            flag=(0<m_RefCount);
+            flag=(0<GetRefCount());
             if (flag)
             {
                 RefObject::RefInc();
@@ -148,7 +148,7 @@ ErlRefObject::RefDec()
             //  that the mutex unlock is called on all threads
             //  before destruction.
             if (flag)
-                RefObject::RefDec();
+                RefObject::RefDecNoDelete();
             else
                 cur_count=0;
         }   // if
@@ -156,7 +156,10 @@ ErlRefObject::RefDec()
 
     if (0==cur_count)
     {
-        assert(0!=m_CloseRequested);
+        // the following assert is a mining canary for double
+        //  delete of object.  Seen twice since 2013.  Likely
+        //  due to second RefDecNoDelete() call above having been RefDec()
+        assert(0!=GetCloseRequested());
         delete this;
     }   // if
 
@@ -237,7 +240,7 @@ DbObject::RetrieveDbObject(
         if (NULL!=ret_ptr)
         {
             // has close been requested?
-            if (0!=ret_ptr->m_CloseRequested)
+            if (0!=ret_ptr->GetCloseRequested())
             {
                 // object already closing
                 ret_ptr=NULL;
@@ -337,7 +340,10 @@ DbObject::Shutdown()
             // follow protocol, only one thread calls Initiate
 //            if (leveldb::compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr, (ItrObject *)NULL))
             if (itr_ptr->ClaimCloseFromCThread())
+            {
+                itr_ptr->m_Iter->LogIterator();
                 itr_ptr->ItrObject::InitiateCloseRequest();
+            }   // if
         }   // if
     } while(again);
 
@@ -353,7 +359,7 @@ DbObject::AddReference(
     bool ret_flag;
     leveldb::MutexLock lock(&m_ItrMutex);
 
-    ret_flag=(0==m_CloseRequested);
+    ret_flag=(0==GetCloseRequested());
 
     if (ret_flag)
         m_ItrList.push_back(ItrPtr);
@@ -389,11 +395,38 @@ LevelIteratorWrapper::LevelIteratorWrapper(
     : m_DbPtr(ItrPtr->m_DbPtr.get()), m_ItrPtr(ItrPtr), m_Snapshot(NULL), m_Iterator(NULL),
       m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false),
       m_Options(Options), itr_ref(itr_ref),
-      m_IteratorStale(0), m_StillUse(true)
+      m_IteratorStale(0), m_StillUse(true),
+      m_IteratorCreated(0), m_LastLogReport(0), m_MoveCount(0), m_IsValid(false)
 {
-    RebuildIterator();
-};
+    struct timeval tv;
 
+    gettimeofday(&tv, NULL);
+    m_IteratorCreated=tv.tv_sec;
+    m_LastLogReport=tv.tv_sec;
+
+    RebuildIterator();
+
+}   // LevelIteratorWrapper::LevelIteratorWrapper
+
+/**
+ * put info about this iterator into leveldb LOG
+ */
+
+void
+LevelIteratorWrapper::LogIterator()
+{
+#if 0 // available in different branch
+    struct tm created;
+
+    localtime_r(&m_IteratorCreated, &created);
+
+    leveldb::Log(m_DbPtr->m_Db->GetLogger(),
+                 "Iterator created %d/%d/%d %d:%d:%d, move operations %zd (%p)",
+                 created.tm_mon, created.tm_mday, created.tm_year-100,
+                 created.tm_hour, created.tm_min, created.tm_sec,
+                 m_MoveCount, m_Iterator);
+#endif
+}   // LevelIteratorWrapper::LogIterator()
 
 
 /**
@@ -458,8 +491,8 @@ ItrObject::RetrieveItrObject(
         if (NULL!=ret_ptr)
         {
             // has close been requested?
-            if (ret_ptr->m_CloseRequested
-                || (!ItrClosing && ret_ptr->m_DbPtr->m_CloseRequested))
+            if (ret_ptr->GetCloseRequested()
+                || (!ItrClosing && ret_ptr->m_DbPtr->GetCloseRequested()))
             {
                 // object already closing
                 ret_ptr=NULL;
@@ -487,6 +520,7 @@ ItrObject::ItrObjectResourceCleanup(
     if (leveldb::compare_and_swap(erl_ptr, itr_ptr, (ItrObject *)NULL)
         && NULL!=itr_ptr)
     {
+        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);
         itr_ptr->InitiateCloseRequest();
     }   // if
 

@@ -58,6 +58,9 @@ case "$1" in
         if [ ! -d leveldb ]; then
             git clone git://github.com/basho/leveldb
             (cd leveldb && git checkout $LEVELDB_VSN)
+            if [ "$BASHO_EE" = "1" ]; then
+                (cd leveldb && git submodule update --init)
+            fi
         fi
         ;;
 
@@ -80,7 +83,14 @@ case "$1" in
         if [ ! -d leveldb ]; then
             git clone git://github.com/basho/leveldb
             (cd leveldb && git checkout $LEVELDB_VSN)
+            if [ $BASHO_EE = "1" ]; then
+                (cd leveldb && git submodule update --init)
+            fi
         fi
+
+        # hack issue where high level make is running -j 4
+        #  and causes build errors in leveldb
+        export MAKEFLAGS=
 
         (cd leveldb && $MAKE -j 3 all)
         (cd leveldb && $MAKE -j 3 tools)

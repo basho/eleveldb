@@ -44,6 +44,7 @@
 #include "leveldb/perf_count.h"
 #define LEVELDB_PLATFORM_POSIX
 #include "util/hot_threads.h"
+#include "leveldb_os/expiry_os.h"
 
 #ifndef INCL_WORKITEMS_H
     #include "workitems.h"
@@ -119,6 +120,10 @@ ERL_NIF_TERM ATOM_VERIFY_COMPACTIONS;
 ERL_NIF_TERM ATOM_ERROR_DB_DESTROY;
 ERL_NIF_TERM ATOM_KEYS_ONLY;
 ERL_NIF_TERM ATOM_COMPRESSION;
+ERL_NIF_TERM ATOM_ON;
+ERL_NIF_TERM ATOM_OFF;
+ERL_NIF_TERM ATOM_SNAPPY;
+ERL_NIF_TERM ATOM_LZ4;
 ERL_NIF_TERM ATOM_ERROR_DB_REPAIR;
 ERL_NIF_TERM ATOM_USE_BLOOMFILTER;
 ERL_NIF_TERM ATOM_TOTAL_MEMORY;
@@ -134,6 +139,10 @@ ERL_NIF_TERM ATOM_TIERED_SLOW_LEVEL;
 ERL_NIF_TERM ATOM_TIERED_FAST_PREFIX;
 ERL_NIF_TERM ATOM_TIERED_SLOW_PREFIX;
 ERL_NIF_TERM ATOM_ANTIDOTE;
+ERL_NIF_TERM ATOM_CACHE_OBJECT_WARMING;
+ERL_NIF_TERM ATOM_EXPIRY_ENABLED;
+ERL_NIF_TERM ATOM_EXPIRY_MINUTES;
+ERL_NIF_TERM ATOM_WHOLE_FILE_EXPIRY;
 }   // namespace eleveldb
 
 
@@ -267,9 +276,18 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
         else if (option[0] == eleveldb::ATOM_LIMITED_DEVELOPER_MEM)
         {
             if (option[1] == eleveldb::ATOM_TRUE)
+            {
                 opts.m_LimitedDeveloper = true;
+
+                // lower thread count too if developer stuff.
+                //  each thread has 2Mbytes to 8Mbytes of stack
+                if (71==opts.m_EleveldbThreads)
+                    opts.m_EleveldbThreads=7;
+            }   // if
             else
+            {
                 opts.m_LimitedDeveloper = false;
+            }   // else
         }
         else if (option[0] == eleveldb::ATOM_ELEVELDB_THREADS)
         {
@@ -348,14 +366,21 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         }
         else if (option[0] == eleveldb::ATOM_COMPRESSION)
         {
-            if (option[1] == eleveldb::ATOM_TRUE)
+            if (option[1] == eleveldb::ATOM_ON || option[1] == eleveldb::ATOM_TRUE
+                || option[1] == eleveldb::ATOM_LZ4)
+            {
+                opts.compression = leveldb::kLZ4Compression;
+            }   // if
+
+            else if (option[1] == eleveldb::ATOM_SNAPPY )
             {
                 opts.compression = leveldb::kSnappyCompression;
-            }
+            }   // else if
+
             else
             {
                 opts.compression = leveldb::kNoCompression;
-            }
+            }   // else
         }
         else if (option[0] == eleveldb::ATOM_USE_BLOOMFILTER)
         {
@@ -459,6 +484,52 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
               opts.comparator = leveldb::GetAntidoteComparator();
             }
         }
+        else if (option[0] == eleveldb::ATOM_CACHE_OBJECT_WARMING)
+        {
+            if (option[1] == eleveldb::ATOM_TRUE)
+                opts.cache_object_warming = true;
+            else
+                opts.cache_object_warming = false;
+        }
+
+        else if (option[0] == eleveldb::ATOM_EXPIRY_ENABLED)
+        {
+            if (option[1] == eleveldb::ATOM_TRUE)
+            {
+                if (NULL==opts.expiry_module.get())
+                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = true;
+            }   // if
+            else
+            {
+                if (NULL!=opts.expiry_module.get())
+                    ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = false;
+            }   // else
+        }   // else if
+        else if (option[0] == eleveldb::ATOM_EXPIRY_MINUTES)
+        {
+            unsigned long minutes(0);
+            if (enif_get_ulong(env, option[1], &minutes))
+            {
+                if (NULL==opts.expiry_module.get())
+                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_minutes = minutes;
+            }   // if
+        }   // else if
+        else if (option[0] == eleveldb::ATOM_WHOLE_FILE_EXPIRY)
+        {
+            if (option[1] == eleveldb::ATOM_TRUE)
+            {
+                if (NULL==opts.expiry_module.get())
+                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = true;
+            }   // if
+            else
+            {
+                if (NULL!=opts.expiry_module.get())
+                    ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = false;
+            }   // else
+        }   // else if
     }
 
     return eleveldb::ATOM_OK;
@@ -568,7 +639,9 @@ async_open(
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
     leveldb::Options *opts = new leveldb::Options;
+
     fold(env, argv[2], parse_open_option, *opts);
+
     opts->fadvise_willneed = priv.m_Opts.m_FadviseWillNeed;
 
     // convert total_leveldb_mem to byte count if it arrived as percent
@@ -649,6 +722,9 @@ async_write(
     ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, *batch);
     if(eleveldb::ATOM_OK != result)
     {
+        // must manually delete batch on failure at this point,
+        //  later WriteTask object will own and delete
+        delete batch;
         return send_reply(env, caller_ref,
                           enif_make_tuple3(env, eleveldb::ATOM_ERROR, caller_ref,
                                            enif_make_tuple2(env, eleveldb::ATOM_BAD_WRITE_ACTION,
@@ -663,6 +739,7 @@ async_write(
 
     if(false == priv.thread_pool.Submit(work_item))
     {
+        // work_item contains "batch" and the delete below gets both memory allocations
         delete work_item;
         return send_reply(env, caller_ref,
                           enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
@@ -733,7 +810,7 @@ async_iterator(
 
     db_ptr.assign(DbObject::RetrieveDbObject(env, dbh_ref));
 
-    if(NULL==db_ptr.get() || 0!=db_ptr->m_CloseRequested
+    if(NULL==db_ptr.get() || 0!=db_ptr->GetCloseRequested()
        || !enif_is_list(env, options_ref))
      {
         return enif_make_badarg(env);
@@ -775,13 +852,14 @@ async_iterator_move(
     const ERL_NIF_TERM& action_or_target = argv[2];
     ERL_NIF_TERM ret_term;
 
-    bool submit_new_request(true), prefetch_state;
+    bool submit_new_request(true);
+    int prefetch_state;      // not bool for Solaris CAS
 
     ReferencePtr<ItrObject> itr_ptr;
 
     itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_handle_ref));
 
-    if(NULL==itr_ptr.get() || 0!=itr_ptr->m_CloseRequested)
+    if(NULL==itr_ptr.get() || 0!=itr_ptr->GetCloseRequested())
         return enif_make_badarg(env);
 
     // Reuse ref from iterator creation
@@ -839,6 +917,7 @@ async_iterator_move(
     else if (leveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
     {
         // nope, no prefetch ... await a message to erlang queue
+        //  NOTE:  "else" clause of MoveTask::DoWork() could be running simultaneously
         ret_term = enif_make_copy(env, itr_ptr->itr_ref);
 
         // leave m_HandoffAtomic as 1 so first response is via message
@@ -856,8 +935,14 @@ async_iterator_move(
             submit_new_request=false;
         }   // else
 
-        // redundant ... but clarifying where it really belongs in logic pattern
-        itr_ptr->m_Iter->m_PrefetchStarted=(eleveldb::MoveTask::PREFETCH_STOP != action );
+        // using compare_and_swap has a hardware locking "set only if still in same state as before"
+        //  (this is an absolute must since worker thread could change to false if
+        //   hits end of key space and its execution overlaps this block's execution)
+        int cas_temp((eleveldb::MoveTask::PREFETCH_STOP != action )  // needed for Solaris CAS
+                     && itr_ptr->m_Iter->Valid());
+        leveldb::compare_and_swap(&itr_ptr->m_Iter->m_PrefetchStarted,
+                                  prefetch_state,
+                                  cas_temp);
     }   // else if
 
     // case #3
@@ -865,6 +950,7 @@ async_iterator_move(
     {
         // why yes there is.  copy the key/value info into a return tuple before
         //  we launch the iterator for "next" again
+        //  NOTE:  worker thread is inactive at this time
         if(!itr_ptr->m_Iter->Valid())
             ret_term=enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
@@ -883,7 +969,8 @@ async_iterator_move(
         //  reuse ... but the current Iterator is good
         itr_ptr->ReleaseReuseMove();
 
-        if (eleveldb::MoveTask::PREFETCH_STOP != action )
+        if (eleveldb::MoveTask::PREFETCH_STOP != action
+            && itr_ptr->m_Iter->Valid())
         {
             submit_new_request=true;
         }   // if
@@ -955,7 +1042,7 @@ async_close(
 
     db_ptr.assign(DbObject::RetrieveDbObject(env, dbh_ref, &term_ok));
 
-    if(NULL==db_ptr.get() || 0!=db_ptr->m_CloseRequested)
+    if(NULL==db_ptr.get() || 0!=db_ptr->GetCloseRequested())
     {
        return enif_make_badarg(env);
     }
@@ -1001,8 +1088,9 @@ async_iterator_close(
 
     itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_ref));
 
-    if(NULL==itr_ptr.get() || 0!=itr_ptr->m_CloseRequested)
+    if(NULL==itr_ptr.get() || 0!=itr_ptr->GetCloseRequested())
     {
+       leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
        return enif_make_badarg(env);
     }
 
@@ -1126,10 +1214,12 @@ eleveldb_repair(
     const ERL_NIF_TERM argv[])
 {
     char name[4096];
-    if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1))
+    if (enif_get_string(env, argv[0], name, sizeof(name), ERL_NIF_LATIN1)
+        && enif_is_list(env, argv[1]))
     {
         // Parse out the options
         leveldb::Options opts;
+        fold(env, argv[1], parse_open_option, opts);
 
         leveldb::Status status = leveldb::RepairDB(name, opts);
         if (!status.ok())
@@ -1255,6 +1345,10 @@ try
     ATOM(eleveldb::ATOM_ERROR_DB_REPAIR, "error_db_repair");
     ATOM(eleveldb::ATOM_KEYS_ONLY, "keys_only");
     ATOM(eleveldb::ATOM_COMPRESSION, "compression");
+    ATOM(eleveldb::ATOM_ON, "on");
+    ATOM(eleveldb::ATOM_OFF, "off");
+    ATOM(eleveldb::ATOM_SNAPPY, "snappy");
+    ATOM(eleveldb::ATOM_LZ4, "lz4");
     ATOM(eleveldb::ATOM_USE_BLOOMFILTER, "use_bloomfilter");
     ATOM(eleveldb::ATOM_TOTAL_MEMORY, "total_memory");
     ATOM(eleveldb::ATOM_TOTAL_LEVELDB_MEM, "total_leveldb_mem");
@@ -1269,6 +1363,10 @@ try
     ATOM(eleveldb::ATOM_TIERED_FAST_PREFIX, "tiered_fast_prefix");
     ATOM(eleveldb::ATOM_TIERED_SLOW_PREFIX, "tiered_slow_prefix");
     ATOM(eleveldb::ATOM_ANTIDOTE, "antidote");
+    ATOM(eleveldb::ATOM_CACHE_OBJECT_WARMING, "cache_object_warming");
+    ATOM(eleveldb::ATOM_EXPIRY_ENABLED, "expiry_enabled");
+    ATOM(eleveldb::ATOM_EXPIRY_MINUTES, "expiry_minutes");
+    ATOM(eleveldb::ATOM_WHOLE_FILE_EXPIRY, "whole_file_expiry");
 #undef ATOM
 
 
