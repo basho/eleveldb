@@ -65,6 +65,8 @@
                 Reply
         end).
 
+-define(COMPRESSION_ENUM, [snappy, lz4, false]).
+
 -spec init() -> ok | {error, any()}.
 init() ->
     SoName = case code:priv_dir(?MODULE) of
@@ -80,6 +82,7 @@ init() ->
              end,
     erlang:load_nif(SoName, application:get_all_env(eleveldb)).
 
+-type compression_algorithm() :: snappy | lz4 | false.
 -type open_options() :: [{create_if_missing, boolean()} |
                          {error_if_exists, boolean()} |
                          {write_buffer_size, pos_integer()} |
@@ -89,7 +92,7 @@ init() ->
                          {block_size_steps, pos_integer()} |
                          {paranoid_checks, boolean()} |
                          {verify_compactions, boolean()} |
-                         {compression, boolean()} |
+                         {compression, [compression_algorithm()]} |
                          {use_bloomfilter, boolean() | pos_integer()} |
                          {total_memory, pos_integer()} |
                          {total_leveldb_mem, pos_integer()} |
@@ -103,11 +106,21 @@ init() ->
                          {tiered_slow_level, pos_integer()} |
                          {tiered_fast_prefix, string()} |
                          {tiered_slow_prefix, string()} |
-                         {antidote, boolean()}].
+                         {antidote, boolean()} |
+                         {cache_object_warming, boolean()} |
+                         {expiry_enabled, boolean()} |
+                         {expiry_minutes, pos_integer()} |
+                         {whole_file_expiry, boolean()}
+                        ].
 
--type read_options() :: [{verify_checksums, boolean()} |
-                         {fill_cache, boolean()} |
-                         {iterator_refresh, boolean()}].
+-type read_option() :: {verify_checksums, boolean()} |
+                       {fill_cache, boolean()} |
+                       {iterator_refresh, boolean()}.
+
+-type read_options() :: [read_option()].
+
+-type fold_option()  :: {first_key, Key::binary()}.
+-type fold_options() :: [read_option() | fold_option()].
 
 -type write_options() :: [{sync, boolean()}].
 
@@ -115,7 +128,7 @@ init() ->
                           {delete, Key::binary()} |
                           clear].
 
--type iterator_action() :: first | last | next | prev | prefetch | binary().
+-type iterator_action() :: first | last | next | prev | prefetch | prefetch_stop | binary().
 
 -opaque db_ref() :: binary().
 
@@ -229,7 +242,7 @@ async_iterator_close(_CallerRef, _IRef) ->
 
 %% Fold over the keys and values in the database
 %% will throw an exception if the database is closed while the fold runs
--spec fold(db_ref(), fold_fun(), any(), read_options()) -> any().
+-spec fold(db_ref(), fold_fun(), any(), fold_options()) -> any().
 fold(Ref, Fun, Acc0, Opts) ->
     {ok, Itr} = iterator(Ref, Opts),
     do_fold(Itr, Fun, Acc0, Opts).
@@ -277,7 +290,7 @@ is_empty(Ref) ->
 is_empty_int(_Ref) ->
     erlang:nif_error({error, not_loaded}).
 
--spec option_types(open | read | write) -> [{atom(), bool | integer | any}].
+-spec option_types(open | read | write) -> [{atom(), bool | integer | [compression_algorithm()] | any}].
 option_types(open) ->
     [{create_if_missing, bool},
      {error_if_exists, bool},
@@ -288,7 +301,7 @@ option_types(open) ->
      {block_size_steps, integer},
      {paranoid_checks, bool},
      {verify_compactions, bool},
-     {compression, bool},
+     {compression, ?COMPRESSION_ENUM},
      {use_bloomfilter, any},
      {total_memory, integer},
      {total_leveldb_mem, integer},
@@ -301,7 +314,11 @@ option_types(open) ->
      {delete_threshold, integer},
      {tiered_slow_level, integer},
      {tiered_fast_prefix, any},
-     {tiered_slow_prefix, any}];
+     {tiered_slow_prefix, any},
+     {cache_object_warming, bool},
+     {expiry_enabled, bool},
+     {expiry_minutes, integer},
+     {whole_file_expiry, bool}];
 
 option_types(read) ->
     [{verify_checksums, bool},
@@ -372,6 +389,9 @@ validate_type({_Key, bool}, true)                            -> true;
 validate_type({_Key, bool}, false)                           -> true;
 validate_type({_Key, integer}, Value) when is_integer(Value) -> true;
 validate_type({_Key, any}, _Value)                           -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, snappy)             -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, lz4)                -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, false)              -> true;
 validate_type(_, _)                                          -> false.
 
 

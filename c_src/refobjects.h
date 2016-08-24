@@ -46,8 +46,9 @@ namespace eleveldb {
 
 /**
  * Base class for any object that offers RefInc / RefDec interface
+ *  Today the class' sole purpose is to provide eleveldb specific
+ *  performance counters.
  */
-
 class RefObject : public leveldb::RefObjectBase
 {
 public:
@@ -73,16 +74,15 @@ public:
     //  owns the shutdown (Erlang or async C)
     void * volatile * m_ErlangThisPtr;
 
+    leveldb::port::Mutex   m_CloseMutex;        //!< for condition wait
+    leveldb::port::CondVar m_CloseCond;         //!< for notification of user's finish
+
+private:  // private to force use of GetCloseRequest()
+    // m_CloseRequested assumes m_CloseMutex held for writes
     // 1 once InitiateCloseRequest starts,
     // 2 other pointers to "this" released
     // 3 final RefDec and destructor executing
     volatile uint32_t m_CloseRequested;
-
-    leveldb::port::Mutex   m_CloseMutex;        //!< for condition wait
-    leveldb::port::CondVar m_CloseCond;         //!< for notification of user's finish
-
-protected:
-
 
 public:
     ErlRefObject();
@@ -96,6 +96,10 @@ public:
     bool ClaimCloseFromCThread();
 
     void InitiateCloseRequest();
+
+    // memory fencing for reads
+    uint32_t GetCloseRequested()
+        {return(leveldb::add_and_fetch(&m_CloseRequested, (uint32_t)0));};
 
 private:
     ErlRefObject(const ErlRefObject&);              // nocopy
@@ -131,8 +135,10 @@ public:
 
     ~ReferencePtr()
     {
-        if (NULL!=t)
-            t->RefDec();
+        TargetT * temp_ptr(t);
+        t=NULL;
+        if (NULL!=temp_ptr)
+            temp_ptr->RefDec();
     }
 
     void assign(TargetT * _t)
@@ -218,7 +224,8 @@ public:
     leveldb::Iterator * m_Iterator;
     volatile uint32_t m_HandoffAtomic;        //!< matthew's atomic foreground/background prefetch flag.
     bool m_KeysOnly;                          //!< only return key values
-    volatile bool m_PrefetchStarted;          //!< true after first prefetch command
+    // m_PrefetchStarted must use uint32_t instead of bool for Solaris CAS operations
+    volatile uint32_t m_PrefetchStarted;          //!< true after first prefetch command
     leveldb::ReadOptions m_Options;           //!< local copy of ItrObject::options
     ERL_NIF_TERM itr_ref;                     //!< shared copy of ItrObject::itr_ref
 
@@ -226,6 +233,14 @@ public:
     std::string m_RecentKey;                  //!< Most recent key returned
     time_t m_IteratorStale;                   //!< time iterator should refresh
     bool m_StillUse;                          //!< true if no error or key end seen
+
+    // debug data for hung iteratos
+    time_t m_IteratorCreated;                 //!< time constructor called
+    time_t m_LastLogReport;                   //!< LOG message was last written
+    size_t m_MoveCount;                       //!< number of calls to MoveItem
+
+    // read by Erlang thread, maintained by eleveldb MoveItem::DoWork
+    volatile bool m_IsValid;                  //!< iterator state after last operation
 
     LevelIteratorWrapper(ItrObject * ItrPtr, bool KeysOnly,
                          leveldb::ReadOptions & Options, ERL_NIF_TERM itr_ref);
@@ -236,9 +251,12 @@ public:
     }   // ~LevelIteratorWrapper
 
     leveldb::Iterator * get() {return(m_Iterator);};
-    leveldb::Iterator * operator->() {return(m_Iterator);};
 
-    bool Valid() {return(NULL!=m_Iterator && m_Iterator->Valid());};
+    volatile bool Valid() {return(m_IsValid);};
+    void SetValid(bool flag) {m_IsValid=flag;};
+
+    // warning, only valid with Valid() otherwise potential
+    //   segfault if iterator purged to fix AAE'ism
     leveldb::Slice key() {return(m_Iterator->key());};
     leveldb::Slice value() {return(m_Iterator->value());};
 
@@ -247,15 +265,19 @@ public:
     {
         if (NULL!=m_Snapshot)
         {
-            // leveldb performs actual "delete" call on m_Shapshot's pointer
-            m_DbPtr->m_Db->ReleaseSnapshot(m_Snapshot);
+            const leveldb::Snapshot * temp_snap(m_Snapshot);
+
             m_Snapshot=NULL;
+            // leveldb performs actual "delete" call on m_Shapshot's pointer
+            m_DbPtr->m_Db->ReleaseSnapshot(temp_snap);
         }   // if
 
         if (NULL!=m_Iterator)
         {
-            delete m_Iterator;
+            leveldb::Iterator * temp_iter(m_Iterator);
+
             m_Iterator=NULL;
+            delete temp_iter;
         }   // if
     }   // PurgeIterator
 
@@ -271,6 +293,9 @@ public:
         m_Options.snapshot = m_Snapshot;
         m_Iterator = m_DbPtr->m_Db->NewIterator(m_Options);
     }   // RebuildIterator
+
+    // hung iterator debug
+    void LogIterator();
 
 private:
     LevelIteratorWrapper(const LevelIteratorWrapper &);            // no copy
