@@ -34,7 +34,7 @@ basic_schema_test() ->
     cuttlefish_unit:assert_config(Config, "eleveldb.eleveldb_threads", 71),
     cuttlefish_unit:assert_config(Config, "eleveldb.fadvise_willneed", false),
     cuttlefish_unit:assert_config(Config, "eleveldb.delete_threshold", 1000),
-    cuttlefish_unit:assert_config(Config, "eleveldb.compression", lz4),
+    cuttlefish_unit:assert_config(Config, "eleveldb.compression", snappy),
     cuttlefish_unit:assert_config(Config, "eleveldb.tiered_slow_level", 0),
     cuttlefish_unit:assert_not_configured(Config, "eleveldb.tiered_fast_prefix"),
     cuttlefish_unit:assert_not_configured(Config, "eleveldb.tiered_slow_prefix"),
@@ -134,7 +134,7 @@ compression_schema_test() ->
     Config2 = cuttlefish_unit:generate_templated_config(
         ["../priv/eleveldb.schema"], Case2, context(), predefined_schema()),
 
-    cuttlefish_unit:assert_config(Config2, "eleveldb.compression", lz4),
+    cuttlefish_unit:assert_config(Config2, "eleveldb.compression", snappy),
 
 
     %% Case3:  compression enabled, explicitly set lz4 as algorithm
@@ -157,6 +157,23 @@ compression_schema_test() ->
         ["../priv/eleveldb.schema"], Case4, context(), predefined_schema()),
 
     cuttlefish_unit:assert_config(Config4, "eleveldb.compression", snappy),
+
+    %% Case5:  compression enabled by default, explicitly set lz4 as algorithm
+    Case5 = [
+            {["leveldb", "compression", "algorithm"], lz4}
+           ],
+    Config5 = cuttlefish_unit:generate_templated_config(
+        ["../priv/eleveldb.schema"], Case5, context(), predefined_schema()),
+
+    cuttlefish_unit:assert_config(Config5, "eleveldb.compression", lz4),
+
+    %% Case6:  compression enabled by default, snappy by default
+    Case6 = [
+           ],
+    Config6 = cuttlefish_unit:generate_templated_config(
+        ["../priv/eleveldb.schema"], Case6, context(), predefined_schema()),
+
+    cuttlefish_unit:assert_config(Config6, "eleveldb.compression", snappy),
 
 
     ok.
