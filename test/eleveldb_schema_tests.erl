@@ -34,7 +34,7 @@ basic_schema_test() ->
     cuttlefish_unit:assert_config(Config, "eleveldb.eleveldb_threads", 71),
     cuttlefish_unit:assert_config(Config, "eleveldb.fadvise_willneed", false),
     cuttlefish_unit:assert_config(Config, "eleveldb.delete_threshold", 1000),
-    cuttlefish_unit:assert_config(Config, "eleveldb.compression", lz4),
+    cuttlefish_unit:assert_config(Config, "eleveldb.compression", snappy),
     cuttlefish_unit:assert_config(Config, "eleveldb.tiered_slow_level", 0),
     cuttlefish_unit:assert_not_configured(Config, "eleveldb.tiered_fast_prefix"),
     cuttlefish_unit:assert_not_configured(Config, "eleveldb.tiered_slow_prefix"),
