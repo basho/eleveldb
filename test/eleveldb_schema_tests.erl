@@ -3,10 +3,7 @@
 %%
 %% The following 2 lines are only activated during builbot
 %%  unit tests.  The buildbot script executes the following:
-<<<<<<< HEAD
 %%
-=======
->>>>>>> move develop to 2.0 for 2.0.25 tag
 %%    sed -i -e 's/% #!sed //' rebar.config test/eleveldb_schema_tests.erl
 %%
 % #!sed -include_lib("eunit/include/eunit.hrl").
@@ -161,7 +158,6 @@ compression_schema_test() ->
 
     cuttlefish_unit:assert_config(Config4, "eleveldb.compression", snappy),
 
-<<<<<<< HEAD
     %% Case5:  compression enabled by default, explicitly set lz4 as algorithm
     Case5 = [
             {["leveldb", "compression", "algorithm"], lz4}
@@ -179,8 +175,6 @@ compression_schema_test() ->
 
     cuttlefish_unit:assert_config(Config6, "eleveldb.compression", snappy),
 
-=======
->>>>>>> move develop to 2.0 for 2.0.25 tag
 
     ok.
 
@@ -249,7 +243,6 @@ multi_backend_test() ->
     cuttlefish_unit:assert_config(DefaultBackend, "expiry_enabled", false),
     cuttlefish_unit:assert_config(DefaultBackend, "expiry_minutes", 0),
     cuttlefish_unit:assert_config(DefaultBackend, "whole_file_expiry", true),
-<<<<<<< HEAD
     ok.
 
 multi_compression_test() ->
@@ -273,31 +266,6 @@ multi_compression_test() ->
 
     ok.
 
-=======
-    ok.
-
-multi_compression_test() ->
-    Conf = [
-            {["multi_backend", "FruitLoops", "leveldb", "compression"], off},
-
-            {["multi_backend", "Trix", "leveldb", "compression"], on},
-            {["multi_backend", "Trix", "leveldb", "compression", "algorithm"], lz4}
-           ],
-    Config = cuttlefish_unit:generate_templated_config(
-               ["../priv/eleveldb.schema", "../priv/eleveldb_multi.schema", "../test/multi_backend.schema"],
-               Conf, context(), predefined_schema()),
-
-    MultiBackendConfig = proplists:get_value(multi_backend, proplists:get_value(riak_kv, Config)),
-
-    {<<"FruitLoops">>, riak_kv_eleveldb_backend, FruitLoopsBackend} = lists:keyfind(<<"FruitLoops">>, 1, MultiBackendConfig),
-    cuttlefish_unit:assert_config(FruitLoopsBackend, "compression", false),
-
-    {<<"Trix">>, riak_kv_eleveldb_backend, TrixBackend} = lists:keyfind(<<"Trix">>, 1, MultiBackendConfig),
-    cuttlefish_unit:assert_config(TrixBackend, "compression", lz4),
-
-    ok.
-
->>>>>>> move develop to 2.0 for 2.0.25 tag
 
 %% this context() represents the substitution variables that rebar
 %% will use during the build process.  riak_core's schema file is
