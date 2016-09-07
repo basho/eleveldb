@@ -16,6 +16,11 @@
          {total_leveldb_mem_percent, 15},
 
          %% Use bloom filter support by default
-         {use_bloomfilter, true}
+         {use_bloomfilter, true},
+
+         %% Users with "older" configs should get
+         %%  "older" compression by default
+         {compression, snappy}
+
         ]}
  ]}.

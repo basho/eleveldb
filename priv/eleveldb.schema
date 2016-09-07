@@ -159,14 +159,12 @@
 %% next time a file requires compaction.
 {mapping, "leveldb.compression", "eleveldb.compression", [
   {default, on},
-  {datatype, flag},
-  hidden
+  {datatype, flag}
 ]}.
 
 {mapping, "leveldb.compression.algorithm", "eleveldb.compression", [
-  {default, lz4},
-  {datatype, {enum, [snappy, lz4]}},
-  hidden
+  {new_conf_value, lz4},
+  {datatype, {enum, [snappy, lz4]}}
 ]}.
 
 {translation,
@@ -176,7 +174,7 @@
     case Setting of
       false -> false;
       true ->
-        cuttlefish:conf_get("leveldb.compression.algorithm", Conf, lz4)
+        cuttlefish:conf_get("leveldb.compression.algorithm", Conf, snappy)
     end
  end}.
 
