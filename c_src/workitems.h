@@ -349,46 +349,46 @@ private:
 struct RangeScanOptions {
 
     // Byte-level controls for batching/ack
-    
+
     size_t max_unacked_bytes;
     size_t low_bytes;
     size_t max_batch_bytes;
-    
+
     // Max number of items to return. Zero means unlimited.
-    
+
     size_t limit;
-    
+
     // Include the start key in streaming iteration?
-    
+
     bool start_inclusive;
-    
+
     // Include the end key in streaming iteration?
-    
+
     bool end_inclusive;
-    
+
     // Read options
-    
+
     bool fill_cache;
     bool verify_checksums;
-    
+
     // Filter options
-    
+
     Encoding::Type encodingType_;
     ERL_NIF_TERM rangeFilterSpec_;
     ErlNifEnv* env_;
     bool useRangeFilter_;
-    
+
     RangeScanOptions();
     ~RangeScanOptions();
-    
+
     //------------------------------------------------------------
     // Sanity-check filter options
     //------------------------------------------------------------
-    
+
     void checkOptions();
-    
+
 };  // struct RangeScanOptions
-    
+
 class RangeScanTask : public WorkTask
 {
 public:
@@ -403,28 +403,28 @@ public:
     public:
         explicit SyncObject(const RangeScanOptions & opts);
         ~SyncObject();
-        
+
         // True if only one side (producer or consumer) alive.
 
-        inline bool SingleOwned() { return m_RefCount == 1; }
-        
+        inline bool SingleOwned() { return( 1 == GetRefCount()); }
+
         // Adds number of bytes sent to count.
         // Will block if count exceeds max waiting for the other
         // side to ack some and take it under the limit or for the other
         // side to shut down.
 
         void AddBytes(uint32_t n);
-        
+
         void AckBytes(uint32_t n);
         bool AckBytesRet(uint32_t n);
-        
+
         // Should be called when the Erlang handle is garbage collected
         // so no process is there to consume the output.
 
         void MarkConsumerDead();
-        
+
         bool IsConsumerDead() const;
-        
+
     private:
         const uint32_t max_bytes_;
         const uint32_t low_bytes_;
@@ -442,11 +442,11 @@ public:
         ErlNifMutex* mutex_;
         ErlNifCond*  cond_;
     };
-    
+
     struct SyncHandle {
         SyncObject* sync_obj_;
     };
-    
+
     RangeScanTask(ErlNifEnv* caller_env,
                   ERL_NIF_TERM caller_ref,
                   DbObject* db_handle,
@@ -454,18 +454,18 @@ public:
                   const std::string* end_key,
                   RangeScanOptions&  options,
                   SyncObject* sync_obj);
-    
+
     virtual ~RangeScanTask();
 
     static void CreateSyncHandleType(ErlNifEnv* env);
     static SyncHandle* CreateSyncHandle(const RangeScanOptions & options);
     static SyncHandle* RetrieveSyncHandle(ErlNifEnv* env, ERL_NIF_TERM term);
     static void SyncHandleResourceCleanup(ErlNifEnv* env, void* arg);
-    
+
     void sendMsg(ErlNifEnv* msg_env, ERL_NIF_TERM atom, ErlNifPid pid);
     void sendMsg(ErlNifEnv* msg_env, ERL_NIF_TERM atom, ErlNifPid pid, std::string msg);
 
-    int VarintLength(uint64_t v);    
+    int VarintLength(uint64_t v);
     char* EncodeVarint64(char* dst, uint64_t v);
     void send_streaming_batch(ErlNifPid* pid, ErlNifEnv* msg_env, ERL_NIF_TERM ref_term,
                               ErlNifBinary* bin);
@@ -483,12 +483,12 @@ protected:
     Extractor* extractor_;
 
 private:
-    
+
     static ErlNifResourceType* sync_handle_resource_;
-    
+
 };  // class RangeScanTask
-    
-    
+
+
 } // namespace eleveldb
 
 
