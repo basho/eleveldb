@@ -1,3 +1,24 @@
+github.com tag 2.0.28 - September 7, 2016
+-----------------------------------------
+Clarify which compression algorithm used for default:
+  1. leveldb open source users: lz4 default
+  2. eleveldb open source users: snappy default
+  3. riak.conf / app.config users of older generation: snappy default
+  4. riak.conf from Riak 2.2: lz4 default
+
+github.com tag 2.0.27 - August 22, 2016
+---------------------------------------
+mv-mem-fences:  fix iterator double delete bug in eleveldb and
+                build better memory fenced operations for referenced count objects.
+
+github.com tag 2.0.25 - August 10, 2016
+---------------------------------------
+ - make LZ4 the default compression instead of Snappy.
+ - update compression flag in eleveldb.schema to support
+   choosing Snappy or LZ4
+ - add expiry settings to eleveldb.schema
+ - disable cuttlefish as dependency riak.conf
+
 github.com tag 2.0.22 - June 21, 2016
 -------------------------------------
  - branch mv-iter-valid (PR 199): adjust recent code accessing iterator->Valid() where

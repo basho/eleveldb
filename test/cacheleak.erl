@@ -49,7 +49,7 @@ cacheleak_loop(Count, Blobs, MaxFinalRSS) ->
 
                 {ok, Ref} = eleveldb:open("/tmp/eleveldb.cacheleak.test",
                                           [{create_if_missing, true},
-                                           {cache_size, 83886080}]),
+                                           {limited_developer_mem, true}]),
                 [ok = eleveldb:put(Ref, I, B, []) || {I, B} <- Blobs],
                 eleveldb:fold(Ref, fun({_K, _V}, A) -> A end, [], [{fill_cache, true}]),
                 [{ok, B} = eleveldb:get(Ref, I, []) || {I, B} <- Blobs],

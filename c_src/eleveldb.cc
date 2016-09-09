@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2015 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2016 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -304,9 +304,18 @@ ERL_NIF_TERM parse_init_option(ErlNifEnv* env, ERL_NIF_TERM item, EleveldbOption
         else if (option[0] == eleveldb::ATOM_LIMITED_DEVELOPER_MEM)
         {
             if (option[1] == eleveldb::ATOM_TRUE)
+            {
                 opts.m_LimitedDeveloper = true;
+
+                // lower thread count too if developer stuff.
+                //  each thread has 2Mbytes to 8Mbytes of stack
+                if (71==opts.m_EleveldbThreads)
+                    opts.m_EleveldbThreads=7;
+            }   // if
             else
+            {
                 opts.m_LimitedDeveloper = false;
+            }   // else
         }
         else if (option[0] == eleveldb::ATOM_ELEVELDB_THREADS)
         {
@@ -397,12 +406,12 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         else if (option[0] == eleveldb::ATOM_COMPRESSION)
         {
             if (option[1] == eleveldb::ATOM_ON || option[1] == eleveldb::ATOM_TRUE
-                || option[1] == eleveldb::ATOM_SNAPPY )
+                || option[1] == eleveldb::ATOM_SNAPPY)
             {
                 opts.compression = leveldb::kSnappyCompression;
             }   // if
 
-            else if (option[1] == eleveldb::ATOM_LZ4)
+            else if (option[1] == eleveldb::ATOM_LZ4 )
             {
                 opts.compression = leveldb::kLZ4Compression;
             }   // else if
@@ -809,6 +818,9 @@ async_write(
     ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, *batch);
     if(eleveldb::ATOM_OK != result)
     {
+        // must manually delete batch on failure at this point,
+        //  later WriteTask object will own and delete
+        delete batch;
         return send_reply(env, caller_ref,
                           enif_make_tuple3(env, eleveldb::ATOM_ERROR, caller_ref,
                                            enif_make_tuple2(env, eleveldb::ATOM_BAD_WRITE_ACTION,
@@ -855,9 +867,9 @@ sync_write(
 
     leveldb::WriteOptions opts;
     leveldb::WriteBatch batch;
-    
+
     fold(env, argv[3], parse_write_option, opts);
-    
+
     // Seed the batch's data:
 
     ERL_NIF_TERM result = fold(env, argv[2], write_batch_item, batch);
@@ -867,7 +879,7 @@ sync_write(
                                 enif_make_tuple2(env, eleveldb::ATOM_BAD_WRITE_ACTION,
                                                  result));
     }   // if
-    
+
     leveldb::Status status = db_ptr->m_Db->Write(opts, &batch);
 
     return (status.ok() ? ATOM_OK : error_tuple(env, ATOM_ERROR_DB_WRITE, status));
@@ -923,7 +935,7 @@ async_iterator(
 
     db_ptr.assign(DbObject::RetrieveDbObject(env, dbh_ref));
 
-    if(NULL==db_ptr.get() || 0!=db_ptr->m_CloseRequested
+    if(NULL==db_ptr.get() || 0!=db_ptr->GetCloseRequested()
        || !enif_is_list(env, options_ref))
      {
         return enif_make_badarg(env);
@@ -960,7 +972,7 @@ async_iterator_move(
 
     itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_handle_ref));
 
-    if(NULL==itr_ptr.get() || 0!=itr_ptr->m_CloseRequested)
+    if(NULL==itr_ptr.get() || 0!=itr_ptr->GetCloseRequested())
         return enif_make_badarg(env);
 
     // Reuse ref from iterator creation
@@ -1143,7 +1155,7 @@ async_close(
 
     db_ptr.assign(DbObject::RetrieveDbObject(env, dbh_ref, &term_ok));
 
-    if(NULL==db_ptr.get() || 0!=db_ptr->m_CloseRequested)
+    if(NULL==db_ptr.get() || 0!=db_ptr->GetCloseRequested())
     {
        return enif_make_badarg(env);
     }
@@ -1182,7 +1194,7 @@ async_iterator_close(
 
     itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_ref));
 
-    if(NULL==itr_ptr.get() || 0!=itr_ptr->m_CloseRequested)
+    if(NULL==itr_ptr.get() || 0!=itr_ptr->GetCloseRequested())
     {
        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
        return enif_make_badarg(env);
