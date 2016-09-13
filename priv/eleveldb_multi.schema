@@ -117,13 +117,14 @@
   "multi_backend.$name.leveldb.compression",
   "riak_kv.multi_backend", [
   {default, on},
+  {commented, on},
   {datatype, flag}
 ]}.
 
 {mapping,
   "multi_backend.$name.leveldb.compression.algorithm",
   "riak_kv.multi_backend", [
-  {new_conf_value, lz4},
+  {commented, lz4},
   {datatype, {enum, [snappy, lz4]}}
 ]}.
 
