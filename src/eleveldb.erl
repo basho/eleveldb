@@ -172,16 +172,19 @@ delete(Ref, Key, Opts) -> write(Ref, [{delete, Key}], Opts).
 -spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
 write(Ref, Updates, Opts) ->
     CallerRef = make_ref(),
-    async_write(CallerRef, Ref, Updates, Opts),
-    ?WAIT_FOR_REPLY(CallerRef).
+    case async_write(CallerRef, Ref, Updates, Opts) of
+        CallerRef ->
+            ?WAIT_FOR_REPLY(CallerRef);
+        Anything -> Anything
+    end.
 
 -spec async_put(db_ref(), reference(), binary(), binary(), write_options()) -> ok.
 async_put(Ref, Context, Key, Value, Opts) ->
     Updates = [{put, Key, Value}],
-    async_write(Context, Ref, Updates, Opts),
-    ok.
+    async_write(Context, Ref, Updates, Opts).
 
--spec async_write(reference(), db_ref(), write_actions(), write_options()) -> ok.
+-spec async_write(term(), db_ref(), write_actions(), write_options()) ->
+                         ok | {error, any()} | term().
 async_write(_CallerRef, _Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
