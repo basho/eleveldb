@@ -710,6 +710,7 @@ async_write(
     non_blocking=db_ptr->m_Db->RequestNonBlockTicket();
     if (non_blocking)
     {
+        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug2);
         // use stack if calling direct :-)
         leveldb::WriteOptions opts;
         leveldb::WriteBatch batch;
@@ -733,6 +734,7 @@ async_write(
     else
     {
         // use heap if sending message :-(
+        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);
 
         // Construct a write batch:
         leveldb::WriteBatch* batch = new leveldb::WriteBatch;
@@ -1109,7 +1111,6 @@ async_iterator_close(
 
     if(NULL==itr_ptr.get() || 0!=itr_ptr->GetCloseRequested())
     {
-       leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
        return enif_make_badarg(env);
     }
 
