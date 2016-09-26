@@ -262,7 +262,14 @@ namespace leveldb {
                 }
                 // VCs are the same until now
                 // Check if any of them has more keys
-                return sizeComparison(aSize, bSize);
+                int vcSize = sizeComparison(aSize, bSize);
+                if (vcSize != 0) {
+                    return vcSize;
+                } else {
+                    // If the VC is equal, check if it's an op or a snap.
+                    // If this returns 0, the key is identical
+                    return sizeComparison(a.size(), b.size());
+                }
             }
 
             static int sizeComparison(int sizeA, int sizeB) {
