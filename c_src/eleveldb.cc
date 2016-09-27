@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2015 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2016 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -367,14 +367,14 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         else if (option[0] == eleveldb::ATOM_COMPRESSION)
         {
             if (option[1] == eleveldb::ATOM_ON || option[1] == eleveldb::ATOM_TRUE
-                || option[1] == eleveldb::ATOM_LZ4)
-            {
-                opts.compression = leveldb::kLZ4Compression;
-            }   // if
-
-            else if (option[1] == eleveldb::ATOM_SNAPPY )
+                || option[1] == eleveldb::ATOM_SNAPPY)
             {
                 opts.compression = leveldb::kSnappyCompression;
+            }   // if
+
+            else if (option[1] == eleveldb::ATOM_LZ4 )
+            {
+                opts.compression = leveldb::kLZ4Compression;
             }   // else if
 
             else
