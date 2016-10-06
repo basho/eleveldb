@@ -1033,6 +1033,7 @@ work_result RangeScanTask::DoWork()
                         filter_passed = range_filter_->evaluate();
 
                     } else {
+                        ThrowRuntimeError("range_filter set, but couldn't parse riak object");
                         filter_passed = false;
                     }
                 }

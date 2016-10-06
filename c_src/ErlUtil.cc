@@ -319,6 +319,17 @@ std::vector<unsigned char> ErlUtil::getBinary(ErlNifEnv* env, ERL_NIF_TERM term)
 
     ErlNifBinary bin;
 
+    // SQL NULL represented as [] w/i Riak TS
+    if(enif_is_list(env, term)) {
+        unsigned length;
+        if(enif_get_list_length(env, term, &length)) {
+            if(length == 0) {
+                ret.resize(0);
+                return ret;
+            }
+        }
+    }
+
     if(enif_inspect_binary(env, term, &bin) == 0)
         ThrowRuntimeError("Failed to inspect '" << formatTerm(env, term)
                           << "' as a binary");
@@ -582,7 +593,7 @@ std::vector<std::pair<std::string, ERL_NIF_TERM> > ErlUtil::getListTuples(ERL_NI
         const ERL_NIF_TERM* array=0;
         if(enif_get_tuple(env_, curr, &arity, &array)==0)
             ThrowRuntimeError("Unable to get tuple");
-  
+
         if(arity != 2)
             ThrowRuntimeError("Malformed tuple");
 

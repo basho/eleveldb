@@ -30,6 +30,18 @@ MAKE=${MAKE:-make}
 
 # Changed "make" to $MAKE
 
+get_dep_leveldb () {
+    if [ ! -d leveldb ]; then
+        git clone git://github.com/basho/leveldb
+        (cd leveldb && git checkout $LEVELDB_VSN)
+        if [ "$BASHO_EE" = "1" ]; then
+            (cd leveldb && git submodule update --init)
+        fi
+    else
+        (cd leveldb && dl=$(git diff $LEVELDB_VSN |wc -l) && [ $dl != 0 ] && >&2 echo "\033[0;31m WARN - local leveldb is out of sync with remote $LEVELDB_VSN\033[0m") || :
+    fi
+}
+
 case "$1" in
     rm-deps)
         rm -rf leveldb system snappy-$SNAPPY_VSN
@@ -55,13 +67,7 @@ case "$1" in
         ;;
 
     get-deps)
-        if [ ! -d leveldb ]; then
-            git clone git://github.com/basho/leveldb
-            (cd leveldb && git checkout $LEVELDB_VSN)
-            if [ "$BASHO_EE" = "1" ]; then
-                (cd leveldb && git submodule update --init)
-            fi
-        fi
+        get_dep_leveldb
         ;;
 
     *)
@@ -80,13 +86,7 @@ case "$1" in
         export LD_LIBRARY_PATH="$BASEDIR/system/lib:$LD_LIBRARY_PATH"
         export LEVELDB_VSN="$LEVELDB_VSN"
 
-        if [ ! -d leveldb ]; then
-            git clone git://github.com/basho/leveldb
-            (cd leveldb && git checkout $LEVELDB_VSN)
-            if [ $BASHO_EE = "1" ]; then
-                (cd leveldb && git submodule update --init)
-            fi
-        fi
+        get_dep_leveldb
 
         # hack issue where high level make is running -j 4
         #  and causes build errors in leveldb
