@@ -520,12 +520,16 @@ apply_kv_ops([{put, K, V} | Rest], Ref, Acc0) ->
 apply_kv_ops([{async_put, K, V} | Rest], Ref, Acc0) ->
     MyRef = make_ref(),
     Context = {my_context, MyRef},
-    ok = eleveldb:async_put(Ref, Context, K, V, []),
-    receive
-        {Context, ok} ->
-            apply_kv_ops(Rest, Ref, orddict:store(K, V, Acc0));
-        Msg ->
-            error({unexpected_msg, Msg})
+    case eleveldb:async_put(Ref, Context, K, V, []) of
+        Context ->
+            receive
+                {Context, ok} ->
+                    apply_kv_ops(Rest, Ref, orddict:store(K, V, Acc0));
+                Msg ->
+                    error({unexpected_msg, Msg})
+            end;
+        ok ->
+            apply_kv_ops(Rest, Ref, orddict:store(K, V, Acc0))
     end;
 apply_kv_ops([{delete, K, _} | Rest], Ref, Acc0) ->
     ok = eleveldb:delete(Ref, K, []),
