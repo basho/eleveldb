@@ -1,3 +1,8 @@
+github.com tag 2.0.30 - October 11, 2016
+----------------------------------------
+ - version shipped with Riak 2.2
+ - includes leveldb 2.0.30 (mv-delayed-bloom)
+
 github.com tag 2.0.28 - September 7, 2016
 -----------------------------------------
 Clarify which compression algorithm used for default:

@@ -24,13 +24,13 @@ random_bin(_Id, Size) ->
 
 %% Make keys that look like this: <<"001328681207_012345">>
 %% The suffix part (after the underscore) will be assigned either
-%% erlang:now/0's milliseconds or an integer between 0 and MaxSuffix.
+%% os:timestamp/0's milliseconds or an integer between 0 and MaxSuffix.
 %% The integer between 0 & MaxSuffix will be chosen PercentAlmostSeq
 %% percent of the time.
 
 almost_completely_sequential(_Id, MaxSuffix, PercentAlmostSeq) ->
     fun() ->
-            {A, B, C} = now(),
+            {A, B, C} = os:timestamp(),
             TimeT = (A*1000000) + B,
             End = case random:uniform(100) of
                       N when N < PercentAlmostSeq ->
@@ -45,8 +45,8 @@ almost_completely_sequential(_Id, MaxSuffix, PercentAlmostSeq) ->
 %% Make keys that look like this: <<"001328681207_012345">>.
 %%
 %% With probability of 1 - (MillionNotSequential/1000000), the keys
-%% will be generated using erlang:now/0, where the suffix is exactly
-%% equal to the microseconds portion of erlang:now/0's return value.
+%% will be generated using os:timestamp/0, where the suffix is exactly
+%% equal to the microseconds portion of os:timestamp/0's return value.
 %% Such keys will be perfectly sorted for time series-style keys: each
 %% key will be "greater than" any previous key.
 %%
@@ -61,7 +61,7 @@ almost_completely_sequential(_Id, MaxSuffix, PercentAlmostSeq) ->
 
 mostly_sequential(_Id, MillionNotSequential) ->
     fun() ->
-            {A, B, C} = now(),
+            {A, B, C} = os:timestamp(),
             {X, Y, Z} = case random:uniform(1000*1000) of
                             N when N < MillionNotSequential ->
                                 {A - random:uniform(3),
