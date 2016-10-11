@@ -49,9 +49,9 @@
             break;                                                    \
         case DataType::UINT64:                                        \
             NEW_BIN(ClassName, uint64_t,       type);                 \
-            break;                                                    \
-        case DataType::INT64:                                          \
-            NEW_BIN(ClassName, int64_t,        type);                  \
+            break;                                                     \
+        case DataType::INT64:                                           \
+            NEW_BIN(ClassName, int64_t,        type);                   \
             break;                                                      \
         case DataType::DOUBLE:                                          \
             NEW_BIN(ClassName, double,         type);                   \
@@ -76,60 +76,60 @@
 //=======================================================================
 
 template<typename T> ExpressionNode<T>* 
-parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, ExtractorMap& ext) {
     ThrowRuntimeError("Called an unsupported version of parse_const_expr");
     return NULL;
 }
 
 template<> ExpressionNode<uint8_t>* 
-parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, ExtractorMap& ext) {
     int val = eleveldb::ErlUtil::getValAsUint8(env, operand);
     return new ConstantValue<uint8_t>(val);
 }
 
 template<> ExpressionNode<int>* 
-parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, ExtractorMap& ext) {
     int val = eleveldb::ErlUtil::getValAsInt32(env, operand);
     return new ConstantValue<int>(val);
 }
 
 template<> ExpressionNode<unsigned int>* 
-parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, ExtractorMap& ext) {
     unsigned int val = eleveldb::ErlUtil::getValAsUint32(env, operand);
     return new ConstantValue<unsigned int>(val);
 }
 
 template<> ExpressionNode<int64_t>* 
-parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, ExtractorMap& ext) {
     int64_t val = eleveldb::ErlUtil::getValAsInt64(env, operand);
     return new ConstantValue<int64_t>(val);
 }
 
 template<> ExpressionNode<uint64_t>* 
-parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, ExtractorMap& ext) {
     uint64_t val = eleveldb::ErlUtil::getValAsUint64(env, operand);
     return new ConstantValue<uint64_t>(val);
 }
 
 template<> ExpressionNode<double>* 
-parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, ExtractorMap& ext) {
     double val = eleveldb::ErlUtil::getValAsDouble(env, operand);
     return new ConstantValue<double>(val);
 }
 
 template<> ExpressionNode<std::string>* 
-parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, ExtractorMap& ext) {
     return new ConstantValue<std::string>(eleveldb::ErlUtil::getString(env, operand));
 }
 
 template<> ExpressionNode<unsigned char*>* 
-parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, ExtractorMap& ext) {
     std::vector<unsigned char> val = eleveldb::ErlUtil::getBinary(env, operand);
     return new ConstantValue<unsigned char*>(val);
 }
 
 template<typename T> ExpressionNode<T>* 
-parse_expression_node(ErlNifEnv* env, ERL_NIF_TERM root, Extractor& ext, bool throwIfInvalid) {
+parse_expression_node(ErlNifEnv* env, ERL_NIF_TERM root, ExtractorMap& ext, bool throwIfInvalid) {
 
     try {
 
@@ -180,7 +180,7 @@ parse_expression_node(ErlNifEnv* env, ERL_NIF_TERM root, Extractor& ext, bool th
 //=======================================================================
 
 template<> ExpressionNode<bool>* 
-parse_expression_node<bool>(ErlNifEnv* env, ERL_NIF_TERM root, Extractor& ext, bool throwIfInvalid) {
+parse_expression_node<bool>(ErlNifEnv* env, ERL_NIF_TERM root, ExtractorMap& ext, bool throwIfInvalid) {
 
     try {
 
@@ -234,7 +234,7 @@ parse_expression_node<bool>(ErlNifEnv* env, ERL_NIF_TERM root, Extractor& ext, b
 //=======================================================================
 
 ExpressionNode<bool>*
-parse_equals_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+parse_equals_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid) {
     if(args.size() == 3) {
         DataType::Type type = ext.cTypeOf(env, args[1], args[2], throwIfInvalid);
         SWITCH_TYPE(EqOperator);
@@ -251,7 +251,7 @@ parse_equals_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ex
 //=======================================================================
 
 ExpressionNode<bool>* 
-parse_nequals_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+parse_nequals_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid) {
     if(args.size() == 3) {
         DataType::Type type = ext.cTypeOf(env, args[1], args[2], throwIfInvalid);
         SWITCH_TYPE(NeqOperator);
@@ -268,7 +268,7 @@ parse_nequals_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& e
 //=======================================================================
 
 ExpressionNode<bool>* 
-parse_lt_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+parse_lt_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid) {
     if(args.size() == 3) {
         DataType::Type type = ext.cTypeOf(env, args[1], args[2], throwIfInvalid);
         
@@ -296,7 +296,7 @@ parse_lt_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, b
 //=======================================================================
 
 ExpressionNode<bool>* 
-parse_lte_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+parse_lte_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid) {
     if(args.size() == 3) {
         DataType::Type type = ext.cTypeOf(env, args[1], args[2], throwIfInvalid);
 
@@ -324,7 +324,7 @@ parse_lte_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, 
 //=======================================================================
 
 ExpressionNode<bool>* 
-parse_gt_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+parse_gt_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid) {
     if(args.size() == 3) {
         DataType::Type type = ext.cTypeOf(env, args[1], args[2], throwIfInvalid);
         
@@ -352,7 +352,7 @@ parse_gt_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, b
 //=======================================================================
 
 ExpressionNode<bool>* 
-parse_gte_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+parse_gte_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid) {
     if(args.size() == 3) {
         DataType::Type type = ext.cTypeOf(env, args[1], args[2], throwIfInvalid);
         
@@ -380,7 +380,7 @@ parse_gte_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, 
 //=======================================================================
 
 ExpressionNode<bool>* 
-parse_and_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+parse_and_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid) {
     if(args.size() == 3) {
         
         ExpressionNode<bool>* left  = parse_expression_node<bool>(env, args[1], ext, throwIfInvalid);
@@ -423,7 +423,7 @@ parse_and_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, 
 //=======================================================================
 
 ExpressionNode<bool>* 
-parse_or_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid) {
+parse_or_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid) {
     if(args.size() == 3) {
         
         ExpressionNode<bool>* left  = parse_expression_node<bool>(env, args[1], ext, throwIfInvalid);
@@ -466,12 +466,17 @@ parse_or_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, b
 //=======================================================================
 
 template<typename T> ExpressionNode<T>* 
-parse_field_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
+parse_field_expr(ErlNifEnv* env, ERL_NIF_TERM operand, ExtractorMap& ext) {
 
     try {
 
         std::string fieldName = eleveldb::ErlUtil::getBinaryAsString(env, operand);
+
+        // Each field must be added to all extractors that might be used to
+        // filter data
+        
         ext.add_field(fieldName);
+
         return new FieldValue<T>(fieldName, ext.cTypeOf(fieldName));
 
     } catch(...) {
@@ -485,6 +490,6 @@ parse_field_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
 //=======================================================================
 
 ExpressionNode<bool>* 
-parse_range_filter_opts(ErlNifEnv* env, ERL_NIF_TERM options, Extractor& ext, bool throwIfInvalid) {
+parse_range_filter_opts(ErlNifEnv* env, ERL_NIF_TERM options, ExtractorMap& ext, bool throwIfInvalid) {
     return parse_expression_node<bool>(env, options, ext, throwIfInvalid);
 }

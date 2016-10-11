@@ -373,7 +373,6 @@ struct RangeScanOptions {
 
     // Filter options
 
-    Encoding::Type encodingType_;
     ERL_NIF_TERM rangeFilterSpec_;
     ErlNifEnv* env_;
     bool useRangeFilter_;
@@ -480,6 +479,15 @@ protected:
     bool has_end_key_;
     SyncObject* sync_obj_;
     ExpressionNode<bool>* range_filter_;
+
+    // RangeScanTask::extractorMap_ contains a map of allocated
+    // extractors for valid encodings.  
+    
+    ExtractorMap extractorMap_;
+
+    // RangeScanTask::extractor_ is just a temporary pointer that will
+    // point to the right extractor for the current data record
+    
     Extractor* extractor_;
 
 private:

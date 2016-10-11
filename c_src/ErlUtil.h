@@ -137,7 +137,8 @@ namespace eleveldb {
         static std::string formatBinary(ErlNifEnv* env, ERL_NIF_TERM term);
 
         static std::string formatBinary(unsigned char* buf, size_t size);
-
+        static std::string formatBinary(char* buf, size_t size);
+        
         static std::string formatList(  ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatNumber(ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatString(ErlNifEnv* env, ERL_NIF_TERM term);

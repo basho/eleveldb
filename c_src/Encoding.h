@@ -12,6 +12,9 @@
  */
 #include <sstream>
 
+#define MSGPACK_MAGIC 2
+#define ERLANG_MAGIC  0
+
 namespace eleveldb {
 
     class Encoding {
@@ -35,6 +38,7 @@ namespace eleveldb {
         virtual ~Encoding();
 
         static std::string encodingAtom(Encoding::Type type);
+        static unsigned char encodingByte(Encoding::Type type);
         static Type typeOf(std::string str, bool doThrow);
 
         friend std::ostream& operator<<(std::ostream& os,  Encoding::Type type);

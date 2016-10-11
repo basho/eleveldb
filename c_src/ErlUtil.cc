@@ -1129,6 +1129,11 @@ std::string ErlUtil::formatBinary(ErlNifEnv* env, ERL_NIF_TERM term)
     return os.str();
 }
 
+std::string ErlUtil::formatBinary(char* buf, size_t size)
+{
+    return formatBinary((unsigned char*) buf, size);
+}
+
 std::string ErlUtil::formatBinary(unsigned char* buf, size_t size)
 {
     std::ostringstream os;

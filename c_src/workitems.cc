@@ -629,7 +629,6 @@ RangeScanOptions::RangeScanOptions() :
     end_inclusive(false), 
     fill_cache(false), 
     verify_checksums(true), 
-    encodingType_(Encoding::NONE),
     env_(0), 
     useRangeFilter_(false) {};
 
@@ -639,32 +638,7 @@ RangeScanOptions::~RangeScanOptions() {};
 // Sanity-check filter options
 //------------------------------------------------------------
 
-void RangeScanOptions::checkOptions() 
-{
-        
-    //------------------------------------------------------------
-    // If a filter was specified, we don't allocate the extractor
-    // until we're done parsing the options.  This is because we
-    // require that an a valid encoding is specified before we can
-    // choose which extractor to use
-    //------------------------------------------------------------
-    
-    if(useRangeFilter_) {
-        switch (encodingType_) {
-        case Encoding::MSGPACK:
-            break;
-        case Encoding::NONE:
-            ThrowRuntimeError("No object encoding was specified");
-            break;
-        case Encoding::UNKNOWN:
-            ThrowRuntimeError("An invalud object encoding was specified");
-            break;
-        default:
-            ThrowRuntimeError("An unsupported object encoding was specified: " << encodingType_);
-            break;
-        }
-    }
-};
+void RangeScanOptions::checkOptions() {}
 
 /**
  * RangeScanTask::SyncObject
@@ -793,22 +767,7 @@ RangeScanTask::RangeScanTask(ErlNifEnv * caller_env,
     //------------------------------------------------------------
     
     if(options_.useRangeFilter_) {
-        if(options_.encodingType_ == Encoding::MSGPACK)
-            extractor_ = new ExtractorMsgpack();
-        else {
-            ThrowRuntimeError("An invalid object encoding was specified");
-        }
 
-        //------------------------------------------------------------
-        // Since the data types are now passed with the filter, we no
-        // longer need to wait to decode some data to determine them,
-        // so parse the filter up-front.  Note that to use the code
-        // as-is, we need to set extractor_->typesParsed_ to true as
-        // if we had parsed the datatypes
-        //------------------------------------------------------------
-
-        bool throwIfBadFilter = true;
-        
         //------------------------------------------------------------
         // The code allows for individual filter conditions to be bad,
         // i.e., conditions that reference fields that don't exist, or
@@ -821,12 +780,12 @@ RangeScanTask::RangeScanTask(ErlNifEnv * caller_env,
         // filter conditions are ignored (always true), and the rest of
         // the filter will be evaluated anyway
         //------------------------------------------------------------
-        
-        extractor_->typesParsed_ = true;
+
+        bool throwIfBadFilter = true;
 
         range_filter_ = parse_range_filter_opts(options_.env_, 
                                                 options_.rangeFilterSpec_, 
-                                                *(extractor_), throwIfBadFilter);
+                                                extractorMap_, throwIfBadFilter);
     }
     
     if(!sync_obj_) {
@@ -846,13 +805,11 @@ RangeScanTask::~RangeScanTask()
         delete range_filter_;
         range_filter_ = 0;
     }
-    
-    if(extractor_) {
-        delete extractor_;
-        extractor_ = 0;
-    }
-    
+
     sync_obj_->RefDec();
+
+    // NB: extractor_ is now just a temp pointer to the extractor for the
+    // current data record, and is managed by extractorMap_
 }
 
 void RangeScanTask::sendMsg(ErlNifEnv * msg_env, ERL_NIF_TERM atom, ErlNifPid pid)
@@ -968,12 +925,12 @@ work_result RangeScanTask::DoWork()
                  cmp->Compare(iter->key(), ekey_slice) >= 0
                 ))) {
 
-	  // If data are present in the batch (ie, out_offset != 0),
-	  // send the batch now
+            // If data are present in the batch (ie, out_offset != 0),
+            // send the batch now
 
 	    if (out_offset) {
             
-	      // Shrink it to final size.
+                // Shrink it to final size.
 
                 if (out_offset != bin.size)
                     enif_realloc_binary(&bin, out_offset);
@@ -1021,8 +978,21 @@ work_result RangeScanTask::DoWork()
                     // data and non-TS encoded data are interleaved, this
                     // causes us to ignore the non-TS-encoded data
                     //------------------------------------------------------------
-                    
-                    if(extractor_->riakObjectContentsCanBeParsed(value.data(), value.size())) {
+
+                    unsigned char encMagic=0;
+
+                    if(Extractor::riakObjectContentsCanBeParsed(value.data(), value.size(), encMagic)) {
+
+                        // Point extractor_ to the right extractor for
+                        // this data record.  (We don't have to check
+                        // that it exists in the map because
+                        // riakObjectContentsCanBeParsed() would have
+                        // returned false if it didn't)
+
+                        extractor_ = extractorMap_.extractorNoCheck(encMagic);
+
+                        // And extract the field values that will be
+                        // evaluated against the filter
                         
                         extractor_->extractRiakObject(value.data(), value.size(), range_filter_);
                         

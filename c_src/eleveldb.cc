@@ -158,9 +158,6 @@ ERL_NIF_TERM ATOM_STREAMING_END;
 ERL_NIF_TERM ATOM_STREAMING_ERROR;
 ERL_NIF_TERM ATOM_LIMIT;
 ERL_NIF_TERM ATOM_UNDEFINED;
-ERL_NIF_TERM ATOM_ENCODING;
-ERL_NIF_TERM ATOM_ERLANG_ENCODING;
-ERL_NIF_TERM ATOM_MSGPACK_ENCODING;
 ERL_NIF_TERM ATOM_CACHE_OBJECT_WARMING;
 ERL_NIF_TERM ATOM_EXPIRY_ENABLED;
 ERL_NIF_TERM ATOM_EXPIRY_MINUTES;
@@ -614,15 +611,8 @@ ERL_NIF_TERM parse_streaming_option(ErlNifEnv* env, ERL_NIF_TERM item,
                 opts.limit = limit;
 
             //------------------------------------------------------------
-            // ATOM_ENCODING specifies which extractor to use
-            //------------------------------------------------------------
-
-        } else if (option[0] == eleveldb::ATOM_ENCODING) {
-            opts.encodingType_ = Encoding::typeOf(ErlUtil::getString(env, option[1]), true);
-
-            //------------------------------------------------------------
             // ATOM_RANGE_FILTER specifies a filter.  Defer parsing
-            // this until we read the first key
+            // this until we read the first key.
             //------------------------------------------------------------
 
         } else if (option[0] == eleveldb::ATOM_RANGE_FILTER) {
@@ -1643,9 +1633,6 @@ try
     ATOM(eleveldb::ATOM_STREAMING_ERROR, "streaming_error");
     ATOM(eleveldb::ATOM_LIMIT, "limit");
     ATOM(eleveldb::ATOM_UNDEFINED, "undefined");
-    ATOM(eleveldb::ATOM_ENCODING, "encoding");
-    ATOM(eleveldb::ATOM_ERLANG_ENCODING,  Encoding::encodingAtom(Encoding::ERLANG).c_str());
-    ATOM(eleveldb::ATOM_MSGPACK_ENCODING, Encoding::encodingAtom(Encoding::MSGPACK).c_str());
     ATOM(eleveldb::ATOM_CACHE_OBJECT_WARMING, "cache_object_warming");
     ATOM(eleveldb::ATOM_EXPIRY_ENABLED, "expiry_enabled");
     ATOM(eleveldb::ATOM_EXPIRY_MINUTES, "expiry_minutes");

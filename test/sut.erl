@@ -342,36 +342,64 @@ myformat(T,Val1, Val2) ->
 %%------------------------------------------------------------
 
 putKeysObj(N) -> 
+    putKeysObj(N, msgpack).
+
+putKeysObj(N, Enc) -> 
     clearDb(),
-    putKeysObj(open(), N).
-putKeysObj(Ref,N) -> 
-    putKeysObj(Ref,N,1).
-putKeysObj(Ref,N,Acc) when Acc =< N -> 
+    putKeysObj(open(), N, Enc).
+putKeysObj(Ref, N, Enc) -> 
+    putKeysObj(Ref, N, 1, Enc).
+putKeysObj(Ref, N, Acc, Enc) when Acc =< N -> 
     ValList = [{<<"f1">>, Acc},  {<<"f2">>, <<"test2">>}, {<<"f3">>, 3}, {<<"f4">>, [1,2,3]}, {<<"f5">>, false}],
-    addKey(Ref, ValList, Acc, N);
-putKeysObj(Ref,N,Acc) when Acc > N ->
+    addKey(Ref, ValList, Acc, N, Enc);
+putKeysObj(Ref, N, Acc, _Enc) when Acc > N ->
     close(Ref).
 
 %%------------------------------------------------------------
 %% Iterative function add a key to the backend
 %%------------------------------------------------------------
 
-addKey(Ref, ValList, Acc, N) ->
+%% If Enc = mixed, alternate encodings between msgpack and erlang
+
+addKey(Ref, ValList, Acc, N, mixed) ->
     Ndig = trunc(math:log10(N)) + 1,
     Key  = list_to_binary("key" ++ string:right(integer_to_list(Acc), Ndig, $0)),
     Obj  = new(<<"bucket">>, Key, ValList),
-    Val  = to_binary(v1, Obj, msgpack),
+    Enc = 
+	case Acc rem 2 of
+	    0 ->
+		msgpack;
+	    _ ->
+		erlang
+	end,
+    Val  = to_binary(v1, Obj, Enc),
     ok   = eleveldb:put(Ref, Key, Val, []),
-    putKeysObj(Ref,N,Acc+1).
+    putKeysObj(Ref, N, Acc+1, mixed);
+
+%% Else just use the specified encoding
+
+addKey(Ref, ValList, Acc, N, Enc) ->
+    Ndig = trunc(math:log10(N)) + 1,
+    Key  = list_to_binary("key" ++ string:right(integer_to_list(Acc), Ndig, $0)),
+    Obj  = new(<<"bucket">>, Key, ValList),
+    Val  = to_binary(v1, Obj, Enc),
+    ok   = eleveldb:put(Ref, Key, Val, []),
+    putKeysObj(Ref, N, Acc+1, Enc).
 
 %%------------------------------------------------------------
 %% Explicit function to add a key to the backend
 %%------------------------------------------------------------
 
 addKey(Ref, KeyNum, ValList) ->
+    addKey(Ref, KeyNum, ValList, msgpack).
+
+addKey(Ref, ValList, Acc, N) when is_integer(N) ->
+    addKey(Ref, ValList, Acc, N, msgpack);
+
+addKey(Ref, KeyNum, ValList, Enc) ->
     Key = list_to_binary("key"++integer_to_list(KeyNum)),
     Obj = new(<<"bucket">>, Key, ValList),
-    Val = to_binary(v1, Obj, msgpack),
+    Val = to_binary(v1, Obj, Enc),
     ok = eleveldb:put(Ref, Key, Val, []).
 
 %%------------------------------------------------------------
@@ -399,8 +427,7 @@ getKeyVal(B,K,V) ->
 streamFoldTest(Filter, PutKeyFun) ->
     clearDb(),
     Opts=[{fold_method, streaming},
-	  {range_filter, Filter},
-	  {encoding, msgpack}],
+	  {range_filter, Filter}],
     Ref = open(),
 
     PutKeyFun(Ref),
@@ -797,12 +824,12 @@ abnormalOpsTests() ->
 
 putKeyMissingOps(Ref) ->
     addKey(Ref, 1, [{<<"f1">>, 1}, {<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
-    addKey(Ref, 2, [{<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
+    addKey(Ref, 2, [               {<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
     addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
     addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
 
 putKeyFirstMissingOps(Ref) ->
-    addKey(Ref, 1, [{<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
+    addKey(Ref, 1, [               {<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
     addKey(Ref, 2, [{<<"f1">>, 2}, {<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
     addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
     addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
@@ -815,9 +842,9 @@ putKeyEmptyOps(Ref) ->
 
 putKeyFirstEmptyOps(Ref) ->
     addKey(Ref, 1, [{<<"f1">>, []}, {<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
-    addKey(Ref, 2, [{<<"f1">>, 2}, {<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
-    addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
-    addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
+    addKey(Ref, 2, [{<<"f1">>,  2}, {<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
+    addKey(Ref, 3, [{<<"f1">>,  3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
+    addKey(Ref, 4, [{<<"f1">>,  4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
 
 %%------------------------------------------------------------
 %% Valid filter, but values are missing for referenced keys
@@ -941,9 +968,12 @@ streamFoldTestOpts(Opts, FoldFun) ->
 %%------------------------------------------------------------
 
 scanSome_test() ->
-    io:format("scanSome_test~n"),
+    scanSome_test(msgpack) and scanSome_test(erlang) and scanSome_test(mixed).
+
+scanSome_test(Enc) ->
+    io:format("scanSome_test with Enc = ~p~n", [Enc]),
     N = 100,
-    putKeysObj(N),
+    putKeysObj(N, Enc),
     Opts=[{fold_method, streaming},
 	  {start_key, <<"key002">>},
 	  {end_key,  <<"key099">>},
@@ -965,9 +995,12 @@ scanSome_test() ->
 %%------------------------------------------------------------
 
 scanAll_test() ->
-    io:format("scanAll_test~n"),
+    scanAll_test(msgpack) and scanAll_test(erlang) and scanAll_test(mixed).
+
+scanAll_test(Enc) ->
+    io:format("scanAll_test with Enc = ~p~n", [Enc]),
     N = 100,
-    putKeysObj(N),
+    putKeysObj(N, Enc),
     Opts=[{fold_method, streaming}],
     FoldFun = fun({K,V}, Acc) -> 
 		      [getKeyVal(K,V) | Acc]
@@ -983,9 +1016,12 @@ scanAll_test() ->
 %%------------------------------------------------------------
 
 scanNoStart_test() ->
-    io:format("scanNoStart_test~n"),
+    scanNoStart_test(msgpack) and scanNoStart_test(erlang) and scanNoStart_test(mixed).
+
+scanNoStart_test(Enc) ->
+    io:format("scanNoStart_test with Enc = ~p~n", [Enc]),
     N = 100,
-    putKeysObj(N),
+    putKeysObj(N, Enc),
     Opts=[{fold_method, streaming},
 	  {start_inclusive, false},
 	  {start_key, <<"key001">>}],
@@ -1019,9 +1055,12 @@ scanNoStartTest() ->
 %%------------------------------------------------------------
 
 scanNoStartOrEnd_test() ->
-    io:format("scanNoStartOrEnd_test~n"),
+    scanNoStartOrEnd_test(msgpack) and scanNoStartOrEnd_test(erlang) and scanNoStartOrEnd_test(mixed).
+
+scanNoStartOrEnd_test(Enc) ->
+    io:format("scanNoStartOrEnd_test with Enc = ~p~n", [Enc]),
     N = 100,
-    putKeysObj(N),
+    putKeysObj(N, Enc),
     Opts=[{fold_method, streaming},
 	  {start_inclusive, false},
 	  {end_inclusive, false},
@@ -1049,95 +1088,13 @@ scanNoStartOrEnd_test() ->
 scanTests() ->
     scanAll_test() and scanSome_test() and scanNoStart_test() and scanNoStartOrEnd_test().
 
-%%=======================================================================
-%% Encoding options tests
-%%=======================================================================
-
-%%------------------------------------------------------------
-%% This test should throw an exception because no encoding option was
-%% specified
-%%------------------------------------------------------------
-
-noEncodingOptions_test() ->
-    io:format("noEncodingOptions_test~n"),
-    try
-	N = 100,
-	putKeysObj(N),
-	Filter = {'>', {field, <<"f1">>, sint64}, {const, 1}},
-	Opts=[{fold_method, streaming},
-	      {range_filter, Filter}],
-	
-	FoldFun = fun({K,_V}, Acc) -> 
-			  [K | Acc]
-		  end,
-	
-	Keys = streamFoldTestOpts(Opts, FoldFun),
-	Len = length(Keys),
-	Res = (Len > 0),
-	?assert(Res),
-	Res
-    of
-	_ -> 
-	    io:format("Function returned ok.  Shouldn't have!"),
-	    ?assert(false),
-	    false
-    catch
-	error:Error ->
-	    io:format("Caught an error: ~p.  Ok.~n", [Error]),
-	    ?assert(true),
-	    true
-    end.
-
-%%------------------------------------------------------------
-%% This test should throw an exception because an invalid encoding
-%% option was specified
-%%------------------------------------------------------------
-
-badEncodingOptions_test() ->
-    io:format("badEncodingOptions_test~n"),
-    try
-	N = 100,
-	putKeysObj(N),
-	Filter = {'>', {field, <<"f1">>, sint64}, {const, 1}},
-	Opts=[{fold_method, streaming},
-	      {range_filter, Filter},
-	      {encoding, unknown}],
-	
-	FoldFun = fun({K,_V}, Acc) -> 
-			  [K | Acc]
-		  end,
-	
-	Keys = streamFoldTestOpts(Opts, FoldFun),
-	Len = length(Keys),
-	Res = (Len > 0),
-	?assert(Res),
-	Res
-    of
-	_ -> 
-	    io:format("Function returned ok.  Shouldn't have!"),
-	    ?assert(false),
-	    false
-    catch
-	error:Error ->
-	    io:format("Caught an error: ~p.  Ok.~n", [Error]),
-	    ?assert(true),
-	    true
-    end.
-
-%%------------------------------------------------------------
-%% All encoding options tests
-%%------------------------------------------------------------
-
-encodingOptionsTests() ->
-    noEncodingOptions_test() and badEncodingOptions_test().
-
 %%------------------------------------------------------------
 %% All tests in this file
 %%------------------------------------------------------------
 
 allTests() ->
     packObj_test() and normalOpsTests() and abnormalOpsTests() and exceptionalTests() 
-	and scanTests()and encodingOptionsTests().
+	and scanTests().
 
 %%=======================================================================
 %% Test code to filter & decode TS keys from a leveldb table
