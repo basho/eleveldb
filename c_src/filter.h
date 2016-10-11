@@ -329,6 +329,8 @@ public:
 
     virtual bool evaluate() const {
         // [] to represent NULL w/i Riak TS, which does NOT conflict w/ <<"">>.
+        // NOTE: comparison to NULL is always rewritten with NULL on the
+        // right-hand-side of the equality comparison
         if(right_->size() == 0) {
             return !left_->has_value();
         }
@@ -388,6 +390,8 @@ public:
 
     virtual bool evaluate() const {
         // [] to represent NULL w/i Riak TS, which does NOT conflict w/ <<"">>.
+        // NOTE: comparison to NULL is always rewritten with NULL on the
+        // right-hand-side of the equality comparison
         if(right_->size() == 0) {
             return left_->has_value();
         }

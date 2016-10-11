@@ -328,6 +328,8 @@ std::vector<unsigned char> ErlUtil::getBinary(ErlNifEnv* env, ERL_NIF_TERM term)
                 return ret;
             }
         }
+        ThrowRuntimeError("Invalid list as binary, only empty list may be" <<
+                " treated as a binary");
     }
 
     if(enif_inspect_binary(env, term, &bin) == 0)
