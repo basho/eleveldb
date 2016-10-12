@@ -478,8 +478,8 @@ void Extractor::getToRiakObjectContents(const char* data, size_t size,
 
     unsigned char encMagic = (*ptr++);
 
-    if(encMagic != MSGPACK_MAGIC)
-        ThrowRuntimeError("This is not msgpack-encoded data");
+    if(!(encMagic == MSGPACK_MAGIC || encMagic == ERLANG_MAGIC))
+        ThrowRuntimeError("This record uses an unsupported encoding");
 
     //------------------------------------------------------------
     // Set the passed ptr pointing to the start of the contents for this
@@ -582,6 +582,8 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
 
             DataType::Type specType = expr_fields_[key];
 
+            FOUT("Found field with specType = " << specType);
+            
             //------------------------------------------------------------
             // If there is no value for this field, do nothing
             //------------------------------------------------------------
@@ -604,6 +606,8 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
 
             } else {
 
+                FOUT("Trying to erxtract val");
+
                 try {
 
                     switch (specType) {
@@ -617,6 +621,7 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
                     {
                         int64_t val = CmpUtil::objectToInt64(&obj);
                         root->set_value(key, (void*)&val, specType);
+                        FOUT("Extracting val as INT64 val = " << val << " for key = " << key);
                     }
                     break;
                     case DataType::UINT64:
@@ -778,6 +783,8 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
 {
     root->clear();
 
+    FOUT("Inside extractor erlang");
+    
     // First byte is the version
 
     int index=1;
@@ -819,6 +826,7 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
         if(expr_fields_.find(key) != expr_fields_.end()) {
 
             DataType::Type specType = expr_fields_[key];
+            FOUT("Found field with specType = " << specType);
 
             //------------------------------------------------------------
             // If there is no value for this field, do nothing
@@ -840,6 +848,7 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
                 //------------------------------------------------------------
                 
             } else {
+                FOUT("Trying to erxtract val");
                 
                 try {
                 
@@ -848,24 +857,28 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
                     {
                         uint8_t val = EiUtil::objectToUint8(data, &index);
                         root->set_value(key, (void*)&val, specType);
+                        FOUT("Extracting val as UINT8 " << val << " for key " << key);
                     }
                     break;
                     case DataType::INT64:
                     {
                         int64_t val = EiUtil::objectToInt64(data, &index);
                         root->set_value(key, (void*)&val, specType);
+                        FOUT("Extracting val INT64 " << val << " for key " << key);
                     }
                     break;
                     case DataType::UINT64:
                     {
                         uint64_t val = EiUtil::objectToUint64(data, &index);
                         root->set_value(key, (void*)&val, DataType::UINT64);
+                        FOUT("Extracting val UINT64 " << val << " for key " << key);
                     }
                     break;
                     case DataType::DOUBLE:
                     {
                         double val = EiUtil::objectToDouble(data, &index);
                         root->set_value(key, (void*)&val, specType);
+                        FOUT("Extracting val DOUBLE " << val << " for key " << key);
                     }
                     break;
 

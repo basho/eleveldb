@@ -338,7 +338,7 @@ myformat(T,Val1, Val2) ->
 %%=======================================================================
 
 %%------------------------------------------------------------
-%% Recursive function to putkeys in the database
+%% Recursive function to put keys in the database
 %%------------------------------------------------------------
 
 putKeysObj(N) -> 
@@ -504,10 +504,16 @@ packObj_test() ->
 %%-----------------------------------------------------------------------
 
 putKeyNormalOps(Ref) ->
-    addKey(Ref, 1, [{<<"f1">>, 1}, {<<"f2">>, <<"test1">>}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
-    addKey(Ref, 2, [{<<"f1">>, 2}, {<<"f2">>, <<"test2">>}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
-    addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, <<"test3">>}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
-    addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, <<"test4">>}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
+    putKeyNormalOps(Ref, msgpack).
+
+putKeyNormalOpsErlang(Ref) ->
+    putKeyNormalOps(Ref, erlang).
+
+putKeyNormalOps(Ref, Enc) ->
+    addKey(Ref, 1, [{<<"f1">>, 1}, {<<"f2">>, <<"test1">>}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}], Enc),
+    addKey(Ref, 2, [{<<"f1">>, 2}, {<<"f2">>, <<"test2">>}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}], Enc),
+    addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, <<"test3">>}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}], Enc),
+    addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, <<"test4">>}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}], Enc).
 
 defaultEvalFn({N,Nmatch}) ->
     (N > 0) and (N == Nmatch).
@@ -577,6 +583,16 @@ timestampOps_test() ->
     F = <<"f6">>,
     Val = 2000,
     PutFn = fun putKeyNormalOps/1,
+    EvalFn = fun defaultEvalFn/1,
+    Res = allOps({F, {Val}, timestamp, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+timestampOpsErlang_test() ->
+    io:format("timestampOps_test~n"),
+    F = <<"f6">>,
+    Val = 2000,
+    PutFn = fun putKeyNormalOpsErlang/1,
     EvalFn = fun defaultEvalFn/1,
     Res = allOps({F, {Val}, timestamp, PutFn, EvalFn}),
     ?assert(Res),

@@ -1271,6 +1271,8 @@ streaming_start(ErlNifEnv * env,
     const ERL_NIF_TERM end_key_term     = argv[2];
     const ERL_NIF_TERM options_list     = argv[3];
 
+    FOUT("Streaming start with range filter: " << ErlUtil::formatTerm(env, options_list));
+    
     ReferencePtr<DbObject> db_ptr;
     db_ptr.assign(DbObject::RetrieveDbObject(env, db_ref));
 

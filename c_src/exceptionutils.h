@@ -2,6 +2,7 @@
 #define EXCEPTIONUTILS_H
 
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <stdexcept>
 
@@ -16,4 +17,12 @@
     _macroOs << text;		\
     std::cout << '\r' << _macroOs.str() << std::endl << "\r";\
 }
+
+#define FOUT(text) {                                                    \
+        std::fstream outfile;                                           \
+        outfile.open("/tmp/eleveldb.txt", std::fstream::out|std::fstream::app); \
+        outfile << text << std::endl;                                   \
+        outfile.close();                                                \
+    }
+
 #endif
