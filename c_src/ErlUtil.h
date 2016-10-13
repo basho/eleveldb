@@ -85,6 +85,10 @@ namespace eleveldb {
         std::vector<unsigned char> getBinary(ERL_NIF_TERM term);
         static std::vector<unsigned char> getBinary(ErlNifEnv* env, ERL_NIF_TERM term);
 
+        std::vector<unsigned char> getBinaryOrEmptyList();
+        std::vector<unsigned char> getBinaryOrEmptyList(ERL_NIF_TERM term);
+        static std::vector<unsigned char> getBinaryOrEmptyList(ErlNifEnv* env, ERL_NIF_TERM term);
+
         std::vector<ERL_NIF_TERM> getListCells();
         std::vector<ERL_NIF_TERM> getListCells(ERL_NIF_TERM term);
         static std::vector<ERL_NIF_TERM> getListCells(ErlNifEnv* env, 

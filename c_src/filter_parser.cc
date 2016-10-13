@@ -124,7 +124,7 @@ parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
 
 template<> ExpressionNode<unsigned char*>* 
 parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext) {
-    std::vector<unsigned char> val = eleveldb::ErlUtil::getBinary(env, operand);
+    std::vector<unsigned char> val = eleveldb::ErlUtil::getBinaryOrEmptyList(env, operand);
     return new ConstantValue<unsigned char*>(val);
 }
 

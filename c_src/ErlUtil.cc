@@ -319,19 +319,6 @@ std::vector<unsigned char> ErlUtil::getBinary(ErlNifEnv* env, ERL_NIF_TERM term)
 
     ErlNifBinary bin;
 
-    // SQL NULL represented as [] w/i Riak TS
-    if(enif_is_list(env, term)) {
-        unsigned length;
-        if(enif_get_list_length(env, term, &length)) {
-            if(length == 0) {
-                ret.resize(0);
-                return ret;
-            }
-        }
-        ThrowRuntimeError("Invalid list as binary, only empty list may be" <<
-                " treated as a binary");
-    }
-
     if(enif_inspect_binary(env, term, &bin) == 0)
         ThrowRuntimeError("Failed to inspect '" << formatTerm(env, term)
                           << "' as a binary");
@@ -341,6 +328,37 @@ std::vector<unsigned char> ErlUtil::getBinary(ErlNifEnv* env, ERL_NIF_TERM term)
 
     return ret;
 }
+
+std::vector<unsigned char> ErlUtil::getBinaryOrEmptyList()
+{
+    checkTerm();
+    return getBinaryOrEmptyList(term_);
+}
+
+std::vector<unsigned char> ErlUtil::getBinaryOrEmptyList(ERL_NIF_TERM term)
+{
+    checkEnv();
+    return getBinaryOrEmptyList(env_, term);
+}
+
+std::vector<unsigned char> ErlUtil::getBinaryOrEmptyList(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    // SQL NULL represented as [] w/i Riak TS
+    if(enif_is_list(env, term)) {
+        unsigned length;
+        if(enif_get_list_length(env, term, &length)) {
+            if(length == 0) {
+                std::vector<unsigned char> ret(0);
+                return ret;
+            }
+        }
+        ThrowRuntimeError("Invalid list as binary, only empty list may be" <<
+                " treated as a binary");
+    }
+
+    return getBinary(env, term);
+}
+
 
 std::string ErlUtil::getString()
 {

@@ -1017,9 +1017,11 @@ work_result RangeScanTask::DoWork()
                 if(range_filter_) {
 
                     //------------------------------------------------------------
-                    // Also check if the key can be parsed.  If TS-encoded
-                    // data and non-TS encoded data are interleaved, this
-                    // causes us to ignore the non-TS-encoded data
+                    // Also check if the key can be parsed.
+                    //
+                    // Since TS-encoded and non-TS-encoded data can NOT be
+                    // interleaved, we are throwing if the riak object contents
+                    // can not be parsed.
                     //------------------------------------------------------------
                     
                     if(extractor_->riakObjectContentsCanBeParsed(value.data(), value.size())) {
@@ -1034,7 +1036,6 @@ work_result RangeScanTask::DoWork()
 
                     } else {
                         ThrowRuntimeError("range_filter set, but couldn't parse riak object");
-                        filter_passed = false;
                     }
                 }
 

@@ -503,7 +503,12 @@ putKeyNormalOps(Ref) ->
                       10 -> [];
                       12 -> [];
                       _ -> I * 1000
-              end} %%<< sint64
+              end}, %%<< sint64 stored as a small num
+              {<<"f7">>, case I of
+                      10 -> [];
+                      12 -> [];
+                      _ -> 1467563367600 + I * 1000
+              end} %%<< sint64 stored as a big num
              ] || I <- lists:seq(1, FieldCount * 2) ], %%<< twice to store a NULL value for each field type
     lists:foreach(fun (Row) ->
                 I = element(2, hd(Row)),
@@ -878,6 +883,9 @@ isNullBoolean_test() ->
 isNullInteger_test() ->
     isNullFieldOfTypeTestFactory(true, <<"f6">>).
 
+isNullLargeInteger_test() ->
+    isNullFieldOfTypeTestFactory(true, <<"f7">>).
+
 isNotNullBinary_test() ->
     isNullFieldOfTypeTestFactory(false, <<"f2">>).
 
@@ -889,6 +897,9 @@ isNotNullBoolean_test() ->
 
 isNotNullInteger_test() ->
     isNullFieldOfTypeTestFactory(false, <<"f6">>).
+
+isNotNullLargeInteger_test() ->
+    isNullFieldOfTypeTestFactory(false, <<"f7">>).
 
 %%=======================================================================
 %% Test various exceptional conditions
