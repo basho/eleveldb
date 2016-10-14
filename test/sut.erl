@@ -445,7 +445,7 @@ match(V1,V2,CompFun) ->
     end.
 
 fieldsMatching(Vals, Field, CompVal, CompFun) ->
-%    io:format("Got Vals = ~p~n", [lists:flatten(Vals)]),
+    %% io:format("Got Vals = ~p~n", [lists:flatten(Vals)]),
     lists:foldl(fun(Val, {N, Nmatch}) -> 
 			{N + 1, Nmatch + match(Val, Field, CompVal, CompFun)} end, {0,0}, Vals).
 
@@ -477,18 +477,77 @@ packObj_test() ->
 %%-----------------------------------------------------------------------
 
 putKeyNormalOps(Ref) ->
-    addKey(Ref, 1, [{<<"f1">>, 1}, {<<"f2">>, <<"test1">>}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
-    addKey(Ref, 2, [{<<"f1">>, 2}, {<<"f2">>, <<"test2">>}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
-    addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, <<"test3">>}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
-    addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, <<"test4">>}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
+    FieldCount = 6,
+    Rows = [ [{<<"f1">>, I },
+              {<<"f2">>, case I of
+                      2 -> [];
+                      12 -> [];
+                      _ -> list_to_binary("test" ++ integer_to_list(I))
+              end}, %%<< varchar
+              {<<"f3">>, case I of
+                      4 -> [];
+                      12 -> [];
+                      _ -> I * 1.0
+              end}, %%<< double
+              {<<"f4">>, case I of
+                      6 -> [];
+                      12 -> [];
+                      _ -> I rem 2 =:= 0
+              end}, %%<< boolean
+              {<<"f5">>, case I of
+                      8 -> [];
+                      12 -> [];
+                      _ -> lists:seq(I, I + 2)
+              end}, %%<< list (not a TS type)
+              {<<"f6">>, case I of
+                      10 -> [];
+                      12 -> [];
+                      _ -> I * 1000
+              end}, %%<< sint64 stored as a small num
+              {<<"f7">>, case I of
+                      10 -> [];
+                      12 -> [];
+                      _ -> 1467563367600 + I * 1000
+              end} %%<< sint64 stored as a big num
+             ] || I <- lists:seq(1, FieldCount * 2) ], %%<< twice to store a NULL value for each field type
+    lists:foreach(fun (Row) ->
+                I = element(2, hd(Row)),
+                addKey(Ref, I, Row)
+        end, Rows).
 
+defaultEvalFn({Val,NullMatch=[]}) ->
+    ?assertEqual(Val, NullMatch);
+defaultEvalFn({Null=[], NullMatch}) ->
+    ?assertEqual(Null, NullMatch);
 defaultEvalFn({N,Nmatch}) ->
+    ?assertEqual(Nmatch, N),
     (N > 0) and (N == Nmatch).
 
 filterVal({FilterVal}) ->
     FilterVal;
 filterVal({FilterVal, _CompVal}) ->
     FilterVal.
+
+isNullOpsFactory(IsNull, Field, PutFn, EvalFn) ->
+    %% for NULL equality check, cast to binary is needed, the alternative of
+    %% creating an is_null and is_not_null expression w/i eleveldb is considered
+    %% but unless performance suffers, a binary comparison to reuse equality
+    %% and nonEquality comparitors is preferable.
+    Type = varchar,
+    Val = [],
+    Op = case IsNull of
+        true -> '=';
+        _ -> '!='
+    end,
+    Filter = {Op, {field, Field, Type}, {const, Val}},
+    Keys = streamFoldTest(Filter, PutFn),
+    EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 == V2 end)).
+
+isNullOps({Field, _Val, _Type, PutFn, EvalFn}) ->
+    isNullOpsFactory(true, Field, PutFn, EvalFn).
+
+isNotNullOps({Field, _Val, _Type, PutFn, EvalFn}) ->
+    isNullOpsFactory(false, Field, PutFn, EvalFn).
 
 eqOps({Field, Val, Type, PutFn, EvalFn}) ->
     Filter = {'=', {field, Field, Type}, {const, filterVal(Val)}},
@@ -620,10 +679,10 @@ boolOps_test() ->
 anyOps_test() ->
     io:format("anyOps_test~n"),
     F = <<"f5">>,
-    Val = sut:em([1,2,3]),
+    Val = em([1,2,3]),
     CompVal = [1,2,3],
-    PutFn  = fun sut:putKeyNormalOps/1,
-    EvalFn = fun sut:defaultEvalFn/1,
+    PutFn  = fun putKeyNormalOps/1,
+    EvalFn = fun defaultEvalFn/1,
     Res = eqOpsOnly({F, {Val, CompVal}, any, PutFn, EvalFn}) and (anyCompOps({F, {Val, CompVal}, any, PutFn, EvalFn}) == false),
     ?assert(Res),
     Res.
@@ -645,16 +704,19 @@ normalOpsTests() ->
 
 andOps_test() ->
     io:format("andOps_test~n"),
-    Cond1 = {'>', {field, <<"f1">>, sint64}, {const, 2}},
-    Cond2 = {'=', {field, <<"f3">>, double}, {const, 4.0}},
+    Cond1 = {'>', {field, <<"f1">>, sint64}, {const, 3}},
+    Cond2 = {'=', {field, <<"f3">>, double}, {const, 5.0}},
     Filter = {'and_', Cond1, Cond2},
-    PutFn  = fun sut:putKeyNormalOps/1,
+    PutFn  = fun putKeyNormalOps/1,
     Keys = streamFoldTest(Filter, PutFn),
-    {N1, NMatch1} = fieldsMatching(Keys, <<"f1">>, 2,   fun(V1,V2) -> V1 > V2 end),
-    {N3, NMatch3} = fieldsMatching(Keys, <<"f3">>, 4.0, fun(V1,V2) -> V1 == V2 end),
-    Res = (N1 == 1) and (NMatch1 == 1) and (N3 == 1) and (NMatch3 == 1),
-    ?assert(Res),
-    Res.
+    {N1, NMatch1} = fieldsMatching(Keys, <<"f1">>, 3,   fun(V1,V2) -> V1 > V2 end),
+    {N3, NMatch3} = fieldsMatching(Keys, <<"f3">>, 5.0, fun(V1,V2) -> V1 == V2 end),
+    ?assertEqual(1, N1),
+    ?assertEqual(1, NMatch1),
+    ?assertEqual(1, N3),
+    ?assertEqual(1, NMatch3),
+    pass.
+
 
 %%------------------------------------------------------------
 %% Test OR filtering
@@ -662,16 +724,18 @@ andOps_test() ->
 
 orOps_test() ->
     io:format("orOps_test~n"),
-    Cond1 = {'>', {field, <<"f1">>, sint64}, {const, 2}},
-    Cond2 = {'=', {field, <<"f3">>, double}, {const, 4.0}},
+    Cond1 = {'>', {field, <<"f1">>, sint64}, {const, 3}},
+    Cond2 = {'=', {field, <<"f3">>, double}, {const, 5.0}},
     Filter = {'or_', Cond1, Cond2},
-    PutFn  = fun sut:putKeyNormalOps/1,
+    PutFn  = fun putKeyNormalOps/1,
     Keys = streamFoldTest(Filter, PutFn),
-    {N1, NMatch1} = fieldsMatching(Keys, <<"f1">>, 2,   fun(V1,V2) -> V1 > V2 end),
-    {N3, NMatch3} = fieldsMatching(Keys, <<"f3">>, 4.0, fun(V1,V2) -> V1 == V2 end),
-    Res = (N1 == 2) and (NMatch1 == 2) and (N3 == 2) and (NMatch3 == 1),
-    ?assert(Res),
-    Res.
+    {N1, NMatch1} = fieldsMatching(Keys, <<"f1">>, 3,   fun(V1,V2) -> V1 > V2 end),
+    {N3, NMatch3} = fieldsMatching(Keys, <<"f3">>, 5.0, fun(V1,V2) -> V1 == V2 end),
+    ?assertEqual(7, N1),
+    ?assertEqual(7, NMatch1),
+    ?assertEqual(7, N3),
+    ?assertEqual(1, NMatch3),
+    pass.
 
 %%------------------------------------------------------------
 %% Test all AND + OR ops
@@ -773,12 +837,12 @@ badBool_test() ->
 badAny_test() ->
     io:format("badAny_test~n"),
     F = <<"f5">>,
-    Val = sut:em([1,2,3]),
+    Val = em([1,2,3]),
     CompVal = [1,2,3],
-    PutFn  = fun sut:putKeyNormalOps/1,
-    Res = neqOps({F, {Val, CompVal}, any, PutFn, fun({N,_}) -> N == 3 end}),
-    ?assert(Res),
-    Res.
+    PutFn  = fun putKeyNormalOps/1,
+    ExpectedRowCount = 9,
+    EvalFn = fun({N,_}) -> ?assertEqual(ExpectedRowCount, N) end,
+    neqOps({F, {Val, CompVal}, any, PutFn, EvalFn}).
 
 %%------------------------------------------------------------
 %% All abnormal ops tests
@@ -786,6 +850,56 @@ badAny_test() ->
 
 abnormalOpsTests() ->
     badInt_test() and badBinary_test() and badFloat_test() and badBool_test() and badTimestamp_test() and badAny_test().
+
+%%=======================================================================
+%% Test filter on IS NULL and IS NOT NULL
+%%=======================================================================
+isNullFieldOfTypeTestFactory(IsNull, Field) ->
+    %% if curious why varchar, see comment on isNullOpsFactory
+    Type = varchar,
+    Val = [],
+    CompVal = [],
+    PutFn = fun putKeyNormalOps/1,
+    ExpectedRowCount = case IsNull of
+        true -> 2;
+        _ -> 10
+    end,
+    EvalFn = fun({N,_}) -> ?assertEqual(ExpectedRowCount, N) end,
+    IsNullOpsFn = case IsNull of
+        true -> fun isNullOps/1;
+        _ -> fun isNotNullOps/1
+    end,
+    IsNullOpsFn({Field, {Val, CompVal}, Type, PutFn, EvalFn}).
+
+isNullBinary_test() ->
+    isNullFieldOfTypeTestFactory(true, <<"f2">>).
+
+isNullDouble_test() ->
+    isNullFieldOfTypeTestFactory(true, <<"f3">>).
+
+isNullBoolean_test() ->
+    isNullFieldOfTypeTestFactory(true, <<"f4">>).
+
+isNullInteger_test() ->
+    isNullFieldOfTypeTestFactory(true, <<"f6">>).
+
+isNullLargeInteger_test() ->
+    isNullFieldOfTypeTestFactory(true, <<"f7">>).
+
+isNotNullBinary_test() ->
+    isNullFieldOfTypeTestFactory(false, <<"f2">>).
+
+isNotNullDouble_test() ->
+    isNullFieldOfTypeTestFactory(false, <<"f3">>).
+
+isNotNullBoolean_test() ->
+    isNullFieldOfTypeTestFactory(false, <<"f4">>).
+
+isNotNullInteger_test() ->
+    isNullFieldOfTypeTestFactory(false, <<"f6">>).
+
+isNotNullLargeInteger_test() ->
+    isNullFieldOfTypeTestFactory(false, <<"f7">>).
 
 %%=======================================================================
 %% Test various exceptional conditions

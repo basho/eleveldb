@@ -328,19 +328,23 @@ public:
     virtual ~EqOperator() {};
 
     virtual bool evaluate() const {
+        // [] to represent NULL w/i Riak TS, which does NOT conflict w/ <<"">>.
+        // NOTE: comparison to NULL is always rewritten with NULL on the
+        // right-hand-side of the equality comparison
+        if(right_->size() == 0) {
+            return !left_->has_value();
+        }
 
         if(!BinaryExpression<bool,unsigned char*>::has_value())
-           return false;
+            return false;
 
         // If the sizes are equal, compare memory blocks
-
         if(left_->size() == right_->size()) {
             bool eq = (memcmp(left_->evaluate(), right_->evaluate(), left_->size()) == 0);
             return eq;
         }
 
         // Else not equal
-
         return false;
     }
 };
@@ -385,6 +389,12 @@ public:
     virtual ~NeqOperator() {};
 
     virtual bool evaluate() const {
+        // [] to represent NULL w/i Riak TS, which does NOT conflict w/ <<"">>.
+        // NOTE: comparison to NULL is always rewritten with NULL on the
+        // right-hand-side of the equality comparison
+        if(right_->size() == 0) {
+            return left_->has_value();
+        }
 
         if(!BinaryExpression<bool,unsigned char*>::has_value())
             return false;
