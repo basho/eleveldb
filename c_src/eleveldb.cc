@@ -37,6 +37,7 @@
 
 #include "CmpUtil.h"
 #include "ErlUtil.h"
+#include "EiUtil.h"
 
 #include "leveldb/db.h"
 #include "leveldb/env.h"
@@ -59,6 +60,28 @@
 #include "work_result.hpp"
 
 #include "leveldb/atomics.h"
+
+#define DOTEST(type, einame, index) {                 \
+        index=0;                                      \
+        type uli = 1467563367600, ruli=0;             \
+        char buf[1000];                               \
+        ei_encode_##einame(buf, &index, uli);            \
+        index=0;                                        \
+        ei_decode_##einame(buf, &index, &ruli);          \
+        COUT("uli = " << uli << " ruli = " << ruli << " index = " << index);  \
+        index=1;                                                        \
+        COUT("Type is: " << EiUtil::getType(buf, &index));              \
+        COUT("Type is: " << (char)EiUtil::getType(buf, &index));        \
+        COUT("Type is: " << EiUtil::typeOf(buf, &index));               \
+    }
+
+#define EXTEST(type, einame, data, index) {                              \
+        index=0;                                                        \
+        type ruli=0;                                                    \
+        int status = ei_decode_##einame((char*)&data[0], &index, &ruli);     \
+        COUT("status = " << status << " ruli = " << ruli);              \
+    }
+
 
 static ErlNifFunc nif_funcs[] =
 {
@@ -83,6 +106,8 @@ static ErlNifFunc nif_funcs[] =
     {"streaming_stop", 1, eleveldb::streaming_stop},
 
     {"current_usec",   0, eleveldb::currentMicroSeconds},
+
+    {"decodeei",   1, eleveldb::decodeei},
 };
 
 
@@ -776,6 +801,54 @@ async_open(
 }   // async_open
 
 ERL_NIF_TERM
+decodeei(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    try {
+        std::vector<unsigned char> data = ErlUtil::getBinary(env, argv[0]);
+
+        int index=0;
+
+        DOTEST(unsigned long, ulong, index);
+        DOTEST(unsigned long, ulong, index);
+#if 0
+        DOTEST(unsigned long long, ulonglong, index);
+        DOTEST(long, long, index);
+        DOTEST(long long, longlong, index);
+
+        EXTEST(unsigned long, ulong, data, index);
+        EXTEST(unsigned long long, ulonglong, data, index);
+        EXTEST(long, long, data, index);
+        EXTEST(long long, longlong, data, index);
+
+
+        ei_term term;
+        index=0;
+        int status = ei_decode_ei_term((char*)&data[0], &index, &term);
+        COUT("Status ei_term = " << status);
+        index = 0;
+        COUT("Index 0 print: " << EiUtil::printTerm((char*)&data[0], &index));
+        index = 1;
+        COUT("Index 1 print: " << EiUtil::printTerm((char*)&data[0], &index));
+#endif
+        
+        index=1;
+        unsigned int size;
+        bool isSigned;
+        COUT("isBig = " << EiUtil::isBig((char*)&data[0], &index, size, isSigned) << " size = " << size << " signed = " << isSigned);
+
+        COUT(EiUtil::formatTerm((char*)&data[0], &index));
+        
+        return ATOM_OK;
+    } catch(std::runtime_error& err) {
+        COUT("Caught an error: " << err.what());
+        return ATOM_ERROR;
+    }
+}
+    
+ERL_NIF_TERM
 async_write(
     ErlNifEnv* env,
     int argc,
@@ -1271,8 +1344,6 @@ streaming_start(ErlNifEnv * env,
     const ERL_NIF_TERM end_key_term     = argv[2];
     const ERL_NIF_TERM options_list     = argv[3];
 
-    FOUT("Streaming start with range filter: " << ErlUtil::formatTerm(env, options_list));
-    
     ReferencePtr<DbObject> db_ptr;
     db_ptr.assign(DbObject::RetrieveDbObject(env, db_ref));
 

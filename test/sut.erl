@@ -397,6 +397,7 @@ addKey(Ref, ValList, Acc, N) when is_integer(N) ->
     addKey(Ref, ValList, Acc, N, msgpack);
 
 addKey(Ref, KeyNum, ValList, Enc) ->
+%%    io:format("Putting ~p~n", [ValList]),
     Key = list_to_binary("key"++integer_to_list(KeyNum)),
     Obj = new(<<"bucket">>, Key, ValList),
     Val = to_binary(v1, Obj, Enc),
@@ -438,16 +439,19 @@ streamFoldTest(Filter, PutKeyFun) ->
 		 [getKeyVal(K,V) | Acc]
 	 end,
 
-    try 
-	Acc = eleveldb:fold(Ref, FF, [], Opts),
-	ok = eleveldb:close(Ref),
-	lists:reverse(Acc)
-    catch
-	error:_Error ->
-	    io:format(user, "Caught an error: closing db~n", []),
+    Keys = 
+	try 
+	    Acc = eleveldb:fold(Ref, FF, [], Opts),
 	    ok = eleveldb:close(Ref),
-	    []
-    end.
+	    lists:reverse(Acc)
+	catch
+	    error:_Error ->
+%%		io:format(user, "Caught an error: closing db~n", []),
+		ok = eleveldb:close(Ref),
+		[]
+	end,
+%%    io:format("Keys = ~p~n", [Keys]),
+    Keys.
 
 get_field(Field, List) ->
     lists:keyfind(Field, 1, List).
@@ -472,7 +476,7 @@ match(V1,V2,CompFun) ->
     end.
 
 fieldsMatching(Vals, Field, CompVal, CompFun) ->
-%    io:format("Got Vals = ~p~n", [lists:flatten(Vals)]),
+%%    io:format("Got Vals = ~p~n", [lists:flatten(Vals)]),
     lists:foldl(fun(Val, {N, Nmatch}) -> 
 			{N + 1, Nmatch + match(Val, Field, CompVal, CompFun)} end, {0,0}, Vals).
 
@@ -510,18 +514,209 @@ putKeyNormalOpsErlang(Ref) ->
     putKeyNormalOps(Ref, erlang).
 
 putKeyNormalOps(Ref, Enc) ->
-    addKey(Ref, 1, [{<<"f1">>, 1}, {<<"f2">>, <<"test1">>}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}], Enc),
-    addKey(Ref, 2, [{<<"f1">>, 2}, {<<"f2">>, <<"test2">>}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}], Enc),
-    addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, <<"test3">>}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}], Enc),
-    addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, <<"test4">>}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}], Enc).
+    Rows = getKeyNormalOps(),
+    lists:foreach(fun (Row) ->
+			  I = element(2, hd(Row)),
+			  addKey(Ref, I, Row, Enc)
+		  end, Rows).
 
-defaultEvalFn({N,Nmatch}) ->
+%------------------------------------------------------------
+% Return a list of keys used for testing
+%------------------------------------------------------------
+
+getKeyNormalOps() ->
+    FieldCount = 10,
+    VarIntFn = 
+	fun(I) ->
+		Prefactor = 
+		    case I rem 2 of
+			0 -> 
+			    1;
+			_ ->
+			    -1
+		    end,
+		AddFactor = 
+		    case (I-1) div 2 of
+			0 ->
+			    0;
+			1 ->
+			    256;
+			2 ->
+			    65536;
+			3 ->
+			    4294967296;
+			_ ->
+			    1099511627776
+		    end,
+		Prefactor * (I + AddFactor)
+	end,
+
+    Rows = [ [{<<"f1">>, I },
+              {<<"f2">>, list_to_binary("test" ++ integer_to_list(I))}, %%<< varchar
+	      {<<"f3">>, I * 1.0},                  %%<< double
+              {<<"f4">>, I rem 2 =:= 0},            %%<< boolean                                                                                                                           
+              {<<"f5">>, lists:seq(I, I + 2)},      %%<< list (not a TS type)                                                                                                              
+              {<<"f6">>, I * 1000},                 %%<< sint64                                                                                                                            
+              {<<"f7">>, 1467563367600 + I * 1000}, %%<< sint64 stored as a big num                                                                                                         
+              {<<"f8">>, VarIntFn(I)}               %%<< sint64 stored as a variety of types
+             ] || I <- lists:seq(1, FieldCount) ],
+    Rows.
+
+%------------------------------------------------------------
+% Return the appropriate put fn for whichever encoding we want to test
+%------------------------------------------------------------
+
+getPutFn(msgpack) ->
+    fun putKeyNormalOps/1;
+getPutFn(erlang) ->
+    fun putKeyNormalOpsErlang/1.
+
+%------------------------------------------------------------
+% Put realistic data
+%------------------------------------------------------------
+
+putKeyRealisticOpsMsgpack(Ref) ->
+    putKeyRealisticOps(Ref, msgpack).
+
+putKeyRealisticOpsErlang(Ref) ->
+    putKeyRealisticOps(Ref, erlang).
+
+putKeyRealisticOps(Ref, Enc) ->
+    Val1 = [{<<"sport_event_uuid">>,
+	     <<"596044d8-86f5-462f-8d94-65b25e7d3fe9">>},
+	    {<<"time">>,1467554464800},
+	    {<<"club_uuid">>,
+	     <<"tNwgAVF1CS4tzWmxLL5LJDYdGGAuS2AVwo0G">>},
+	    {<<"person_uuid">>,
+	     <<"qK1lJFn8QVsUDU1AoP2rYJnm6fr8EoCf6JSH">>},
+	    {<<"sport_uuid">>,
+	     <<"T9YB5aqbBWpLj5FOvcoedvBy3D5TTALuj8Q4">>},
+	    {<<"discipline_uuid">>,
+	     <<"V8tNVS1TVzLa51yo4mNeNUDcN1kq2FCxZe9t">>},
+	    {<<"driver_number">>,
+	     <<"PCPeOKzUocYL3qUy0DtE0ZjnNGbRlK4BXdxX">>},
+	    {<<"person_full_name">>,
+	     <<"8Opspn2qe8um1lhbHVJZOo317maFXocSnuA7">>},
+	    {<<"club_full_name">>,
+	     <<"rmkfVzaZg19Dx1HmbbqSX7chRFaCIPoFqbWM">>},
+	    {<<"abandoned">>,false},
+	    {<<"best_gap_in_time">>,20.0},
+	    {<<"best_gap_in_lap">>,36},
+	    {<<"best_lap">>,79.0},
+	    {<<"best_position">>,65},
+	    {<<"best_sector_1">>,59.0},
+	    {<<"best_sector_2">>,30.0},
+	    {<<"best_sector_3">>,5.0},
+	    {<<"best_speed">>,9.0},
+	    {<<"gap_in_time">>,58.0},
+	    {<<"gap_in_lap">>,56},
+	    {<<"lap_time">>,98.0},
+	    {<<"laps">>,10},
+	    {<<"position">>,59},
+	    {<<"qualification_position">>,77},
+	    {<<"sector_1">>,93.0},
+	    {<<"sector_2">>,3.0},
+	    {<<"sector_3">>,90.0},
+	    {<<"info">>,
+	     <<"9Sfd5IstDpsEhlvCiNt7l67EFKfFQsYGm6Yx">>}],
+
+    Val2 = [{<<"sport_event_uuid">>,
+	     <<"596044d8-86f5-462f-8d94-65b25e7d3fe9">>},
+	    {<<"time">>,1467554466600},
+	    {<<"club_uuid">>,
+	     <<"Zuu7nIHJ840uQxHP1ZTtTq0nA0e5GL8tiMje">>},
+	    {<<"person_uuid">>,
+	     <<"dNtk5xfshSZG8Edl0rYvQ58aJbdrtofoz12l">>},
+	    {<<"sport_uuid">>,
+	     <<"VuorLbl3CkjmRLooJavwXcFk1m6Wm512FPmd">>},
+	    {<<"discipline_uuid">>,
+	     <<"ruf0if1jlCUy4iMOyD3c5DctLrOdCQ0BxCH2">>},
+	    {<<"driver_number">>,
+	     <<"SEmursLHE1yfSq0ssfUQniVqObNiY105yzpD">>},
+	    {<<"person_full_name">>,
+	     <<"E6Ll1B5kI0RSSf9QRiWHEsJ8yiJzxd5tc1uF">>},
+	    {<<"club_full_name">>,
+	     <<"9wOLpIIKtbsg1GSVPMxekDQyXyCPeFoLuJR1">>},
+	    {<<"abandoned">>,false},
+	    {<<"best_gap_in_time">>,97.0},
+	    {<<"best_gap_in_lap">>,2},
+	    {<<"best_lap">>,49.0},
+	    {<<"best_position">>,32},
+	    {<<"best_sector_1">>,19.0},
+	    {<<"best_sector_2">>,67.0},
+	    {<<"best_sector_3">>,25.0},
+	    {<<"best_speed">>,83.0},
+	    {<<"gap_in_time">>,10.0},
+	    {<<"gap_in_lap">>,62},
+	    {<<"lap_time">>,71.0},
+	    {<<"laps">>,-1},
+	    {<<"position">>,2},
+	    {<<"qualification_position">>,34},
+	    {<<"sector_1">>,67.0},
+	    {<<"sector_2">>,44.0},
+	    {<<"sector_3">>,48.0},
+	    {<<"info">>,
+	     <<"3TRYQUE82rPIIPB1RWOe4B4JOpdjoJ3bPZCR">>}],
+    
+    Val3 = [{<<"sport_event_uuid">>,
+	     <<"596044d8-86f5-462f-8d94-65b25e7d3fe9">>},
+	    {<<"time">>,1467554468400},
+	    {<<"club_uuid">>,
+	     <<"XvMFBUzx24djxkEZnqGz0wlpYqQsWcOPHwPi">>},
+	    {<<"person_uuid">>,
+	     <<"PEUvlXlhrtsgsQaouWsBfTxDdf3DUGnwrrWz">>},
+	    {<<"sport_uuid">>,
+	     <<"CR1fvGlVMnjOLK1VSWlJn5uLrQqQaS94TQ8l">>},
+	    {<<"discipline_uuid">>,
+	     <<"7fjDrTMEkrr5LYZNw4sCLYWiyWUJXZEohyfc">>},
+	    {<<"driver_number">>,
+	     <<"casUj7A5Uwmk4VozCt06oMro28VY7zHiissc">>},
+	    {<<"person_full_name">>,
+	     <<"zsreozHdXuh5pQp1U6COE8yGPMQTJ7g9tPrY">>},
+	    {<<"club_full_name">>,
+	     <<"dVPy53WnTofMS7ebTk7TJwixLytijdEKTrA4">>},
+	    {<<"abandoned">>,false},
+	    {<<"best_gap_in_time">>,34.0},
+	    {<<"best_gap_in_lap">>,65},
+	    {<<"best_lap">>,58.0},
+	    {<<"best_position">>,18},
+	    {<<"best_sector_1">>,17.0},
+	    {<<"best_sector_2">>,50.0},
+	    {<<"best_sector_3">>,6.0},
+	    {<<"best_speed">>,26.0},
+	    {<<"gap_in_time">>,83.0},
+	    {<<"gap_in_lap">>,37},
+	    {<<"lap_time">>,24.0},
+	    {<<"laps">>,-1},
+	    {<<"position">>,4},
+	    {<<"qualification_position">>,12},
+	    {<<"sector_1">>,3.0},
+	    {<<"sector_2">>,35.0},
+	    {<<"sector_3">>,12.0},
+	    {<<"info">>,
+	     <<"NdJbBLK3Q2ew8thQ1eQaQpD9iXeaokWSxPoT">>}],
+	
+    addKey(Ref, 1, Val1, Enc),
+    addKey(Ref, 2, Val2, Enc),
+    addKey(Ref, 3, Val3, Enc).
+
+%------------------------------------------------------------
+% Default evaluation function checks that the total number of keys
+% returned from a filter is greater than zero and equals the expected
+% number of keys
+%------------------------------------------------------------
+
+defaultEvalFn({N, Nmatch}) ->
     (N > 0) and (N == Nmatch).
 
 filterVal({FilterVal}) ->
     FilterVal;
 filterVal({FilterVal, _CompVal}) ->
     FilterVal.
+
+%------------------------------------------------------------
+% Test each operation against the specified Field and Val
+%------------------------------------------------------------
 
 eqOps({Field, Val, Type, PutFn, EvalFn}) ->
     Filter = {'=', {field, Field, Type}, {const, filterVal(Val)}},
@@ -558,42 +753,59 @@ lteOps({Field, Val, Type, PutFn, EvalFn}) ->
     Keys = streamFoldTest(Filter, PutFn),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 =< V2 end)).
 
+%------------------------------------------------------------
+% All of the above operation tests
+%------------------------------------------------------------
+
 allOps(Args) ->
     eqOps(Args) and eqEqOps(Args) and neqOps(Args) and 
 	gtOps(Args) and gteOps(Args) and
 	ltOps(Args) and lteOps(Args).
 
+%------------------------------------------------------------
+% Only equality operations
+%------------------------------------------------------------
+
 eqOpsOnly(Args) ->
     eqOps(Args) and eqEqOps(Args) and neqOps(Args).
+
+
+%------------------------------------------------------------
+% All comparison operations
+%------------------------------------------------------------
 
 allCompOps(Args) ->
     gtOps(Args) and gteOps(Args) and
 	ltOps(Args) and lteOps(Args).
 
+%------------------------------------------------------------
+% Any comparison operation
+%------------------------------------------------------------
+
 anyCompOps(Args) ->
     gtOps(Args) or gteOps(Args) or
 	ltOps(Args) or lteOps(Args).
+
+%%=======================================================================
+%% Data-type specific tests
+%%=======================================================================
 
 %%------------------------------------------------------------
 %% Test timestamp operations
 %%------------------------------------------------------------
 
 timestampOps_test() ->
-    io:format("timestampOps_test~n"),
-    F = <<"f6">>,
-    Val = 2000,
-    PutFn = fun putKeyNormalOps/1,
-    EvalFn = fun defaultEvalFn/1,
-    Res = allOps({F, {Val}, timestamp, PutFn, EvalFn}),
-    ?assert(Res),
-    Res.
+    timestampOps(erlang) and timestampOps(msgpack).
 
-timestampOpsErlang_test() ->
-    io:format("timestampOps_test~n"),
+timestampOps(Enc) ->
+    io:format("timestampOps_test with ~p encoding~n", [Enc]),
     F = <<"f6">>,
     Val = 2000,
-    PutFn = fun putKeyNormalOpsErlang/1,
+    PutFn = getPutFn(Enc),
     EvalFn = fun defaultEvalFn/1,
+
+    %% Timestamps support all ops
+
     Res = allOps({F, {Val}, timestamp, PutFn, EvalFn}),
     ?assert(Res),
     Res.
@@ -603,11 +815,39 @@ timestampOpsErlang_test() ->
 %%------------------------------------------------------------
 
 sint64Ops_test() ->
-    io:format("sint64Ops_test~n"),
+    sint64Ops(msgpack) and sint64Ops(erlang).
+
+sint64Ops(Enc) ->
+    io:format("sint64Ops_test with ~p encoding~n", [Enc]),
     F = <<"f1">>,
     Val = 3,
-    PutFn = fun putKeyNormalOps/1,
+    PutFn = getPutFn(Enc),
     EvalFn = fun defaultEvalFn/1,
+
+    %% sint64s support all ops
+
+    Res = allOps({F, {Val}, sint64, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% Test variable-type integer operations (both msgpack and ttb encode
+%% integers differently according to value, field f8 is specifically
+%% designed to probe all possible cases)
+%%------------------------------------------------------------
+
+varIntOps_test() ->
+    varIntOps(msgpack) and varIntOps(erlang).
+
+varIntOps(Enc) ->
+    io:format("varIntOps_test with ~p encoding~n", [Enc]),
+    F = <<"f8">>,
+    Val = 2,
+    PutFn = getPutFn(Enc),
+    EvalFn = fun defaultEvalFn/1,
+
+    %% variable integers support all ops
+
     Res = allOps({F, {Val}, sint64, PutFn, EvalFn}),
     ?assert(Res),
     Res.
@@ -618,11 +858,17 @@ sint64Ops_test() ->
 %%------------------------------------------------------------
 
 varcharOps_test() ->
-    io:format("varcharOps_test~n"),
+    varcharOps(msgpack) and varcharOps(erlang).
+
+varcharOps(Enc) ->
+    io:format("varcharOps_test with ~p encoding~n", [Enc]),
     F = <<"f2">>,
     Val = <<"test3">>,
-    PutFn = fun putKeyNormalOps/1,
+    PutFn = getPutFn(Enc),
     EvalFn = fun defaultEvalFn/1,
+
+    %% varchar types support only equality operations
+
     Res = eqOpsOnly({F, {Val}, varchar, PutFn, EvalFn}) and (anyCompOps({F, {Val}, varchar, PutFn, EvalFn}) == false),
     ?assert(Res),
     Res.
@@ -633,11 +879,17 @@ varcharOps_test() ->
 %%------------------------------------------------------------
 
 doubleOps_test() ->
-    io:format("doubleOps_test~n"),
+    doubleOps(msgpack) and doubleOps(erlang).
+
+doubleOps(Enc) ->
+    io:format("doubleOps_test with ~p encoding~n", [Enc]),
     F = <<"f3">>,
     Val = 3.0,
-    PutFn = fun putKeyNormalOps/1,
+    PutFn = getPutFn(Enc),
     EvalFn = fun defaultEvalFn/1,
+
+    %% double types support all operations
+
     Res = allOps({F, {Val}, double, PutFn, EvalFn}),
     ?assert(Res),
     Res.
@@ -647,14 +899,44 @@ doubleOps_test() ->
 %%------------------------------------------------------------
 
 boolOps_test() ->
-    io:format("boolOps_test~n"),
+    boolOps(msgpack) and boolOps(erlang).
+
+boolOps(Enc) ->
+    io:format("boolOps_test with ~p encoding~n", [Enc]),
     F = <<"f4">>,
     Val = true,
-    PutFn = fun putKeyNormalOps/1,
+    PutFn = getPutFn(Enc),
     EvalFn = fun defaultEvalFn/1,
+
+    %% boolean types support only equality ops
+
     Res = eqOpsOnly({F, {Val}, boolean, PutFn, EvalFn}) and (anyCompOps({F, {Val}, boolean, PutFn, EvalFn}) == false),
     ?assert(Res),
     Res.
+
+%%------------------------------------------------------------
+%% Test filtering with realistic data
+%%------------------------------------------------------------
+
+realisticOps_test() ->
+    realisticOps(erlang) and realisticOps(msgpack).
+
+realisticOps(Enc) ->
+    io:format("realisticOps_test with ~p encoding~n", [Enc]),
+    F = <<"laps">>,
+    Val = 0,
+    PutFn = 
+	case Enc of 
+	    msgpack ->
+		fun putKeyRealisticOpsMsgpack/1;
+	    _ ->
+		fun putKeyRealisticOpsErlang/1
+	end,
+    EvalFn = fun defaultEvalFn/1,
+    Res = gteOps({F, {Val}, sint64, PutFn, EvalFn}),
+    ?assert(Res),
+    Res.
+
 
 %%------------------------------------------------------------
 %% Test any operations
@@ -709,10 +991,25 @@ orOps_test() ->
     Cond2 = {'=', {field, <<"f3">>, double}, {const, 4.0}},
     Filter = {'or_', Cond1, Cond2},
     PutFn  = fun sut:putKeyNormalOps/1,
+    AllKeys = getKeyNormalOps(),
+
+    {NTotal, NExpected1} = fieldsMatching(AllKeys, <<"f1">>, 2,   fun(V1,V2) -> V1 > V2 end),
+    {NTotal, NExpected3} = fieldsMatching(AllKeys, <<"f3">>, 4.0, fun(V1,V2) -> V1 == V2 end),
+
+    NExpected =
+	case NExpected1 > NExpected3 of
+	    true ->
+		NExpected1;
+	    _ ->
+		NExpected3
+	end,
+
     Keys = streamFoldTest(Filter, PutFn),
+
     {N1, NMatch1} = fieldsMatching(Keys, <<"f1">>, 2,   fun(V1,V2) -> V1 > V2 end),
-    {N3, NMatch3} = fieldsMatching(Keys, <<"f3">>, 4.0, fun(V1,V2) -> V1 == V2 end),
-    Res = (N1 == 2) and (NMatch1 == 2) and (N3 == 2) and (NMatch3 == 1),
+    {N1, NMatch3} = fieldsMatching(Keys, <<"f3">>, 4.0, fun(V1,V2) -> V1 == V2 end),
+
+    Res = (N1 == NExpected) and (NMatch1 == NExpected1) and (NMatch3 == NExpected3),
     ?assert(Res),
     Res.
 
@@ -736,6 +1033,11 @@ putKeyAbnormalOps(Ref) ->
     addKey(Ref, 2, [{<<"f1">>, 2.1}, {<<"f2">>, <<"test2">>}, {<<"f3">>,   2.0}, {<<"f4">>,   true}, {<<"f5">>, em([2,3,4])}, {<<"f6">>, -2000}]),
     addKey(Ref, 3, [{<<"f1">>,   3}, {<<"f2">>,           3}, {<<"f3">>, "3.0"}, {<<"f4">>,  false}, {<<"f5">>, em([3,4,5])}, {<<"f6">>,  3000}]),
     addKey(Ref, 4, [{<<"f1">>,   4}, {<<"f2">>, <<"test4">>}, {<<"f3">>,   4.0}, {<<"f4">>, "true"}, {<<"f5">>,           4}, {<<"f6">>,  4000}]).
+
+%%------------------------------------------------------------
+%% Evaluation for abnormal conditions checks that no matching records
+%% were returned
+%%------------------------------------------------------------
 
 abnormalEvalFn({N,_Nmatch}) ->
     (N == 0).
@@ -819,7 +1121,7 @@ badAny_test() ->
     Val = sut:em([1,2,3]),
     CompVal = [1,2,3],
     PutFn  = fun sut:putKeyNormalOps/1,
-    Res = neqOps({F, {Val, CompVal}, any, PutFn, fun({N,_}) -> N == 3 end}),
+    Res = neqOps({F, {Val, CompVal}, any, PutFn, fun({N,_}) -> N == 9 end}),
     ?assert(Res),
     Res.
 

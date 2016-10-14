@@ -1027,7 +1027,7 @@ std::string ErlUtil::formatTerm(ErlNifEnv* env, ERL_NIF_TERM term)
     }
 
     if(isBinary(env, term)) {
-        return formatBinary(env, term);
+        return formatAsString(env, term);
     }
 
     if(isString(env, term)) {
@@ -1084,6 +1084,14 @@ std::string ErlUtil::formatNumber(ErlNifEnv* env, ERL_NIF_TERM term)
     }
 
     return "?";
+}
+
+std::string ErlUtil::formatAsString(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    std::ostringstream os;
+    os << "\"" << getAsString(env, term) << "\"";
+
+    return os.str();
 }
 
 std::string ErlUtil::formatString(ErlNifEnv* env, ERL_NIF_TERM term)

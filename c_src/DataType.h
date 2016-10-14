@@ -43,7 +43,8 @@ namespace eleveldb {
       DOUBLE    =  0x80000,
       STRING    = 0x100000,
       MAP       = 0x200000,
-      TIMESTAMP = 0x400000
+      TIMESTAMP = 0x400000,
+      SMALL_BIG = 0x800000
     };
 
     /**

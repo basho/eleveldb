@@ -224,7 +224,8 @@ void Extractor::printMap(std::map<std::string, DataType::Type>& keyTypeMap)
 {
     for(std::map<std::string, DataType::Type>::iterator iter = keyTypeMap.begin();
         iter != keyTypeMap.end(); iter++) {
-        COUT(iter->first << " " << convertToSupportedCType(iter->second));
+        COUT("'" << iter->first << "' " << convertToSupportedCType(iter->second));
+        FOUT("'" << iter->first << "' " << convertToSupportedCType(iter->second));
     }
 }
 
@@ -353,7 +354,7 @@ DataType::Type Extractor::cTypeOf(ErlNifEnv* env, ERL_NIF_TERM tuple, bool throw
                     expr_fields_[fieldName] = specType;
 
                     // And return the type
-                    
+
                     return tsAtomToCtype(type, throwIfInvalid);
                 }
             }
@@ -582,8 +583,6 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
 
             DataType::Type specType = expr_fields_[key];
 
-            FOUT("Found field with specType = " << specType);
-            
             //------------------------------------------------------------
             // If there is no value for this field, do nothing
             //------------------------------------------------------------
@@ -606,8 +605,6 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
 
             } else {
 
-                FOUT("Trying to erxtract val");
-
                 try {
 
                     switch (specType) {
@@ -621,7 +618,6 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
                     {
                         int64_t val = CmpUtil::objectToInt64(&obj);
                         root->set_value(key, (void*)&val, specType);
-                        FOUT("Extracting val as INT64 val = " << val << " for key = " << key);
                     }
                     break;
                     case DataType::UINT64:
@@ -677,6 +673,7 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
                     break;
                     }
                 } catch(std::runtime_error& err) {
+
                     ThrowRuntimeError(err.what() 
                                       << std::endl << "While processing field: " << key);
                 }
@@ -783,8 +780,6 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
 {
     root->clear();
 
-    FOUT("Inside extractor erlang");
-    
     // First byte is the version
 
     int index=1;
@@ -806,13 +801,12 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
             ThrowRuntimeError("List must consist of {field, val} tuples: " << std::endl
                               << ErlUtil::formatBinary(data, size));
         }
-
+        
         //------------------------------------------------------------
         // First read the field key
         //------------------------------------------------------------
 
-        std::vector<unsigned char> bin = EiUtil::getBinary(data, &index);
-        std::string key((char*)&bin[0]);
+        std::string key = EiUtil::getBinaryAsString(data, &index);
 
 	//------------------------------------------------------------
 	// Next up is the field value
@@ -826,7 +820,6 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
         if(expr_fields_.find(key) != expr_fields_.end()) {
 
             DataType::Type specType = expr_fields_[key];
-            FOUT("Found field with specType = " << specType);
 
             //------------------------------------------------------------
             // If there is no value for this field, do nothing
@@ -848,7 +841,6 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
                 //------------------------------------------------------------
                 
             } else {
-                FOUT("Trying to erxtract val");
                 
                 try {
                 
@@ -857,28 +849,24 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
                     {
                         uint8_t val = EiUtil::objectToUint8(data, &index);
                         root->set_value(key, (void*)&val, specType);
-                        FOUT("Extracting val as UINT8 " << val << " for key " << key);
                     }
                     break;
                     case DataType::INT64:
                     {
                         int64_t val = EiUtil::objectToInt64(data, &index);
                         root->set_value(key, (void*)&val, specType);
-                        FOUT("Extracting val INT64 " << val << " for key " << key);
                     }
                     break;
                     case DataType::UINT64:
                     {
                         uint64_t val = EiUtil::objectToUint64(data, &index);
                         root->set_value(key, (void*)&val, DataType::UINT64);
-                        FOUT("Extracting val UINT64 " << val << " for key " << key);
                     }
                     break;
                     case DataType::DOUBLE:
                     {
                         double val = EiUtil::objectToDouble(data, &index);
                         root->set_value(key, (void*)&val, specType);
-                        FOUT("Extracting val DOUBLE " << val << " for key " << key);
                     }
                     break;
 
@@ -934,12 +922,7 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
             //------------------------------------------------------------
 
         } else {
-
-            // TODO: Need a skip function like CmpUtil here.
-            // formatTerm() is a proxy since it reads over the data,
-            // but it does other things too that we don't need
-
-            EiUtil::formatTerm(data, &index);
+            EiUtil::skipLastReadObject(data, &index);
         }
     }
 }

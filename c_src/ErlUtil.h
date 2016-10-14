@@ -142,6 +142,7 @@ namespace eleveldb {
         static std::string formatList(  ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatNumber(ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatString(ErlNifEnv* env, ERL_NIF_TERM term);
+        static std::string formatAsString(ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatTuple( ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatTupleVec(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& tuple);
 

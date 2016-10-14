@@ -972,7 +972,7 @@ work_result RangeScanTask::DoWork()
                 //------------------------------------------------------------
 
                 if(range_filter_) {
-                    FOUT("Using range filter");
+
                     //------------------------------------------------------------
                     // Also check if the key can be parsed.  If TS-encoded
                     // data and non-TS encoded data are interleaved, this
@@ -988,7 +988,6 @@ work_result RangeScanTask::DoWork()
                         // that it exists in the map because
                         // riakObjectContentsCanBeParsed() would have
                         // returned false if it didn't)
-                        FOUT("Getting extractor for magic = " << (int)encMagic);
                         
                         extractor_ = extractorMap_.extractorNoCheck(encMagic);
 
@@ -1003,8 +1002,6 @@ work_result RangeScanTask::DoWork()
                         
                         filter_passed = range_filter_->evaluate();
 
-                        FOUT("Filter passed = " << filter_passed);
-                        
                     } else {
                         filter_passed = false;
                     }
@@ -1019,7 +1016,7 @@ work_result RangeScanTask::DoWork()
                 std::ostringstream os;
                 os << err.what() << std::endl << "While processing key: " 
                    << ErlUtil::formatBinary((unsigned char*)key.data(), key.size());
-                
+
                 sendMsg(msg_env, ATOM_STREAMING_ERROR, pid, os.str());
 
                 if(binaryAllocated)

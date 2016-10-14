@@ -34,6 +34,19 @@ namespace eleveldb {
 
     class EiUtil {
     public:
+
+        struct Big {
+
+            bool isSigned_;
+            unsigned size_;
+            uint64_t val_;
+
+            Big() {
+                isSigned_ = false;
+                size_     = 0;
+                val_      = 0;
+            };
+        };
         
         /**
          * Constructor.
@@ -72,7 +85,11 @@ namespace eleveldb {
         FN_DECL(bool, isString);
         FN_DECL(bool, isList);
         FN_DECL(bool, isBinary);
+
         FN_DECL(bool, isBig);
+        FN_DECL(bool, canBeUint64);
+        static bool isBig(char* buf, int* index, unsigned& size, bool& isSigned);
+        
         FN_DECL(bool, isFun);
         
         static bool isInteger(int type);
@@ -107,16 +124,22 @@ namespace eleveldb {
         FN_DECL(unsigned long, getUlong);
         FN_DECL(int64_t,       getInt64);
         FN_DECL(uint64_t,      getUint64);
+        FN_DECL(Big,           getBig);
+        FN_DECL(uint64_t,      getBigAsUint64);
         FN_DECL(std::vector<unsigned, char> getBinary);
+        FN_DECL(std::string, getBinaryAsString);
         
         FN_DECL(std::string, formatAtom);
         FN_DECL(std::string, formatInteger);
+        FN_DECL(std::string, formatBig);
         FN_DECL(std::string, formatFloat);
         FN_DECL(std::string, formatTuple);
         FN_DECL(std::string, formatBinary);
         FN_DECL(std::string, formatString);
         FN_DECL(std::string, formatList);
-        
+
+        FN_DECL(void, skipTuple);
+        FN_DECL(void, skipList);
         FN_DECL(void, skipLastReadObject);
         
         std::map<std::string, DataType::Type> parseMap();

@@ -106,3 +106,8 @@ void StringBuf::resize(size_t size)
         bufSize_    = size;
     }
 }
+
+std::string StringBuf::getString()
+{
+    return bufPtr_;
+}

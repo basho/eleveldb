@@ -61,6 +61,11 @@ namespace eleveldb {
 
         char*  getBuf();
 
+        // Return a string representation of the internal buffer
+        // (assumed to be null-terminated)
+        
+        std::string getString();
+        
     private:
 
         void initialize();
