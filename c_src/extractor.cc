@@ -922,7 +922,8 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
             //------------------------------------------------------------
 
         } else {
-            EiUtil::skipLastReadObject(data, &index);
+//            EiUtil::skipLastReadObject(data, &index);
+            EiUtil::skipNext(data, &index);
         }
     }
 }

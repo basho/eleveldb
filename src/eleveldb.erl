@@ -45,6 +45,7 @@
          encode/2,
          decodeei/1,
          decodeterm/1,
+         skipterm/2,
          current_usec/0]).
 
 %% for testing
@@ -184,7 +185,10 @@ encode(Val, _) ->
     term_to_binary(Val).
 
 decodeterm(Term) ->
-    decodeei(term_to_binary(Term)).
+    decodeei({term_to_binary(Term), decode}).
+
+skipterm(Term, N) ->
+    decodeei({term_to_binary(Term), skip, N}).
 
 decodeei(_Bin) ->
     erlang:nif_error({error, not_loaded}).

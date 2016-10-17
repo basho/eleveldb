@@ -141,7 +141,11 @@ namespace eleveldb {
         FN_DECL(void, skipTuple);
         FN_DECL(void, skipList);
         FN_DECL(void, skipLastReadObject);
-        
+
+        static void skipNext(char* buf, int* index);
+        static unsigned int getUint(char* buf);
+        static unsigned short getUshort(char* buf);
+
         std::map<std::string, DataType::Type> parseMap();
         static std::map<std::string, DataType::Type> parseMap(char* buf, int* index);
 

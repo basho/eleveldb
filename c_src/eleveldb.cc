@@ -806,42 +806,46 @@ decodeei(
     int argc,
     const ERL_NIF_TERM argv[])
 {
+    // We allow decodeei to be called with the following semantics
+    //
+    // {Bin, decode}
+    // {Bin, skip, Nrecord}
+   
     try {
-        std::vector<unsigned char> data = ErlUtil::getBinary(env, argv[0]);
 
-        int index=0;
-
-        DOTEST(unsigned long, ulong, index);
-        DOTEST(unsigned long, ulong, index);
-#if 0
-        DOTEST(unsigned long long, ulonglong, index);
-        DOTEST(long, long, index);
-        DOTEST(long long, longlong, index);
-
-        EXTEST(unsigned long, ulong, data, index);
-        EXTEST(unsigned long long, ulonglong, data, index);
-        EXTEST(long, long, data, index);
-        EXTEST(long long, longlong, data, index);
-
-
-        ei_term term;
-        index=0;
-        int status = ei_decode_ei_term((char*)&data[0], &index, &term);
-        COUT("Status ei_term = " << status);
-        index = 0;
-        COUT("Index 0 print: " << EiUtil::printTerm((char*)&data[0], &index));
-        index = 1;
-        COUT("Index 1 print: " << EiUtil::printTerm((char*)&data[0], &index));
-#endif
+        std::vector<ERL_NIF_TERM> cells = ErlUtil::getTupleCells(env, argv[0]);
         
-        index=1;
-        unsigned int size;
-        bool isSigned;
-        COUT("isBig = " << EiUtil::isBig((char*)&data[0], &index, size, isSigned) << " size = " << size << " signed = " << isSigned);
+        std::vector<unsigned char> data = ErlUtil::getBinary(env, cells[0]);
+        std::string op = ErlUtil::getAtom(env, cells[1]);
 
-        COUT(EiUtil::formatTerm((char*)&data[0], &index));
+        if(op == "decode") {
+
+            int index=1;
+            COUT(EiUtil::formatTerm((char*)&data[0], &index));
+
+        } else if(op == "skip") {
+
+            unsigned nel = ErlUtil::getValAsUint32(env, cells[2]);
+
+            int index=1;
+            char* buf = (char*)&data[0];
+            int opcode = (int)((unsigned char)buf[index]);
+
+            if(opcode != 108) 
+                ThrowRuntimeError("Not a list");
+
+            index += 5;
+
+            for(unsigned i=0; i < nel; i++) 
+                EiUtil::skipNext((char*)&data[0], &index);
+
+            // Now format the next item
+            
+            COUT(EiUtil::formatTerm((char*)&data[0], &index));
+        }
         
         return ATOM_OK;
+        
     } catch(std::runtime_error& err) {
         COUT("Caught an error: " << err.what());
         return ATOM_ERROR;

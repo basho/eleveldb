@@ -709,9 +709,9 @@ FN_DEF(std::string, formatTuple,
        int arity = getTupleHeader(buf, index);
        std::ostringstream os;
 
-       COUT("Arity = " << arity << " index = " << *index 
-            << " next byte = " << (unsigned)((unsigned char)buf[*index])
-            << " next byte = " << (unsigned)((unsigned char)buf[*index+1]));
+//       COUT("Arity = " << arity << " index = " << *index 
+//            << " next byte = " << (unsigned)((unsigned char)buf[*index])
+//            << " next byte = " << (unsigned)((unsigned char)buf[*index+1]));
        
        os << "{";
        for(unsigned iCell=0; iCell < arity; iCell++) {
@@ -941,12 +941,10 @@ FN_DEF(uint64_t, getBigAsUint64,
 
        unsigned size=0;
        bool isSigned=0;
-       COUT("GetBig index = " << *index);
+
        if(!isBig(buf, index, size, isSigned))
            ThrowRuntimeError("Binary data is not a big");
 
-       COUT("GetBig(1) index = " << *index);
-       
        if(isSigned) 
            ThrowRuntimeError("This is a signed type -- can't convert to uint64");
 
@@ -957,7 +955,6 @@ FN_DEF(uint64_t, getBigAsUint64,
 
        char* valPtr = (char*)&val;
        for(unsigned i=0; i < size; i++) {
-           COUT("Bute = " << (unsigned)((unsigned char)buf[*index + 4 + i]));
            valPtr[i] = buf[*index + 3 + i];
        }
 
@@ -1341,4 +1338,159 @@ std::map<DataType::Type, EI_CONV_DOUBLE_FN(*)>  EiUtil::constructDoubleMap()
     std::map<DataType::Type, EI_CONV_DOUBLE_FN(*)> convMap;
     CONSTRUCT_EI_CONV_MAP(double);
     return convMap;
+}
+
+//-----------------------------------------------------------------------
+// Test function to skip the next item in this buffer.  index should
+// point to a valid opcode on entry
+//-----------------------------------------------------------------------
+
+unsigned int EiUtil::getUint(char* buf)
+{
+    unsigned int ret=0;
+    char* iPtr = (char*)&ret;
+    for(unsigned i=0; i < 4; i++) {
+        iPtr[3-i] = *(buf + i);
+    }
+
+    return ret;
+}
+
+unsigned short EiUtil::getUshort(char* buf)
+{
+    unsigned short ret=0;
+    char* iPtr = (char*)&ret;
+    for(unsigned i=0; i < 2; i++)
+        iPtr[1-i] = *(buf + i);
+    return ret;
+}
+
+void EiUtil::skipNext(char* buf, int* index)
+{
+    unsigned int opcode = (unsigned int)((unsigned char)buf[*index]);
+
+//    COUT("Inside skipNext wiht opcode = " << opcode << " index = " << *index);
+//    COUT("opcode = " << (int)((unsigned char) *(buf + *index)));
+//       
+//    for(unsigned i=0; i < 4; i++) {
+//        COUT("Byte " << (*index + i) << " = " << (int)((unsigned char)buf[*index+i]));
+//    }
+            
+    switch (opcode) {
+        //------------------------------------------------------------
+        // uint8 -- opcode, followed by 1-byte val
+        //------------------------------------------------------------
+    case 97:
+    {
+        *index += 2;
+    }
+    break;
+    //------------------------------------------------------------
+    // int32 -- opcode, followed by 4-byte val
+    //------------------------------------------------------------
+    case 98:
+    {
+        *index += 5;
+    }
+    break;
+    //------------------------------------------------------------
+    // double -- opcode, followed by 31-byte val
+    //------------------------------------------------------------
+    case 99:
+    {
+        *index += 32;
+    }
+    break;
+    //------------------------------------------------------------
+    // binary -- opcode, followed by 4-byte size, followed by bytes
+    //------------------------------------------------------------
+    case 109:
+    {
+        unsigned int nbyte = getUint(buf + *index + 1);
+        *index += (5 + nbyte);
+    }
+    break;
+    //------------------------------------------------------------
+    // big int -- opcode followed by 2 header bytes:
+    //
+    //   first byte is #bytes
+    //   second is #signed
+    //
+    //   rest is bytes
+    // 
+    // So we skip nbyte + 2 (header) + 1 (opcode)
+    //------------------------------------------------------------
+    case 110:
+    {
+        unsigned int nbyte = (unsigned int)((unsigned char)buf[*index + 1]);
+        *index += nbyte + 3;
+    }
+    break;
+    //------------------------------------------------------------
+    // empty list -- no data, just opcode (1)
+    //------------------------------------------------------------
+    case 106:
+    {
+        *index += 1;
+    }
+    break;
+    //------------------------------------------------------------
+    // tuple -- opcode followed by 1 header byte:
+    //
+    //   first byte is #elements
+    //
+    // So we skip 1 (header) + 1 (opcode), then skip each element in
+    // turn
+    //------------------------------------------------------------
+    case 104:
+    {
+        unsigned int nelem = (unsigned int)((unsigned char)buf[*index + 1]);
+        *index += 2;
+        for(unsigned i=0; i < nelem; i++)
+            skipNext(buf, index);
+    }
+    break;
+    //------------------------------------------------------------
+    // atom -- opcode, followed by 2 header bytes:
+    //
+    //   two bytes are size
+    //
+    // So we skip 2 (size) + 1 (opcode)
+    //------------------------------------------------------------
+    case 100:
+    {
+        unsigned short size = getUshort(buf + *index + 1);
+        *index += size + 3;
+    }
+    break;
+    //------------------------------------------------------------
+    // list of single-byte types -- opcode, followed by two-byte size,
+    // just like atom, only different opcode
+    //------------------------------------------------------------
+    case 107:
+    {
+        unsigned short size = getUshort(buf + *index + 1);
+        *index += size + 3;
+    }
+    break;
+    //------------------------------------------------------------
+    // List of arbitrary types -- opcode, followed by 4-byte nelem, followed by elements
+    //
+    //   four bytes are size
+    //   then each element in turn
+    //   terminated by empty list (opcode 106)
+    //------------------------------------------------------------
+    case 108:
+    {
+        unsigned int nelem = getUint(buf + *index + 1);
+        *index += 5;
+        for(unsigned i=0; i < nelem+1; i++) 
+            skipNext(buf, index);
+    }
+    break;
+    default:
+        ThrowRuntimeError("Unsupported term encountered -- can't skip");
+    }
+
+    return;
 }
