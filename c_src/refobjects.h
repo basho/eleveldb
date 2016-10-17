@@ -207,6 +207,8 @@ private:
     DbObject& operator=(const DbObject&);   // nocopyassign
 };  // class DbObject
 
+typedef ReferencePtr<class DbObject> DbObjectPtr_t;
+
 
 /**
  * A self deleting wrapper to contain leveldb iterator.
@@ -303,6 +305,7 @@ private:
 
 };  // LevelIteratorWrapper
 
+typedef ReferencePtr<LevelIteratorWrapper> LevelIteratorWrapperPtr_t;
 
 
 /**
@@ -328,7 +331,7 @@ protected:
     static ErlNifResourceType* m_Itr_RESOURCE;
 
 public:
-    ItrObject(DbObject *, bool, leveldb::ReadOptions &);
+    ItrObject(DbObjectPtr_t &, bool, leveldb::ReadOptions &);
 
     virtual ~ItrObject(); // needs to perform free_itr
 
@@ -336,7 +339,7 @@ public:
 
     static void CreateItrObjectType(ErlNifEnv * Env);
 
-    static void * CreateItrObject(DbObject * Db, bool KeysOnly, leveldb::ReadOptions & Options);
+    static void * CreateItrObject(DbObjectPtr_t & Db, bool KeysOnly, leveldb::ReadOptions & Options);
 
     static ItrObject * RetrieveItrObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm,
                                          bool ItrClosing=false);
@@ -351,6 +354,8 @@ private:
     ItrObject & operator=(const ItrObject &); // no assignment
 
 };  // class ItrObject
+
+typedef ReferencePtr<class ItrObject> ItrObjectPtr_t;
 
 } // namespace eleveldb
 

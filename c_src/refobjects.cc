@@ -453,7 +453,7 @@ ItrObject::CreateItrObjectType(
 
 void *
 ItrObject::CreateItrObject(
-    DbObject * DbPtr,
+    DbObjectPtr_t & DbPtr,
     bool KeysOnly,
     leveldb::ReadOptions & Options)
 {
@@ -530,13 +530,13 @@ ItrObject::ItrObjectResourceCleanup(
 
 
 ItrObject::ItrObject(
-    DbObject * DbPtr,
+    DbObjectPtr_t & DbPtr,
     bool KeysOnly,
     leveldb::ReadOptions & Options)
     : keys_only(KeysOnly), m_ReadOptions(Options), reuse_move(NULL),
       m_DbPtr(DbPtr), itr_ref_env(NULL)
 {
-    if (NULL!=DbPtr)
+    if (NULL!=DbPtr.get())
         DbPtr->AddReference(this);
 
 }   // ItrObject::ItrObject

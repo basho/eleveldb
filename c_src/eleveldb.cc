@@ -727,7 +727,7 @@ async_write(
     fold(env, argv[3], parse_write_option, *opts);
 
     eleveldb::WorkTask* work_item = new eleveldb::WriteTask(env, caller_ref,
-                                                            db_ptr.get(), batch, opts);
+                                                            db_ptr, batch, opts);
 
     if(false == priv.thread_pool.Submit(work_item))
     {
@@ -770,7 +770,7 @@ async_get(
     fold(env, opts_ref, parse_read_option, opts);
 
     eleveldb::WorkTask *work_item = new eleveldb::GetTask(env, caller_ref,
-                                                          db_ptr.get(), key_ref, opts);
+                                                          db_ptr, key_ref, opts);
 
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
 
@@ -817,7 +817,7 @@ async_iterator(
     fold(env, options_ref, parse_read_option, opts);
 
     eleveldb::WorkTask *work_item = new eleveldb::IterTask(env, caller_ref,
-                                                           db_ptr.get(), keys_only, opts);
+                                                           db_ptr, keys_only, opts);
 
     // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
     eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
@@ -983,7 +983,7 @@ async_iterator_move(
         eleveldb::MoveTask * move_item;
 
         move_item = new eleveldb::MoveTask(env, caller_ref,
-                                           itr_ptr->m_Iter.get(), action);
+                                           itr_ptr->m_Iter, action);
 
         // prevent deletes during worker loop
         move_item->RefInc();
@@ -1046,7 +1046,7 @@ async_close(
         && db_ptr->ClaimCloseFromCThread())
     {
         eleveldb::WorkTask *work_item = new eleveldb::CloseTask(env, caller_ref,
-                                                                db_ptr.get());
+                                                                db_ptr);
 
         // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
         eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
@@ -1091,7 +1091,7 @@ async_iterator_close(
     if (itr_ptr->ClaimCloseFromCThread())
     {
         eleveldb::WorkTask *work_item = new eleveldb::ItrCloseTask(env, caller_ref,
-                                                                   itr_ptr.get());
+                                                                   itr_ptr);
 
         // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
         eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));

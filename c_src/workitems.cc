@@ -79,7 +79,7 @@ WorkTask::WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref)
 }   // WorkTask::WorkTask
 
 
-WorkTask::WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref, DbObject * DbPtr)
+WorkTask::WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref, DbObjectPtr_t & DbPtr)
     : m_DbPtr(DbPtr), terms_set(false)
 {
     if (NULL!=caller_env)
