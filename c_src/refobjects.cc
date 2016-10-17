@@ -341,7 +341,7 @@ DbObject::Shutdown()
 //            if (leveldb::compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr, (ItrObject *)NULL))
             if (itr_ptr->ClaimCloseFromCThread())
             {
-                itr_ptr->m_Iter->LogIterator();
+                itr_ptr->m_Wrap.LogIterator();
                 itr_ptr->ItrObject::InitiateCloseRequest();
             }   // if
         }   // if
@@ -388,21 +388,22 @@ DbObject::RemoveReference(
  */
 
 LevelIteratorWrapper::LevelIteratorWrapper(
-    ItrObject * ItrPtr,
-    bool KeysOnly,
-    leveldb::ReadOptions & Options,
-    ERL_NIF_TERM itr_ref)
-    : m_DbPtr(ItrPtr->m_DbPtr.get()), m_ItrPtr(ItrPtr), m_Snapshot(NULL), m_Iterator(NULL),
-      m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false),
-      m_Options(Options), itr_ref(itr_ref),
+    DbObjectPtr_t & DbPtr,                  //!< db access for local iterator rebuild
+    leveldb::ReadOptions & Options)         //!< options to use in iterator rebuild
+    : m_DbPtr(DbPtr), m_Options(Options),
+      m_Snapshot(NULL), m_Iterator(NULL),
+      m_HandoffAtomic(0), m_PrefetchStarted(false),
       m_IteratorStale(0), m_StillUse(true),
-      m_IteratorCreated(0), m_LastLogReport(0), m_MoveCount(0), m_IsValid(false)
+//      m_IteratorCreated(0), m_LastLogReport(0), m_MoveCount(0),
+      m_IsValid(false)
 {
+#if 0
     struct timeval tv;
 
     gettimeofday(&tv, NULL);
     m_IteratorCreated=tv.tv_sec;
     m_LastLogReport=tv.tv_sec;
+#endif
 
     RebuildIterator();
 
@@ -533,7 +534,9 @@ ItrObject::ItrObject(
     DbObjectPtr_t & DbPtr,
     bool KeysOnly,
     leveldb::ReadOptions & Options)
-    : keys_only(KeysOnly), m_ReadOptions(Options), reuse_move(NULL),
+    : keys_only(KeysOnly), m_ReadOptions(Options),
+      m_Wrap(DbPtr, m_ReadOptions),
+      reuse_move(NULL),
       m_DbPtr(DbPtr), itr_ref_env(NULL)
 {
     if (NULL!=DbPtr.get())
@@ -572,8 +575,8 @@ ItrObject::Shutdown()
     //   release when move object destructs)
     ReleaseReuseMove();
 
-    // ItrObject and m_Iter each hold pointers to other, release ours
-    m_Iter.assign(NULL);
+    // ItrObject and m_Wrap each hold pointers to other, release ours
+//    m_Wrap.assign(NULL);
 
     return;
 

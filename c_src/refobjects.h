@@ -215,37 +215,41 @@ typedef ReferencePtr<class DbObject> DbObjectPtr_t;
  *   Used when an ItrObject needs to skip around and might
  *   have a background MoveItem performing a prefetch on existing
  *   iterator.
+ *
+ *   Oct 17, 2016:  new usage model does not require the Wrapper
+ *   be replaced for reuse after Seeks.  Converting to static object
  */
 
-class LevelIteratorWrapper : public RefObject
+class LevelIteratorWrapper
 {
 public:
-    ReferencePtr<DbObject> m_DbPtr;           //!< need to keep db open for delete of this object
-    ReferencePtr<class ItrObject> m_ItrPtr;         //!< shared itr_ref requires we hold ItrObject
+    DbObjectPtr_t m_DbPtr;                    //!< access to db for iterator rebuild
+    leveldb::ReadOptions & m_Options;         //!< ItrObject's ReadOptions struct
+                                              //     (updates "snapshot" member
+
     const leveldb::Snapshot * m_Snapshot;
     leveldb::Iterator * m_Iterator;
     volatile uint32_t m_HandoffAtomic;        //!< matthew's atomic foreground/background prefetch flag.
-    bool m_KeysOnly;                          //!< only return key values
+
     // m_PrefetchStarted must use uint32_t instead of bool for Solaris CAS operations
     volatile uint32_t m_PrefetchStarted;          //!< true after first prefetch command
-    leveldb::ReadOptions m_Options;           //!< local copy of ItrObject::options
-    ERL_NIF_TERM itr_ref;                     //!< shared copy of ItrObject::itr_ref
 
     // only used if m_Options.iterator_refresh == true
     std::string m_RecentKey;                  //!< Most recent key returned
     time_t m_IteratorStale;                   //!< time iterator should refresh
     bool m_StillUse;                          //!< true if no error or key end seen
 
+#if 0
     // debug data for hung iteratos
     time_t m_IteratorCreated;                 //!< time constructor called
     time_t m_LastLogReport;                   //!< LOG message was last written
     size_t m_MoveCount;                       //!< number of calls to MoveItem
+#endif
 
     // read by Erlang thread, maintained by eleveldb MoveItem::DoWork
     volatile bool m_IsValid;                  //!< iterator state after last operation
 
-    LevelIteratorWrapper(ItrObject * ItrPtr, bool KeysOnly,
-                         leveldb::ReadOptions & Options, ERL_NIF_TERM itr_ref);
+    LevelIteratorWrapper(DbObjectPtr_t & DbPtr, leveldb::ReadOptions & Options);
 
     virtual ~LevelIteratorWrapper()
     {
@@ -314,10 +318,9 @@ typedef ReferencePtr<LevelIteratorWrapper> LevelIteratorWrapperPtr_t;
 class ItrObject : public ErlRefObject
 {
 public:
-    ReferencePtr<LevelIteratorWrapper> m_Iter;
-
     bool keys_only;
     leveldb::ReadOptions m_ReadOptions; //!< local copy, pass to LevelIteratorWrapper only
+    LevelIteratorWrapper m_Wrap;
 
     volatile class MoveTask * reuse_move;  //!< iterator work object that is reused instead of lots malloc/free
 

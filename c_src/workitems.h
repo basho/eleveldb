@@ -281,9 +281,6 @@ protected:
         itr_ptr->itr_ref_env = enif_alloc_env();
         itr_ptr->itr_ref = enif_make_copy(itr_ptr->itr_ref_env, caller_ref());
 
-        itr_ptr->m_Iter.assign(new LevelIteratorWrapper(itr_ptr, keys_only,
-                                                        options, itr_ptr->itr_ref));
-
         ERL_NIF_TERM result = enif_make_resource(local_env(), itr_ptr_ptr);
 
         // release reference created during CreateItrObject()
@@ -301,7 +298,7 @@ public:
     typedef enum { FIRST, LAST, NEXT, PREV, SEEK, PREFETCH, PREFETCH_STOP } action_t;
 
 protected:
-    ReferencePtr<LevelIteratorWrapper> m_ItrWrap;             //!< access to database, and holds reference
+    ItrObjectPtr_t m_Itr;
 
 public:
     action_t                                       action;
@@ -311,9 +308,9 @@ public:
 
     // No seek target:
     MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
-             LevelIteratorWrapperPtr_t & IterWrap, action_t& _action)
-        : WorkTask(NULL, _caller_ref, IterWrap->m_DbPtr),
-        m_ItrWrap(IterWrap), action(_action)
+             ItrObjectPtr_t & Iter, action_t& _action)
+        : WorkTask(NULL, _caller_ref, Iter->m_DbPtr),
+        m_Itr(Iter), action(_action)
     {
         // special case construction
         local_env_=NULL;
@@ -322,10 +319,10 @@ public:
 
     // With seek target:
     MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
-             LevelIteratorWrapperPtr_t & IterWrap, action_t& _action,
+             ItrObjectPtr_t & Iter, action_t& _action,
              std::string& _seek_target)
-        : WorkTask(NULL, _caller_ref, IterWrap->m_DbPtr),
-        m_ItrWrap(IterWrap), action(_action),
+        : WorkTask(NULL, _caller_ref, Iter->m_DbPtr),
+        m_Itr(Iter), action(_action),
         seek_target(_seek_target)
         {
             // special case construction

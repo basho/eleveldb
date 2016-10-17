@@ -873,12 +873,12 @@ async_iterator_move(
     }   // if
 
     // debug syslog(LOG_ERR, "move state: %d, %d, %d",
-    //              action, itr_ptr->m_Iter->m_PrefetchStarted, itr_ptr->m_Iter->m_HandoffAtomic);
+    //              action, itr_ptr->m_Wrap.m_PrefetchStarted, itr_ptr->m_Wrap.m_HandoffAtomic);
 
     // must set this BEFORE call to compare_and_swap ... or have potential
     //  for an "extra" message coming out of prefetch
-    prefetch_state = itr_ptr->m_Iter->m_PrefetchStarted;
-    itr_ptr->m_Iter->m_PrefetchStarted =  prefetch_state && (eleveldb::MoveTask::PREFETCH_STOP != action );
+    prefetch_state = itr_ptr->m_Wrap.m_PrefetchStarted;
+    itr_ptr->m_Wrap.m_PrefetchStarted =  prefetch_state && (eleveldb::MoveTask::PREFETCH_STOP != action );
 
     //
     // Three situations:
@@ -899,14 +899,14 @@ async_iterator_move(
         ret_term = enif_make_copy(env, itr_ptr->itr_ref);
 
         // force reply to be a message
-        itr_ptr->m_Iter->m_HandoffAtomic=1;
-        itr_ptr->m_Iter->m_PrefetchStarted=false;
+        itr_ptr->m_Wrap.m_HandoffAtomic=1;
+        itr_ptr->m_Wrap.m_PrefetchStarted=false;
     }   // if
 
     // case #2
     // before we launch a background job for "next iteration", see if there is a
     //  prefetch waiting for us
-    else if (leveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
+    else if (leveldb::compare_and_swap(&itr_ptr->m_Wrap.m_HandoffAtomic, 0, 1))
     {
         // nope, no prefetch ... await a message to erlang queue
         //  NOTE:  "else" clause of MoveTask::DoWork() could be running simultaneously
@@ -931,8 +931,8 @@ async_iterator_move(
         //  (this is an absolute must since worker thread could change to false if
         //   hits end of key space and its execution overlaps this block's execution)
         int cas_temp((eleveldb::MoveTask::PREFETCH_STOP != action )  // needed for Solaris CAS
-                     && itr_ptr->m_Iter->Valid());
-        leveldb::compare_and_swap(&itr_ptr->m_Iter->m_PrefetchStarted,
+                     && itr_ptr->m_Wrap.Valid());
+        leveldb::compare_and_swap(&itr_ptr->m_Wrap.m_PrefetchStarted,
                                   prefetch_state,
                                   cas_temp);
     }   // else if
@@ -943,34 +943,34 @@ async_iterator_move(
         // why yes there is.  copy the key/value info into a return tuple before
         //  we launch the iterator for "next" again
         //  NOTE:  worker thread is inactive at this time
-        if(!itr_ptr->m_Iter->Valid())
+        if(!itr_ptr->m_Wrap.Valid())
             ret_term=enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
-        else if (itr_ptr->m_Iter->m_KeysOnly)
-            ret_term=enif_make_tuple2(env, ATOM_OK, slice_to_binary(env, itr_ptr->m_Iter->key()));
+        else if (itr_ptr->keys_only)
+            ret_term=enif_make_tuple2(env, ATOM_OK, slice_to_binary(env, itr_ptr->m_Wrap.key()));
         else
             ret_term=enif_make_tuple3(env, ATOM_OK,
-                                      slice_to_binary(env, itr_ptr->m_Iter->key()),
-                                      slice_to_binary(env, itr_ptr->m_Iter->value()));
+                                      slice_to_binary(env, itr_ptr->m_Wrap.key()),
+                                      slice_to_binary(env, itr_ptr->m_Wrap.value()));
 
 
         // reset for next race
-        itr_ptr->m_Iter->m_HandoffAtomic=0;
+        itr_ptr->m_Wrap.m_HandoffAtomic=0;
 
         // old MoveItem could still be active on its thread, cannot
         //  reuse ... but the current Iterator is good
         itr_ptr->ReleaseReuseMove();
 
         if (eleveldb::MoveTask::PREFETCH_STOP != action
-            && itr_ptr->m_Iter->Valid())
+            && itr_ptr->m_Wrap.Valid())
         {
             submit_new_request=true;
         }   // if
         else
         {
             submit_new_request=false;
-            itr_ptr->m_Iter->m_HandoffAtomic=0;
-            itr_ptr->m_Iter->m_PrefetchStarted=false;
+            itr_ptr->m_Wrap.m_HandoffAtomic=0;
+            itr_ptr->m_Wrap.m_PrefetchStarted=false;
         }   // else
 
 
@@ -983,7 +983,7 @@ async_iterator_move(
         eleveldb::MoveTask * move_item;
 
         move_item = new eleveldb::MoveTask(env, caller_ref,
-                                           itr_ptr->m_Iter, action);
+                                           itr_ptr, action);
 
         // prevent deletes during worker loop
         move_item->RefInc();

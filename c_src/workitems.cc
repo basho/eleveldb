@@ -189,42 +189,43 @@ MoveTask::DoWork()
 {
     leveldb::Iterator* itr;
 
-    itr=m_ItrWrap->get();
+    itr=m_Itr->m_Wrap.get();
 
-    ++m_ItrWrap->m_MoveCount;
+//    ++m_Wrap->m_MoveCount;
 //
 // race condition of prefetch clearing db iterator while
 //  async_iterator_move looking at it.
 //
 
     // iterator_refresh operation
-    if (m_ItrWrap->m_Options.iterator_refresh && m_ItrWrap->m_StillUse)
+    if (m_Itr->m_Wrap.m_Options.iterator_refresh && m_Itr->m_Wrap.m_StillUse)
     {
         struct timeval tv;
 
         gettimeofday(&tv, NULL);
 
-        if (m_ItrWrap->m_IteratorStale < tv.tv_sec || NULL==itr)
+        if (m_Itr->m_Wrap.m_IteratorStale < tv.tv_sec || NULL==itr)
         {
-            m_ItrWrap->RebuildIterator();
-            itr=m_ItrWrap->get();
+            m_Itr->m_Wrap.RebuildIterator();
+            itr=m_Itr->m_Wrap.get();
 
             // recover position
-            if (NULL!=itr && 0!=m_ItrWrap->m_RecentKey.size())
+            if (NULL!=itr && 0!=m_Itr->m_Wrap.m_RecentKey.size())
             {
-                leveldb::Slice key_slice(m_ItrWrap->m_RecentKey);
+                leveldb::Slice key_slice(m_Itr->m_Wrap.m_RecentKey);
 
                 itr->Seek(key_slice);
-                m_ItrWrap->m_StillUse=itr->Valid();
-                if (!m_ItrWrap->m_StillUse)
+                m_Itr->m_Wrap.m_StillUse=itr->Valid();
+                if (!m_Itr->m_Wrap.m_StillUse)
                 {
                     itr=NULL;
-                    m_ItrWrap->PurgeIterator();
+                    m_Itr->m_Wrap.PurgeIterator();
                 }   // if
             }   // if
         }   // if
     }   // if
 
+#if 0
     // hung iterator debug
     {
         struct timeval tv;
@@ -232,12 +233,13 @@ MoveTask::DoWork()
         gettimeofday(&tv, NULL);
 
         // 14400 is 4 hours in seconds ... 60*60*4
-        if ((m_ItrWrap->m_LastLogReport + 14400) < tv.tv_sec && NULL!=m_ItrWrap->get())
+        if ((m_Itr->m_Wrap.m_LastLogReport + 14400) < tv.tv_sec && NULL!=m_Itr->m_Wrap.get())
         {
-            m_ItrWrap->LogIterator();
-            m_ItrWrap->m_LastLogReport=tv.tv_sec;
+            m_Itr->m_Wrap.LogIterator();
+            m_Itr->m_Wrap.m_LastLogReport=tv.tv_sec;
         }   // if
     }
+#endif
 
     // back to normal operation
     if(NULL == itr)
@@ -273,30 +275,30 @@ MoveTask::DoWork()
     }   // switch
 
     // set state for Erlang side to read
-    m_ItrWrap->SetValid(itr->Valid());
+    m_Itr->m_Wrap.SetValid(itr->Valid());
 
     // Post processing before telling the world the results
     //  (while only one thread might be looking at objects)
-    if (m_ItrWrap->m_Options.iterator_refresh)
+    if (m_Itr->m_Wrap.m_Options.iterator_refresh)
     {
         if (itr->Valid())
         {
-            m_ItrWrap->m_RecentKey.assign(itr->key().data(), itr->key().size());
+            m_Itr->m_Wrap.m_RecentKey.assign(itr->key().data(), itr->key().size());
         }   // if
         else if (PREFETCH_STOP!=action)
         {
             // release iterator now, not later
-            m_ItrWrap->m_StillUse=false;
-            m_ItrWrap->PurgeIterator();
+            m_Itr->m_Wrap.m_StillUse=false;
+            m_Itr->m_Wrap.PurgeIterator();
             itr=NULL;
         }   // else
     }   // if
 
     // debug syslog(LOG_ERR, "                     MoveItem::DoWork() %d, %d, %d",
-    //              action, m_ItrWrap->m_StillUse, m_ItrWrap->m_HandoffAtomic);
+    //              action, m_Itr->m_Wrap.m_StillUse, m_Itr->m_Wrap.m_HandoffAtomic);
 
     // who got back first, us or the erlang loop
-    if (leveldb::compare_and_swap(&m_ItrWrap->m_HandoffAtomic, 0, 1))
+    if (leveldb::compare_and_swap(&m_Itr->m_Wrap.m_HandoffAtomic, 0, 1))
     {
         // this is prefetch of next iteration.  It returned faster than actual
         //  request to retrieve it.  Stop and wait for erlang to catch up.
@@ -305,15 +307,15 @@ MoveTask::DoWork()
     else
     {
         // setup next race for the response
-        m_ItrWrap->m_HandoffAtomic=0;
+        m_Itr->m_Wrap.m_HandoffAtomic=0;
 
         if(NULL!=itr && itr->Valid())
         {
-            if (PREFETCH==action && m_ItrWrap->m_PrefetchStarted)
+            if (PREFETCH==action && m_Itr->m_Wrap.m_PrefetchStarted)
                 m_ResubmitWork=true;
 
             // erlang is waiting, send message
-            if(m_ItrWrap->m_KeysOnly)
+            if(m_Itr->keys_only)
                 return work_result(local_env(), ATOM_OK, slice_to_binary(local_env(), itr->key()));
 
             return work_result(local_env(), ATOM_OK,
@@ -324,7 +326,7 @@ MoveTask::DoWork()
         {
             // using compare_and_swap as a hardware locking "set to false"
             //  (a little heavy handed, but not executed often)
-            leveldb::compare_and_swap(&m_ItrWrap->m_PrefetchStarted, (int)true, (int)false);
+            leveldb::compare_and_swap(&m_Itr->m_Wrap.m_PrefetchStarted, (int)true, (int)false);
             return work_result(local_env(), ATOM_ERROR, ATOM_INVALID_ITERATOR);
         }   // else
 
@@ -342,7 +344,7 @@ MoveTask::local_env()
 
     if (!terms_set)
     {
-        caller_ref_term = enif_make_copy(local_env_, m_ItrWrap->itr_ref);
+        caller_ref_term = enif_make_copy(local_env_, m_Itr->itr_ref);
         caller_pid_term = enif_make_pid(local_env_, &local_pid);
         terms_set=true;
     }   // if
