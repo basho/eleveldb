@@ -239,13 +239,6 @@ public:
     time_t m_IteratorStale;                   //!< time iterator should refresh
     bool m_StillUse;                          //!< true if no error or key end seen
 
-#if 0
-    // debug data for hung iteratos
-    time_t m_IteratorCreated;                 //!< time constructor called
-    time_t m_LastLogReport;                   //!< LOG message was last written
-    size_t m_MoveCount;                       //!< number of calls to MoveItem
-#endif
-
     // read by Erlang thread, maintained by eleveldb MoveItem::DoWork
     volatile bool m_IsValid;                  //!< iterator state after last operation
 
@@ -299,9 +292,6 @@ public:
         m_Options.snapshot = m_Snapshot;
         m_Iterator = m_DbPtr->m_Db->NewIterator(m_Options);
     }   // RebuildIterator
-
-    // hung iterator debug
-    void LogIterator();
 
 private:
     LevelIteratorWrapper(const LevelIteratorWrapper &);            // no copy

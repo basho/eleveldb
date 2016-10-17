@@ -341,7 +341,6 @@ DbObject::Shutdown()
 //            if (leveldb::compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr, (ItrObject *)NULL))
             if (itr_ptr->ClaimCloseFromCThread())
             {
-                itr_ptr->m_Wrap.LogIterator();
                 itr_ptr->ItrObject::InitiateCloseRequest();
             }   // if
         }   // if
@@ -394,46 +393,17 @@ LevelIteratorWrapper::LevelIteratorWrapper(
       m_Snapshot(NULL), m_Iterator(NULL),
       m_HandoffAtomic(0), m_PrefetchStarted(false),
       m_IteratorStale(0), m_StillUse(true),
-//      m_IteratorCreated(0), m_LastLogReport(0), m_MoveCount(0),
       m_IsValid(false)
 {
-#if 0
-    struct timeval tv;
-
-    gettimeofday(&tv, NULL);
-    m_IteratorCreated=tv.tv_sec;
-    m_LastLogReport=tv.tv_sec;
-#endif
 
     RebuildIterator();
 
 }   // LevelIteratorWrapper::LevelIteratorWrapper
 
-/**
- * put info about this iterator into leveldb LOG
- */
-
-void
-LevelIteratorWrapper::LogIterator()
-{
-#if 0 // available in different branch
-    struct tm created;
-
-    localtime_r(&m_IteratorCreated, &created);
-
-    leveldb::Log(m_DbPtr->m_Db->GetLogger(),
-                 "Iterator created %d/%d/%d %d:%d:%d, move operations %zd (%p)",
-                 created.tm_mon, created.tm_mday, created.tm_year-100,
-                 created.tm_hour, created.tm_min, created.tm_sec,
-                 m_MoveCount, m_Iterator);
-#endif
-}   // LevelIteratorWrapper::LogIterator()
-
 
 /**
  * Iterator management object (Erlang memory)
  */
-
 ErlNifResourceType * ItrObject::m_Itr_RESOURCE(NULL);
 
 
@@ -574,9 +544,6 @@ ItrObject::Shutdown()
     //  (reuse_move holds a counter to this object, which will
     //   release when move object destructs)
     ReleaseReuseMove();
-
-    // ItrObject and m_Wrap each hold pointers to other, release ours
-//    m_Wrap.assign(NULL);
 
     return;
 
