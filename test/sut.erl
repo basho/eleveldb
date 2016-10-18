@@ -397,7 +397,6 @@ addKey(Ref, ValList, Acc, N) when is_integer(N) ->
     addKey(Ref, ValList, Acc, N, msgpack);
 
 addKey(Ref, KeyNum, ValList, Enc) ->
-%%    io:format("Putting ~p~n", [ValList]),
     Key = list_to_binary("key"++integer_to_list(KeyNum)),
     Obj = new(<<"bucket">>, Key, ValList),
     Val = to_binary(v1, Obj, Enc),
@@ -425,7 +424,7 @@ getKeyVal(B,K,V) ->
 %%
 %%------------------------------------------------------------
 
-streamFoldTest(Filter, PutKeyFun) ->
+streamFoldTest(Filter, PutKeyFun, []) ->
     clearDb(),
     Opts=[{fold_method, streaming},
 	  {range_filter, Filter}],
@@ -450,7 +449,36 @@ streamFoldTest(Filter, PutKeyFun) ->
 		ok = eleveldb:close(Ref),
 		[]
 	end,
-%%    io:format("Keys = ~p~n", [Keys]),
+    io:format("Key list is size = ~p~n", [length(Keys)]),
+    Keys;
+streamFoldTest(Filter, PutKeyFun, [EncAtom]) ->
+    clearDb(),
+    Opts=[{fold_method, streaming},
+	  {range_filter, Filter}],
+    Ref = open(),
+
+    PutKeyFun(Ref),
+
+% Build a list of returned keys
+
+    FF = fun({K,V}, Acc) -> 
+		 [getKeyVal(K,V) | Acc]
+	 end,
+
+    Keys = 
+	try 
+	    profiler:profile({start, EncAtom}),
+	    Acc = eleveldb:fold(Ref, FF, [], Opts),
+	    profiler:profile({stop, EncAtom}),
+	    ok = eleveldb:close(Ref),
+	    lists:reverse(Acc)
+	catch
+	    error:_Error ->
+%%		io:format(user, "Caught an error: closing db~n", []),
+		ok = eleveldb:close(Ref),
+		[]
+	end,
+    io:format("Key list is size = ~p~n", [length(Keys)]),
     Keys.
 
 get_field(Field, List) ->
@@ -574,6 +602,7 @@ getPutFn(erlang) ->
 %------------------------------------------------------------
 % Put realistic data
 %------------------------------------------------------------
+
 
 putKeyRealisticOpsMsgpack(Ref) ->
     putKeyRealisticOps(Ref, msgpack).
@@ -700,6 +729,80 @@ putKeyRealisticOps(Ref, Enc) ->
     addKey(Ref, 2, Val2, Enc),
     addKey(Ref, 3, Val3, Enc).
 
+putIntellicoreTestDataMsgpack(Ref) ->
+    putSequentialIntellicoreData({Ref, msgpack, 1467554400000, 1467563400000, 1404.0/137000}, 100000, 0).
+
+putIntellicoreTestDataErlang(Ref) ->
+    putSequentialIntellicoreData({Ref, erlang, 1467554400000, 1467563400000, 1404.0/137000}, 100000, 0).
+
+putIntellicoreTestData(Ref, N, Enc) ->
+    putSequentialIntellicoreData({Ref, Enc, 1467554400000, 1467563400000, 1404.0/137000}, N, 0).
+
+putSequentialIntellicoreData(_Args, _Nrow, _Nrow) ->
+    ok;
+putSequentialIntellicoreData(Args, Nrow, AccRow) ->
+    {Ref, Enc, StartTime, Delta, LapsFrac} = Args,
+    Data = getIntellicoreData(<<"596044d8-86f5-462f-8d94-65b25e7d3fe9">>, StartTime + AccRow * Delta, LapsFrac),
+
+    case AccRow rem 1000 of 
+	0 ->
+	    io:format("Putting row ~p Data = ~p~n", [AccRow, Data]);
+	_ ->
+	    ok
+    end,
+
+    addKey(Ref, AccRow, Data, Enc),
+    putSequentialIntellicoreData(Args, Nrow, AccRow+1).
+
+getIntellicoreData(SportEventUuid, Timestamp, LapsFrac) ->
+    VarcharSize = length(binary_to_list(SportEventUuid)),
+
+    LapsRand = random:uniform(1000),
+    LapsComp = LapsFrac * 1000,
+    Laps = 
+	case LapsRand =< LapsComp of
+	    true ->
+		10;
+	    false ->
+		-1
+	end,
+    [{<<"sport_event_uuid">>,	     SportEventUuid}, 
+     {<<"time">>,		     Timestamp}, 
+     {<<"club_uuid">>,		     list_to_binary(get_random_string(VarcharSize))},
+     {<<"person_uuid">>,	             list_to_binary(get_random_string(VarcharSize))},
+     {<<"sport_uuid">>,	             list_to_binary(get_random_string(VarcharSize))},
+     {<<"discipline_uuid">>,	     list_to_binary(get_random_string(VarcharSize))},
+     {<<"driver_number">>,	     list_to_binary(get_random_string(VarcharSize))},
+     {<<"person_full_name">>,	     list_to_binary(get_random_string(VarcharSize))},
+     {<<"club_full_name">>,	     list_to_binary(get_random_string(VarcharSize))},
+     {<<"abandoned">>,		     false},
+     {<<"best_gap_in_time">>,	     float(random:uniform(100))},
+     {<<"best_gap_in_lap">>,	     random:uniform(100)},
+     {<<"best_lap">>,		     float(random:uniform(100))},
+     {<<"best_position">>,	     random:uniform(100)},
+     {<<"best_sector_1">>,	     float(random:uniform(100))},
+     {<<"best_sector_2">>,	     float(random:uniform(100))},
+     {<<"best_sector_3">>,	     float(random:uniform(100))},
+     {<<"best_speed">>,	             float(random:uniform(100))},
+     {<<"gap_in_time">>,	             float(random:uniform(100))},
+     {<<"gap_in_lap">>,	             random:uniform(100)},
+     {<<"lap_timel">>,		     float(random:uniform(100))},
+     {<<"laps">>,		     Laps},
+     {<<"position">>,		     random:uniform(100)},
+     {<<"qualification_position">>,   random:uniform(100)},
+     {<<"sector_1">>,		     float(random:uniform(100))},
+     {<<"sector_2">>,		     float(random:uniform(100))},
+     {<<"sector_3">>,		     float(random:uniform(100))},
+     {<<"info">>,                    list_to_binary(get_random_string(VarcharSize))}].
+
+get_random_string(Length) ->
+    AllowedChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+    lists:foldl(fun(_, Acc) ->
+                        [lists:nth(random:uniform(length(AllowedChars)),
+                                   AllowedChars)]
+                            ++ Acc
+                end, [], lists:seq(1, Length)).
+
 %------------------------------------------------------------
 % Default evaluation function checks that the total number of keys
 % returned from a filter is greater than zero and equals the expected
@@ -718,39 +821,39 @@ filterVal({FilterVal, _CompVal}) ->
 % Test each operation against the specified Field and Val
 %------------------------------------------------------------
 
-eqOps({Field, Val, Type, PutFn, EvalFn}) ->
+eqOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
     Filter = {'=', {field, Field, Type}, {const, filterVal(Val)}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, OtherArgs),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 == V2 end)).
     
-eqEqOps({Field, Val, Type, PutFn, EvalFn}) ->
+eqEqOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
     Filter = {'==', {field, Field, Type}, {const, filterVal(Val)}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, OtherArgs),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 == V2 end)).
 
-neqOps({Field, Val, Type, PutFn, EvalFn}) ->
+neqOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
     Filter = {'!=', {field, Field, Type}, {const, filterVal(Val)}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, OtherArgs),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 /= V2 end)).
 
-gtOps({Field, Val, Type, PutFn, EvalFn}) ->
+gtOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
     Filter = {'>', {field, Field, Type}, {const, filterVal(Val)}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, OtherArgs),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 > V2 end)).
 
-gteOps({Field, Val, Type, PutFn, EvalFn}) ->
+gteOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
     Filter = {'>=', {field, Field, Type}, {const, filterVal(Val)}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, OtherArgs),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 >= V2 end)).
 
-ltOps({Field, Val, Type, PutFn, EvalFn}) ->
+ltOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
     Filter = {'<', {field, Field, Type}, {const, filterVal(Val)}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, OtherArgs),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 < V2 end)).
 
-lteOps({Field, Val, Type, PutFn, EvalFn}) ->
+lteOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
     Filter = {'=<', {field, Field, Type}, {const, filterVal(Val)}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, OtherArgs),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 =< V2 end)).
 
 %------------------------------------------------------------
@@ -806,7 +909,7 @@ timestampOps(Enc) ->
 
     %% Timestamps support all ops
 
-    Res = allOps({F, {Val}, timestamp, PutFn, EvalFn}),
+    Res = allOps({F, {Val}, timestamp, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -826,7 +929,7 @@ sint64Ops(Enc) ->
 
     %% sint64s support all ops
 
-    Res = allOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = allOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -848,7 +951,7 @@ varIntOps(Enc) ->
 
     %% variable integers support all ops
 
-    Res = allOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = allOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -869,7 +972,7 @@ varcharOps(Enc) ->
 
     %% varchar types support only equality operations
 
-    Res = eqOpsOnly({F, {Val}, varchar, PutFn, EvalFn}) and (anyCompOps({F, {Val}, varchar, PutFn, EvalFn}) == false),
+    Res = eqOpsOnly({F, {Val}, varchar, PutFn, EvalFn, []}) and (anyCompOps({F, {Val}, varchar, PutFn, EvalFn, []}) == false),
     ?assert(Res),
     Res.
 
@@ -890,7 +993,7 @@ doubleOps(Enc) ->
 
     %% double types support all operations
 
-    Res = allOps({F, {Val}, double, PutFn, EvalFn}),
+    Res = allOps({F, {Val}, double, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -910,7 +1013,7 @@ boolOps(Enc) ->
 
     %% boolean types support only equality ops
 
-    Res = eqOpsOnly({F, {Val}, boolean, PutFn, EvalFn}) and (anyCompOps({F, {Val}, boolean, PutFn, EvalFn}) == false),
+    Res = eqOpsOnly({F, {Val}, boolean, PutFn, EvalFn, []}) and (anyCompOps({F, {Val}, boolean, PutFn, EvalFn, []}) == false),
     ?assert(Res),
     Res.
 
@@ -933,8 +1036,25 @@ realisticOps(Enc) ->
 		fun putKeyRealisticOpsErlang/1
 	end,
     EvalFn = fun defaultEvalFn/1,
-    Res = gteOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gteOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
+    Res.
+
+intellicoreLapsTest(Enc) ->
+    io:format("intellicoreLapsTest with ~p encoding~n", [Enc]),
+    F = <<"laps">>,
+    Val = 0,
+    PutFn = 
+	case Enc of 
+	    msgpack ->
+		fun putIntellicoreTestDataMsgpack/1;
+	    _ ->
+		fun putIntellicoreTestDataErlang/1
+	end,
+    EvalFn = fun defaultEvalFn/1,
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, [Enc]}),
+    ?assert(Res),
+    profiler:profile({debug}),
     Res.
 
 
@@ -949,7 +1069,7 @@ anyOps_test() ->
     CompVal = [1,2,3],
     PutFn  = fun sut:putKeyNormalOps/1,
     EvalFn = fun sut:defaultEvalFn/1,
-    Res = eqOpsOnly({F, {Val, CompVal}, any, PutFn, EvalFn}) and (anyCompOps({F, {Val, CompVal}, any, PutFn, EvalFn}) == false),
+    Res = eqOpsOnly({F, {Val, CompVal}, any, PutFn, EvalFn, []}) and (anyCompOps({F, {Val, CompVal}, any, PutFn, EvalFn, []}) == false),
     ?assert(Res),
     Res.
 
@@ -974,7 +1094,7 @@ andOps_test() ->
     Cond2 = {'=', {field, <<"f3">>, double}, {const, 4.0}},
     Filter = {'and_', Cond1, Cond2},
     PutFn  = fun sut:putKeyNormalOps/1,
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, []),
     {N1, NMatch1} = fieldsMatching(Keys, <<"f1">>, 2,   fun(V1,V2) -> V1 > V2 end),
     {N3, NMatch3} = fieldsMatching(Keys, <<"f3">>, 4.0, fun(V1,V2) -> V1 == V2 end),
     Res = (N1 == 1) and (NMatch1 == 1) and (N3 == 1) and (NMatch3 == 1),
@@ -1004,7 +1124,7 @@ orOps_test() ->
 		NExpected3
 	end,
 
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, []),
 
     {N1, NMatch1} = fieldsMatching(Keys, <<"f1">>, 2,   fun(V1,V2) -> V1 > V2 end),
     {N1, NMatch3} = fieldsMatching(Keys, <<"f3">>, 4.0, fun(V1,V2) -> V1 == V2 end),
@@ -1052,7 +1172,7 @@ badInt_test() ->
     Val = 0,
     PutFn = fun putKeyAbnormalOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -1066,7 +1186,7 @@ badTimestamp_test() ->
     Val = 2000,
     PutFn = fun putKeyAbnormalOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, timestamp, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, timestamp, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -1079,7 +1199,7 @@ badBinary_test() ->
     F = <<"f2">>,
     Val = <<"test">>,
     PutFn = fun putKeyAbnormalOps/1,
-    Res = neqOps({F, {Val}, varchar, PutFn, fun({N,_}) -> N == 4 end}),
+    Res = neqOps({F, {Val}, varchar, PutFn, fun({N,_}) -> N == 4 end, []}),
     ?assert(Res),
     Res.
 
@@ -1093,7 +1213,7 @@ badFloat_test() ->
     Val = 0.0,
     PutFn = fun putKeyAbnormalOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, double, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, double, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -1107,7 +1227,7 @@ badBool_test() ->
     Val = false,
     PutFn = fun putKeyAbnormalOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = eqOps({F, {Val}, boolean, PutFn, EvalFn}),
+    Res = eqOps({F, {Val}, boolean, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -1121,7 +1241,7 @@ badAny_test() ->
     Val = sut:em([1,2,3]),
     CompVal = [1,2,3],
     PutFn  = fun sut:putKeyNormalOps/1,
-    Res = neqOps({F, {Val, CompVal}, any, PutFn, fun({N,_}) -> N == 9 end}),
+    Res = neqOps({F, {Val, CompVal}, any, PutFn, fun({N,_}) -> N == 9 end, []}),
     ?assert(Res),
     Res.
 
@@ -1174,7 +1294,7 @@ missingKey_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun defaultEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -1184,7 +1304,7 @@ missingFirstKey_test() ->
     Val = 0,
     PutFn = fun putKeyFirstMissingOps/1,
     EvalFn = fun defaultEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -1194,7 +1314,7 @@ emptyKey_test() ->
     Val = 0,
     PutFn = fun putKeyEmptyOps/1,
     EvalFn = fun defaultEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -1204,7 +1324,7 @@ emptyFirstKey_test() ->
     Val = 0,
     PutFn = fun putKeyFirstEmptyOps/1,
     EvalFn = fun defaultEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -1219,7 +1339,7 @@ filterRefMissingKey_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -1233,7 +1353,7 @@ filterRefWrongType_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -1247,7 +1367,7 @@ filterRefInvalidType_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, map, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, map, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -1442,3 +1562,14 @@ readKeysFromTable(Table) ->
 
 r() ->
     readKeysFromTable("1096126227998177188652763624537212264741949407232").
+
+testComp() ->
+    profiler:profile({start, m1}),
+    sut:realisticOps(msgpack),
+    profiler:profile({stop, m1}),
+
+    profiler:profile({start, e1}),
+    sut:realisticOps(erlang),
+    profiler:profile({stop, e1}),
+
+    profiler:profile({debug}).

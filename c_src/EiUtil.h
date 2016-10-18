@@ -128,6 +128,7 @@ namespace eleveldb {
         FN_DECL(uint64_t,      getBigAsUint64);
         FN_DECL(std::vector<unsigned, char> getBinary);
         FN_DECL(std::string, getBinaryAsString);
+        FN_DECL(std::string, getBinaryAsStringEml);
         
         FN_DECL(std::string, formatAtom);
         FN_DECL(std::string, formatInteger);

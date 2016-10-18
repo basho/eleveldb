@@ -841,6 +841,31 @@ FN_DEF(std::string, getBinaryAsString,
        return sBuf.getString();
     )
 
+FN_DEF(std::string, getBinaryAsStringEml,
+
+       //------------------------------------------------------------
+       // binary is opcode, followed by 4-byte size, followed by bytes
+       //------------------------------------------------------------
+
+       unsigned int size = getUint(buf + *index + 1);
+
+       // ei_decode_binary() copies exactly size bytes into the return
+       // buffer.  If we are interpreting the data as a string, the
+       // return buffer must be NULL terminated, else the conversion
+       // to a string will not be well defined
+       
+       StringBuf sBuf(size+1);
+       char* bufPtr = sBuf.getBuf();
+       bufPtr[size] = '\0';
+       
+       for(unsigned i=0; i < size; i++)
+           bufPtr[i] = buf[*index + 5 + i];
+
+       *index += 5 + size;
+       
+       return sBuf.getString();
+    )
+
 FN_DEF(std::string, getAtom,
 
        char str[MAXATOMLEN+1];

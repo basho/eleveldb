@@ -62,6 +62,8 @@ public:
     std::map<std::string, eleveldb::DataType::Type> expr_field_specs_;
     std::map<std::string, eleveldb::DataType::Type> field_types_;
 
+    unsigned nField_;
+    
     bool typesParsed_;
 };
 

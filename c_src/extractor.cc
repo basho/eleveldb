@@ -38,6 +38,7 @@ using namespace eleveldb;
 Extractor::Extractor() 
 {
     typesParsed_    = false;
+    nField_         = 0;
 }
 
 Extractor::~Extractor() {}
@@ -65,6 +66,8 @@ void Extractor::add_field(std::string field)
     } else {
         expr_fields_[field] = cTypeOf(field);
     }
+
+    nField_ = expr_fields_.size();
 }
 
 /**.......................................................................
@@ -543,8 +546,10 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
     // Iterate over the object, looking for fields
     //------------------------------------------------------------
 
+    unsigned nField = 0;
+    
     StringBuf sBuf;
-    for(int i=0; i < map_size; i++) {
+    for(int i=0; i < map_size && nField < nField_; i++) {
 
         //------------------------------------------------------------
         // First read the field key
@@ -606,6 +611,8 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
             } else {
 
                 try {
+
+                    ++nField_;
 
                     switch (specType) {
                     case DataType::UINT8:
@@ -795,7 +802,8 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
     // Iterate over the object, looking for fields
     //------------------------------------------------------------
 
-    for(unsigned int i=0; i < nVal; i++) {
+    unsigned nField = 0;
+    for(unsigned int i=0; i < nVal && nField < nField_; i++) {
 
         if(!EiUtil::isTuple(data, &index) || EiUtil::getTupleHeader(data, &index) != 2) {
             ThrowRuntimeError("List must consist of {field, val} tuples: " << std::endl
@@ -806,7 +814,7 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
         // First read the field key
         //------------------------------------------------------------
 
-        std::string key = EiUtil::getBinaryAsString(data, &index);
+        std::string key = EiUtil::getBinaryAsStringEml(data, &index);
 
 	//------------------------------------------------------------
 	// Next up is the field value
@@ -844,6 +852,8 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
                 
                 try {
                 
+                    ++nField_;
+                    
                     switch (specType) {
                     case DataType::UINT8:
                     {
@@ -922,7 +932,7 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
             //------------------------------------------------------------
 
         } else {
-//            EiUtil::skipLastReadObject(data, &index);
+//          EiUtil::skipLastReadObject(data, &index);
             EiUtil::skipNext(data, &index);
         }
     }
