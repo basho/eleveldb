@@ -366,12 +366,12 @@ addKey(Ref, ValList, Acc, N, mixed) ->
     Key  = list_to_binary("key" ++ string:right(integer_to_list(Acc), Ndig, $0)),
     Obj  = new(<<"bucket">>, Key, ValList),
     Enc = 
-	case Acc rem 2 of
-	    0 ->
-		msgpack;
-	    _ ->
-		erlang
-	end,
+        case Acc rem 2 of
+            0 ->
+                msgpack;
+            _ ->
+                erlang
+        end,
     Val  = to_binary(v1, Obj, Enc),
     ok   = eleveldb:put(Ref, Key, Val, []),
     putKeysObj(Ref, N, Acc+1, mixed);
@@ -427,7 +427,7 @@ getKeyVal(B,K,V) ->
 streamFoldTest(Filter, PutKeyFun, []) ->
     clearDb(),
     Opts=[{fold_method, streaming},
-	  {range_filter, Filter}],
+          {range_filter, Filter}],
     Ref = open(),
 
     PutKeyFun(Ref),
@@ -435,20 +435,20 @@ streamFoldTest(Filter, PutKeyFun, []) ->
 % Build a list of returned keys
 
     FF = fun({K,V}, Acc) -> 
-		 [getKeyVal(K,V) | Acc]
-	 end,
+                 [getKeyVal(K,V) | Acc]
+         end,
 
     Keys = 
-	try 
-	    Acc = eleveldb:fold(Ref, FF, [], Opts),
-	    ok = eleveldb:close(Ref),
-	    lists:reverse(Acc)
-	catch
-	    error:_Error ->
-%%		io:format(user, "Caught an error: closing db~n", []),
-		ok = eleveldb:close(Ref),
-		[]
-	end,
+        try 
+            Acc = eleveldb:fold(Ref, FF, [], Opts),
+            ok = eleveldb:close(Ref),
+            lists:reverse(Acc)
+        catch
+            error:_Error ->
+%%              io:format(user, "Caught an error: closing db~n", []),
+                ok = eleveldb:close(Ref),
+                []
+        end,
     io:format("Key list is size = ~p~n", [length(Keys)]),
     Keys.
 
@@ -470,14 +470,14 @@ match(V1,{_FilterVal, CompVal},CompFun) ->
     match(V1, CompVal, CompFun);
 match(V1,V2,CompFun) ->
     case CompFun(V1,V2) of
-	true -> 1;
-	_ -> 0
+        true -> 1;
+        _ -> 0
     end.
 
 fieldsMatching(Vals, Field, CompVal, CompFun) ->
 %%    io:format("Got Vals = ~p~n", [lists:flatten(Vals)]),
     lists:foldl(fun(Val, {N, Nmatch}) -> 
-			{N + 1, Nmatch + match(Val, Field, CompVal, CompFun)} end, {0,0}, Vals).
+                        {N + 1, Nmatch + match(Val, Field, CompVal, CompFun)} end, {0,0}, Vals).
 
 %%=======================================================================
 %% Actual tests begin here
@@ -515,9 +515,9 @@ putKeyNormalOpsErlang(Ref) ->
 putKeyNormalOps(Ref, Enc) ->
     Rows = getKeyNormalOps(),
     lists:foreach(fun (Row) ->
-			  I = element(2, hd(Row)),
-			  addKey(Ref, I, Row, Enc)
-		  end, Rows).
+                          I = element(2, hd(Row)),
+                          addKey(Ref, I, Row, Enc)
+                  end, Rows).
 
 %------------------------------------------------------------
 % Return a list of keys used for testing
@@ -526,33 +526,33 @@ putKeyNormalOps(Ref, Enc) ->
 getKeyNormalOps() ->
     FieldCount = 10,
     VarIntFn = 
-	fun(I) ->
-		Prefactor = 
-		    case I rem 2 of
-			0 -> 
-			    1;
-			_ ->
-			    -1
-		    end,
-		AddFactor = 
-		    case (I-1) div 2 of
-			0 ->
-			    0;
-			1 ->
-			    256;
-			2 ->
-			    65536;
-			3 ->
-			    4294967296;
-			_ ->
-			    1099511627776
-		    end,
-		Prefactor * (I + AddFactor)
-	end,
+        fun(I) ->
+                Prefactor = 
+                    case I rem 2 of
+                        0 -> 
+                            1;
+                        _ ->
+                            -1
+                    end,
+                AddFactor = 
+                    case (I-1) div 2 of
+                        0 ->
+                            0;
+                        1 ->
+                            256;
+                        2 ->
+                            65536;
+                        3 ->
+                            4294967296;
+                        _ ->
+                            1099511627776
+                    end,
+                Prefactor * (I + AddFactor)
+        end,
 
     Rows = [ [{<<"f1">>, I },
               {<<"f2">>, list_to_binary("test" ++ integer_to_list(I))}, %%<< varchar
-	      {<<"f3">>, I * 1.0},                  %%<< double
+              {<<"f3">>, I * 1.0},                  %%<< double
               {<<"f4">>, I rem 2 =:= 0},            %%<< boolean                                                                                                                           
               {<<"f5">>, lists:seq(I, I + 2)},      %%<< list (not a TS type)                                                                                                              
               {<<"f6">>, I * 1000},                 %%<< sint64                                                                                                                            
@@ -587,10 +587,10 @@ putSequentialRealisticData(Args, Nrow, AccRow) ->
     Data = getRealisticData(<<"596044d8-86f5-462f-8d94-65b25e7d3fe9">>, StartTime + AccRow * Delta, LapsFrac),
 
 %%    case AccRow rem 10 of 
-%%	0 ->
-%%	    io:format("Putting row ~p Data = ~p~n", [AccRow, Data]);
-%%	_ ->
-%%	    ok
+%%      0 ->
+%%          io:format("Putting row ~p Data = ~p~n", [AccRow, Data]);
+%%      _ ->
+%%          ok
 %%    end,
 
     addKey(Ref, AccRow, Data, Enc),
@@ -602,39 +602,39 @@ getRealisticData(SportEventUuid, Timestamp, LapsFrac) ->
     LapsRand = random:uniform(1000),
     LapsComp = LapsFrac * 1000,
     Laps = 
-	case LapsRand =< LapsComp of
-	    true ->
-		10;
-	    false ->
-		-1
-	end,
-    [{<<"sport_event_uuid">>,	     SportEventUuid}, 
-     {<<"time">>,		     Timestamp}, 
-     {<<"club_uuid">>,		     list_to_binary(get_random_string(VarcharSize))},
-     {<<"person_uuid">>,	             list_to_binary(get_random_string(VarcharSize))},
-     {<<"sport_uuid">>,	             list_to_binary(get_random_string(VarcharSize))},
-     {<<"discipline_uuid">>,	     list_to_binary(get_random_string(VarcharSize))},
-     {<<"driver_number">>,	     list_to_binary(get_random_string(VarcharSize))},
-     {<<"person_full_name">>,	     list_to_binary(get_random_string(VarcharSize))},
-     {<<"club_full_name">>,	     list_to_binary(get_random_string(VarcharSize))},
-     {<<"abandoned">>,		     false},
-     {<<"best_gap_in_time">>,	     float(random:uniform(100))},
-     {<<"best_gap_in_lap">>,	     random:uniform(100)},
-     {<<"best_lap">>,		     float(random:uniform(100))},
-     {<<"best_position">>,	     random:uniform(100)},
-     {<<"best_sector_1">>,	     float(random:uniform(100))},
-     {<<"best_sector_2">>,	     float(random:uniform(100))},
-     {<<"best_sector_3">>,	     float(random:uniform(100))},
-     {<<"best_speed">>,	             float(random:uniform(100))},
-     {<<"gap_in_time">>,	             float(random:uniform(100))},
-     {<<"gap_in_lap">>,	             random:uniform(100)},
-     {<<"lap_timel">>,		     float(random:uniform(100))},
-     {<<"laps">>,		     Laps},
-     {<<"position">>,		     random:uniform(100)},
+        case LapsRand =< LapsComp of
+            true ->
+                10;
+            false ->
+                -1
+        end,
+    [{<<"sport_event_uuid">>,        SportEventUuid}, 
+     {<<"time">>,                    Timestamp}, 
+     {<<"club_uuid">>,               list_to_binary(get_random_string(VarcharSize))},
+     {<<"person_uuid">>,                     list_to_binary(get_random_string(VarcharSize))},
+     {<<"sport_uuid">>,              list_to_binary(get_random_string(VarcharSize))},
+     {<<"discipline_uuid">>,         list_to_binary(get_random_string(VarcharSize))},
+     {<<"driver_number">>,           list_to_binary(get_random_string(VarcharSize))},
+     {<<"person_full_name">>,        list_to_binary(get_random_string(VarcharSize))},
+     {<<"club_full_name">>,          list_to_binary(get_random_string(VarcharSize))},
+     {<<"abandoned">>,               false},
+     {<<"best_gap_in_time">>,        float(random:uniform(100))},
+     {<<"best_gap_in_lap">>,         random:uniform(100)},
+     {<<"best_lap">>,                float(random:uniform(100))},
+     {<<"best_position">>,           random:uniform(100)},
+     {<<"best_sector_1">>,           float(random:uniform(100))},
+     {<<"best_sector_2">>,           float(random:uniform(100))},
+     {<<"best_sector_3">>,           float(random:uniform(100))},
+     {<<"best_speed">>,              float(random:uniform(100))},
+     {<<"gap_in_time">>,                     float(random:uniform(100))},
+     {<<"gap_in_lap">>,              random:uniform(100)},
+     {<<"lap_timel">>,               float(random:uniform(100))},
+     {<<"laps">>,                    Laps},
+     {<<"position">>,                random:uniform(100)},
      {<<"qualification_position">>,   random:uniform(100)},
-     {<<"sector_1">>,		     float(random:uniform(100))},
-     {<<"sector_2">>,		     float(random:uniform(100))},
-     {<<"sector_3">>,		     float(random:uniform(100))},
+     {<<"sector_1">>,                float(random:uniform(100))},
+     {<<"sector_2">>,                float(random:uniform(100))},
+     {<<"sector_3">>,                float(random:uniform(100))},
      {<<"info">>,                    list_to_binary(get_random_string(VarcharSize))}].
 
 get_random_string(Length) ->
@@ -704,8 +704,8 @@ lteOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
 
 allOps(Args) ->
     eqOps(Args) and eqEqOps(Args) and neqOps(Args) and 
-	gtOps(Args) and gteOps(Args) and
-	ltOps(Args) and lteOps(Args).
+        gtOps(Args) and gteOps(Args) and
+        ltOps(Args) and lteOps(Args).
 
 %------------------------------------------------------------
 % Only equality operations
@@ -721,7 +721,7 @@ eqOpsOnly(Args) ->
 
 allCompOps(Args) ->
     gtOps(Args) and gteOps(Args) and
-	ltOps(Args) and lteOps(Args).
+        ltOps(Args) and lteOps(Args).
 
 %------------------------------------------------------------
 % Any comparison operation
@@ -729,7 +729,7 @@ allCompOps(Args) ->
 
 anyCompOps(Args) ->
     gtOps(Args) or gteOps(Args) or
-	ltOps(Args) or lteOps(Args).
+        ltOps(Args) or lteOps(Args).
 
 %%=======================================================================
 %% Data-type specific tests
@@ -871,12 +871,12 @@ realisticOps(Enc) ->
     F = <<"laps">>,
     Val = 0,
     PutFn = 
-	case Enc of 
-	    msgpack ->
-		fun putKeyRealisticOpsMsgpack/1;
-	    _ ->
-		fun putKeyRealisticOpsErlang/1
-	end,
+        case Enc of 
+            msgpack ->
+                fun putKeyRealisticOpsMsgpack/1;
+            _ ->
+                fun putKeyRealisticOpsErlang/1
+        end,
     EvalFn = fun defaultEvalFn/1,
     Res = gteOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
@@ -941,12 +941,12 @@ orOps_test() ->
     {NTotal, NExpected3} = fieldsMatching(AllKeys, <<"f3">>, 4.0, fun(V1,V2) -> V1 == V2 end),
 
     NExpected =
-	case NExpected1 > NExpected3 of
-	    true ->
-		NExpected1;
-	    _ ->
-		NExpected3
-	end,
+        case NExpected1 > NExpected3 of
+            true ->
+                NExpected1;
+            _ ->
+                NExpected3
+        end,
 
     Keys = streamFoldTest(Filter, PutFn, []),
 
@@ -1201,7 +1201,7 @@ filterRefInvalidType_test() ->
 
 exceptionalTests() ->
     missingKey_test() and emptyKey_test() and filterRefMissingKey_test() and 
-	filterRefWrongType_test() and filterRefInvalidType_test().
+        filterRefWrongType_test() and filterRefInvalidType_test().
 
 %%=======================================================================
 %% Test scanning
@@ -1214,14 +1214,14 @@ exceptionalTests() ->
 streamFoldTestOpts(Opts, FoldFun) ->
     Ref = open(),
     try
-	Acc = eleveldb:fold(Ref, FoldFun, [], Opts),
-	ok = eleveldb:close(Ref),
-	Keys = lists:reverse(Acc)
+        Acc = eleveldb:fold(Ref, FoldFun, [], Opts),
+        ok = eleveldb:close(Ref),
+        Keys = lists:reverse(Acc)
     catch
-	error:Error ->
-	    io:format("Caught an error: closing db~n"),
-	    ok = eleveldb:close(Ref),
-	    error(Error)
+        error:Error ->
+            io:format("Caught an error: closing db~n"),
+            ok = eleveldb:close(Ref),
+            error(Error)
     end.
 
 %%------------------------------------------------------------
@@ -1237,13 +1237,13 @@ scanSome_test(Enc) ->
     N = 100,
     putKeysObj(N, Enc),
     Opts=[{fold_method, streaming},
-	  {start_key, <<"key002">>},
-	  {end_key,  <<"key099">>},
-	  {end_inclusive,  true}],
+          {start_key, <<"key002">>},
+          {end_key,  <<"key099">>},
+          {end_inclusive,  true}],
 
     FoldFun = fun({K,_V}, Acc) -> 
-		      [K | Acc]
-	      end,
+                      [K | Acc]
+              end,
 
     Keys = streamFoldTestOpts(Opts, FoldFun),
     Len = length(Keys),
@@ -1265,8 +1265,8 @@ scanAll_test(Enc) ->
     putKeysObj(N, Enc),
     Opts=[{fold_method, streaming}],
     FoldFun = fun({K,V}, Acc) -> 
-		      [getKeyVal(K,V) | Acc]
-	      end,
+                      [getKeyVal(K,V) | Acc]
+              end,
     Keys = streamFoldTestOpts(Opts, FoldFun),
     Len = length(Keys),
     Res = (Len =:= N),
@@ -1285,12 +1285,12 @@ scanNoStart_test(Enc) ->
     N = 100,
     putKeysObj(N, Enc),
     Opts=[{fold_method, streaming},
-	  {start_inclusive, false},
-	  {start_key, <<"key001">>}],
+          {start_inclusive, false},
+          {start_key, <<"key001">>}],
 
     FoldFun = fun({K,_V}, Acc) -> 
-		      [K | Acc]
-	      end,
+                      [K | Acc]
+              end,
 
     Keys = streamFoldTestOpts(Opts, FoldFun),
     [Key1 | _Rest] = Keys,
@@ -1303,12 +1303,12 @@ scanNoStartTest() ->
     N = 100,
     putKeysObj(N),
     Opts=[{fold_method, streaming},
-	  {start_inclusive, false},
-	  {start_key, <<"key001">>}],
+          {start_inclusive, false},
+          {start_key, <<"key001">>}],
 
     FoldFun = fun({K,_V}, Acc) -> 
-		      [K | Acc]
-	      end,
+                      [K | Acc]
+              end,
 
     streamFoldTestOpts(Opts, FoldFun).
 
@@ -1324,14 +1324,14 @@ scanNoStartOrEnd_test(Enc) ->
     N = 100,
     putKeysObj(N, Enc),
     Opts=[{fold_method, streaming},
-	  {start_inclusive, false},
-	  {end_inclusive, false},
-	  {start_key, <<"key001">>},
-	  {end_key,   <<"key100">>}],
+          {start_inclusive, false},
+          {end_inclusive, false},
+          {start_key, <<"key001">>},
+          {end_key,   <<"key100">>}],
 
     FoldFun = fun({K,_V}, Acc) -> 
-		      [K | Acc]
-	      end,
+                      [K | Acc]
+              end,
 
     Keys = streamFoldTestOpts(Opts, FoldFun),
 
@@ -1356,7 +1356,7 @@ scanTests() ->
 
 allTests() ->
     packObj_test() and normalOpsTests() and abnormalOpsTests() and exceptionalTests() 
-	and scanTests().
+        and scanTests().
 
 %%=======================================================================
 %% Test code to filter & decode TS keys from a leveldb table
@@ -1369,17 +1369,17 @@ readKeysFromTable(Table) ->
     Cond3 = {'>', {field, <<"time">>, timestamp}, {const,  9990000}},
     Filter = {'and_', Cond1, {'and_', Cond2, Cond3}},
     Opts=[{fold_method, streaming},
-	  {range_filter, Filter},
-	  {encoding, msgpack}],
+          {range_filter, Filter},
+          {encoding, msgpack}],
     io:format("Filter = ~p~n", [lists:flatten([Filter])]),
     TableName = "/Users/eml/projects/riak/riak_end_to_end_timeseries/dev/dev1/data/leveldb/" ++ Table,
     io:format("Attemping to open ~ts~n", [TableName]),
     Ref = open(TableName),
     Bucket = {<<"GeoCheckin">>, <<"GeoCheckin">>},
     FoldFun = fun({_K,V}, _Acc) -> 
-		      Contents = getKeyVal(Bucket, <<"key">>, V),
-		      io:format("Val = ~p~n", [lists:flatten(Contents)])
-	      end,
+                      Contents = getKeyVal(Bucket, <<"key">>, V),
+                      io:format("Val = ~p~n", [lists:flatten(Contents)])
+              end,
 
     eleveldb:fold(Ref, FoldFun, [], Opts),
     ok = eleveldb:close(Ref).
