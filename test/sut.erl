@@ -450,35 +450,6 @@ streamFoldTest(Filter, PutKeyFun, []) ->
 		[]
 	end,
     io:format("Key list is size = ~p~n", [length(Keys)]),
-    Keys;
-streamFoldTest(Filter, PutKeyFun, [EncAtom]) ->
-    clearDb(),
-    Opts=[{fold_method, streaming},
-	  {range_filter, Filter}],
-    Ref = open(),
-
-    PutKeyFun(Ref),
-
-% Build a list of returned keys
-
-    FF = fun({K,V}, Acc) -> 
-		 [getKeyVal(K,V) | Acc]
-	 end,
-
-    Keys = 
-	try 
-	    profiler:profile({start, EncAtom}),
-	    Acc = eleveldb:fold(Ref, FF, [], Opts),
-	    profiler:profile({stop, EncAtom}),
-	    ok = eleveldb:close(Ref),
-	    lists:reverse(Acc)
-	catch
-	    error:_Error ->
-%%		io:format(user, "Caught an error: closing db~n", []),
-		ok = eleveldb:close(Ref),
-		[]
-	end,
-    io:format("Key list is size = ~p~n", [length(Keys)]),
     Keys.
 
 get_field(Field, List) ->
@@ -603,158 +574,29 @@ getPutFn(erlang) ->
 % Put realistic data
 %------------------------------------------------------------
 
-
 putKeyRealisticOpsMsgpack(Ref) ->
-    putKeyRealisticOps(Ref, msgpack).
+    putSequentialRealisticData({Ref, msgpack, 1467554400000, 1467563400000, 0.5}, 20, 0).
 
 putKeyRealisticOpsErlang(Ref) ->
-    putKeyRealisticOps(Ref, erlang).
+    putSequentialRealisticData({Ref, erlang,  1467554400000, 1467563400000, 0.5}, 20, 0).
 
-putKeyRealisticOps(Ref, Enc) ->
-    Val1 = [{<<"sport_event_uuid">>,
-	     <<"596044d8-86f5-462f-8d94-65b25e7d3fe9">>},
-	    {<<"time">>,1467554464800},
-	    {<<"club_uuid">>,
-	     <<"tNwgAVF1CS4tzWmxLL5LJDYdGGAuS2AVwo0G">>},
-	    {<<"person_uuid">>,
-	     <<"qK1lJFn8QVsUDU1AoP2rYJnm6fr8EoCf6JSH">>},
-	    {<<"sport_uuid">>,
-	     <<"T9YB5aqbBWpLj5FOvcoedvBy3D5TTALuj8Q4">>},
-	    {<<"discipline_uuid">>,
-	     <<"V8tNVS1TVzLa51yo4mNeNUDcN1kq2FCxZe9t">>},
-	    {<<"driver_number">>,
-	     <<"PCPeOKzUocYL3qUy0DtE0ZjnNGbRlK4BXdxX">>},
-	    {<<"person_full_name">>,
-	     <<"8Opspn2qe8um1lhbHVJZOo317maFXocSnuA7">>},
-	    {<<"club_full_name">>,
-	     <<"rmkfVzaZg19Dx1HmbbqSX7chRFaCIPoFqbWM">>},
-	    {<<"abandoned">>,false},
-	    {<<"best_gap_in_time">>,20.0},
-	    {<<"best_gap_in_lap">>,36},
-	    {<<"best_lap">>,79.0},
-	    {<<"best_position">>,65},
-	    {<<"best_sector_1">>,59.0},
-	    {<<"best_sector_2">>,30.0},
-	    {<<"best_sector_3">>,5.0},
-	    {<<"best_speed">>,9.0},
-	    {<<"gap_in_time">>,58.0},
-	    {<<"gap_in_lap">>,56},
-	    {<<"lap_time">>,98.0},
-	    {<<"laps">>,10},
-	    {<<"position">>,59},
-	    {<<"qualification_position">>,77},
-	    {<<"sector_1">>,93.0},
-	    {<<"sector_2">>,3.0},
-	    {<<"sector_3">>,90.0},
-	    {<<"info">>,
-	     <<"9Sfd5IstDpsEhlvCiNt7l67EFKfFQsYGm6Yx">>}],
-
-    Val2 = [{<<"sport_event_uuid">>,
-	     <<"596044d8-86f5-462f-8d94-65b25e7d3fe9">>},
-	    {<<"time">>,1467554466600},
-	    {<<"club_uuid">>,
-	     <<"Zuu7nIHJ840uQxHP1ZTtTq0nA0e5GL8tiMje">>},
-	    {<<"person_uuid">>,
-	     <<"dNtk5xfshSZG8Edl0rYvQ58aJbdrtofoz12l">>},
-	    {<<"sport_uuid">>,
-	     <<"VuorLbl3CkjmRLooJavwXcFk1m6Wm512FPmd">>},
-	    {<<"discipline_uuid">>,
-	     <<"ruf0if1jlCUy4iMOyD3c5DctLrOdCQ0BxCH2">>},
-	    {<<"driver_number">>,
-	     <<"SEmursLHE1yfSq0ssfUQniVqObNiY105yzpD">>},
-	    {<<"person_full_name">>,
-	     <<"E6Ll1B5kI0RSSf9QRiWHEsJ8yiJzxd5tc1uF">>},
-	    {<<"club_full_name">>,
-	     <<"9wOLpIIKtbsg1GSVPMxekDQyXyCPeFoLuJR1">>},
-	    {<<"abandoned">>,false},
-	    {<<"best_gap_in_time">>,97.0},
-	    {<<"best_gap_in_lap">>,2},
-	    {<<"best_lap">>,49.0},
-	    {<<"best_position">>,32},
-	    {<<"best_sector_1">>,19.0},
-	    {<<"best_sector_2">>,67.0},
-	    {<<"best_sector_3">>,25.0},
-	    {<<"best_speed">>,83.0},
-	    {<<"gap_in_time">>,10.0},
-	    {<<"gap_in_lap">>,62},
-	    {<<"lap_time">>,71.0},
-	    {<<"laps">>,-1},
-	    {<<"position">>,2},
-	    {<<"qualification_position">>,34},
-	    {<<"sector_1">>,67.0},
-	    {<<"sector_2">>,44.0},
-	    {<<"sector_3">>,48.0},
-	    {<<"info">>,
-	     <<"3TRYQUE82rPIIPB1RWOe4B4JOpdjoJ3bPZCR">>}],
-    
-    Val3 = [{<<"sport_event_uuid">>,
-	     <<"596044d8-86f5-462f-8d94-65b25e7d3fe9">>},
-	    {<<"time">>,1467554468400},
-	    {<<"club_uuid">>,
-	     <<"XvMFBUzx24djxkEZnqGz0wlpYqQsWcOPHwPi">>},
-	    {<<"person_uuid">>,
-	     <<"PEUvlXlhrtsgsQaouWsBfTxDdf3DUGnwrrWz">>},
-	    {<<"sport_uuid">>,
-	     <<"CR1fvGlVMnjOLK1VSWlJn5uLrQqQaS94TQ8l">>},
-	    {<<"discipline_uuid">>,
-	     <<"7fjDrTMEkrr5LYZNw4sCLYWiyWUJXZEohyfc">>},
-	    {<<"driver_number">>,
-	     <<"casUj7A5Uwmk4VozCt06oMro28VY7zHiissc">>},
-	    {<<"person_full_name">>,
-	     <<"zsreozHdXuh5pQp1U6COE8yGPMQTJ7g9tPrY">>},
-	    {<<"club_full_name">>,
-	     <<"dVPy53WnTofMS7ebTk7TJwixLytijdEKTrA4">>},
-	    {<<"abandoned">>,false},
-	    {<<"best_gap_in_time">>,34.0},
-	    {<<"best_gap_in_lap">>,65},
-	    {<<"best_lap">>,58.0},
-	    {<<"best_position">>,18},
-	    {<<"best_sector_1">>,17.0},
-	    {<<"best_sector_2">>,50.0},
-	    {<<"best_sector_3">>,6.0},
-	    {<<"best_speed">>,26.0},
-	    {<<"gap_in_time">>,83.0},
-	    {<<"gap_in_lap">>,37},
-	    {<<"lap_time">>,24.0},
-	    {<<"laps">>,-1},
-	    {<<"position">>,4},
-	    {<<"qualification_position">>,12},
-	    {<<"sector_1">>,3.0},
-	    {<<"sector_2">>,35.0},
-	    {<<"sector_3">>,12.0},
-	    {<<"info">>,
-	     <<"NdJbBLK3Q2ew8thQ1eQaQpD9iXeaokWSxPoT">>}],
-	
-    addKey(Ref, 1, Val1, Enc),
-    addKey(Ref, 2, Val2, Enc),
-    addKey(Ref, 3, Val3, Enc).
-
-putIntellicoreTestDataMsgpack(Ref) ->
-    putSequentialIntellicoreData({Ref, msgpack, 1467554400000, 1467563400000, 1404.0/137000}, 100000, 0).
-
-putIntellicoreTestDataErlang(Ref) ->
-    putSequentialIntellicoreData({Ref, erlang, 1467554400000, 1467563400000, 1404.0/137000}, 100000, 0).
-
-putIntellicoreTestData(Ref, N, Enc) ->
-    putSequentialIntellicoreData({Ref, Enc, 1467554400000, 1467563400000, 1404.0/137000}, N, 0).
-
-putSequentialIntellicoreData(_Args, _Nrow, _Nrow) ->
+putSequentialRealisticData(_Args, _Nrow, _Nrow) ->
     ok;
-putSequentialIntellicoreData(Args, Nrow, AccRow) ->
+putSequentialRealisticData(Args, Nrow, AccRow) ->
     {Ref, Enc, StartTime, Delta, LapsFrac} = Args,
-    Data = getIntellicoreData(<<"596044d8-86f5-462f-8d94-65b25e7d3fe9">>, StartTime + AccRow * Delta, LapsFrac),
+    Data = getRealisticData(<<"596044d8-86f5-462f-8d94-65b25e7d3fe9">>, StartTime + AccRow * Delta, LapsFrac),
 
-    case AccRow rem 1000 of 
-	0 ->
-	    io:format("Putting row ~p Data = ~p~n", [AccRow, Data]);
-	_ ->
-	    ok
-    end,
+%%    case AccRow rem 10 of 
+%%	0 ->
+%%	    io:format("Putting row ~p Data = ~p~n", [AccRow, Data]);
+%%	_ ->
+%%	    ok
+%%    end,
 
     addKey(Ref, AccRow, Data, Enc),
-    putSequentialIntellicoreData(Args, Nrow, AccRow+1).
+    putSequentialRealisticData(Args, Nrow, AccRow+1).
 
-getIntellicoreData(SportEventUuid, Timestamp, LapsFrac) ->
+getRealisticData(SportEventUuid, Timestamp, LapsFrac) ->
     VarcharSize = length(binary_to_list(SportEventUuid)),
 
     LapsRand = random:uniform(1000),
@@ -1039,24 +881,6 @@ realisticOps(Enc) ->
     Res = gteOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
-
-intellicoreLapsTest(Enc) ->
-    io:format("intellicoreLapsTest with ~p encoding~n", [Enc]),
-    F = <<"laps">>,
-    Val = 0,
-    PutFn = 
-	case Enc of 
-	    msgpack ->
-		fun putIntellicoreTestDataMsgpack/1;
-	    _ ->
-		fun putIntellicoreTestDataErlang/1
-	end,
-    EvalFn = fun defaultEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, [Enc]}),
-    ?assert(Res),
-    profiler:profile({debug}),
-    Res.
-
 
 %%------------------------------------------------------------
 %% Test any operations
