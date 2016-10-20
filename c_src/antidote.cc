@@ -239,25 +239,18 @@ namespace leveldb {
                     valueA = parseInt(a);
                     valueB = parseInt(b);
 
-                    // Keys are sorted, so we leverage that
-                    if(keyA.compare(keyB) == 0) {
-                        // Same key
-                        if(valueB == valueA) {
-                            // Values for this key are equal,
-                            // continue to next key
-                            aSize--;
-                            bSize--;
-                            continue;
-                        }
-                        // Values are different, so return the comparison
-                        if(valueB > valueA) {
-                            return 1;
-                        } else {
-                            return -1;
-                        }
+                    if(valueB == valueA) {
+                        // Values for this key are equal,
+                        // continue to next key
+                        aSize--;
+                        bSize--;
+                        continue;
+                    }
+                    // Values are different, so return the comparison
+                    if(valueB > valueA) {
+                        return 1;
                     } else {
-                        // Key is different so return the comparison
-                        return keyA.compare(keyB);
+                        return -1;
                     }
                 }
                 // VCs are the same until now
@@ -265,10 +258,18 @@ namespace leveldb {
                 int vcSize = sizeComparison(aSize, bSize);
                 if (vcSize != 0) {
                     return vcSize;
+                }
+
+                // If VCs are equal, compare Hashes and op/snap
+                // Usint the Slice compare method
+                return -1 * a.compare(b);
+            }
+
+            static int hashComparison(int hashA, int hashB) {
+                if(hashB > hashA) {
+                    return 1;
                 } else {
-                    // If the VC is equal, check if it's an op or a snap.
-                    // If this returns 0, the key is identical
-                    return sizeComparison(a.size(), b.size());
+                    return -1;
                 }
             }
 
