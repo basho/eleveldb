@@ -84,8 +84,6 @@ static ErlNifFunc nif_funcs[] =
     {"streaming_stop", 1, eleveldb::streaming_stop},
 
     {"current_usec",   0, eleveldb::currentMicroSeconds},
-
-    {"decodeei",   1, eleveldb::decodeei},
 };
 
 
@@ -778,58 +776,6 @@ async_open(
 
 }   // async_open
 
-ERL_NIF_TERM
-decodeei(
-    ErlNifEnv* env,
-    int argc,
-    const ERL_NIF_TERM argv[])
-{
-    // We allow decodeei to be called with the following semantics
-    //
-    // {Bin, decode}
-    // {Bin, skip, Nrecord}
-   
-    try {
-
-        std::vector<ERL_NIF_TERM> cells = ErlUtil::getTupleCells(env, argv[0]);
-        
-        std::vector<unsigned char> data = ErlUtil::getBinary(env, cells[0]);
-        std::string op = ErlUtil::getAtom(env, cells[1]);
-
-        if(op == "decode") {
-
-            int index=1;
-            COUT(EiUtil::formatTerm((char*)&data[0], &index));
-
-        } else if(op == "skip") {
-
-            unsigned nel = ErlUtil::getValAsUint32(env, cells[2]);
-
-            int index=1;
-            char* buf = (char*)&data[0];
-            int opcode = (int)((unsigned char)buf[index]);
-
-            if(opcode != 108) 
-                ThrowRuntimeError("Not a list");
-
-            index += 5;
-
-            for(unsigned i=0; i < nel; i++) 
-                EiUtil::skipLastReadObject((char*)&data[0], &index);
-
-            // Now format the next item
-            
-            COUT(EiUtil::formatTerm((char*)&data[0], &index));
-        }
-        
-        return ATOM_OK;
-        
-    } catch(std::runtime_error& err) {
-        COUT("Caught an error: " << err.what());
-        return ATOM_ERROR;
-    }
-}
-    
 ERL_NIF_TERM
 async_write(
     ErlNifEnv* env,
