@@ -61,28 +61,6 @@
 
 #include "leveldb/atomics.h"
 
-#define DOTEST(type, einame, index) {                 \
-        index=0;                                      \
-        type uli = 1467563367600, ruli=0;             \
-        char buf[1000];                               \
-        ei_encode_##einame(buf, &index, uli);            \
-        index=0;                                        \
-        ei_decode_##einame(buf, &index, &ruli);          \
-        COUT("uli = " << uli << " ruli = " << ruli << " index = " << index);  \
-        index=1;                                                        \
-        COUT("Type is: " << EiUtil::getType(buf, &index));              \
-        COUT("Type is: " << (char)EiUtil::getType(buf, &index));        \
-        COUT("Type is: " << EiUtil::typeOf(buf, &index));               \
-    }
-
-#define EXTEST(type, einame, data, index) {                              \
-        index=0;                                                        \
-        type ruli=0;                                                    \
-        int status = ei_decode_##einame((char*)&data[0], &index, &ruli);     \
-        COUT("status = " << status << " ruli = " << ruli);              \
-    }
-
-
 static ErlNifFunc nif_funcs[] =
 {
     {"async_close", 2, eleveldb::async_close},
@@ -837,7 +815,7 @@ decodeei(
             index += 5;
 
             for(unsigned i=0; i < nel; i++) 
-                EiUtil::skipNext((char*)&data[0], &index);
+                EiUtil::skipLastReadObject((char*)&data[0], &index);
 
             // Now format the next item
             

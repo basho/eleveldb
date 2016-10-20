@@ -29,7 +29,10 @@ using namespace eleveldb;
     }
 
 //=======================================================================
-// Initialize static maps of conversion functions here
+// Initialize static maps of conversion functions here.
+//
+// These are used for fast switching on type in the objectToXXXX
+// conversion methods supported by this class
 //=======================================================================
 
 std::map<DataType::Type, EI_CONV_UINT8_FN(*)>  
@@ -576,60 +579,221 @@ DataType::Type EiUtil::typeOf(int type, char* buf, int* index)
 }
 
 /**.......................................................................
- * Skip over the next encoded term (advance the index pointer to the
- * next item)
+ * Function to skip the next item in this buffer.  
+ * 
+ * int* index should point to a valid opcode on entry
  */
 FN_DEF(void, skipLastReadObject,
-
-       int type = getType(buf, index);
-
-       if(isAtom(type)) {
-           (void) getAtom(buf, index);
-           return;
-       }
-       
-       if(isInteger(type)) {
-           (void) getLong(buf, index);
-           return;
-       }
-       
-       if(isFloat(type)) {
-           (void) getFloat(buf, index);
-           return;
-       }
-       
-       if(isTuple(type)) {
-           (void) skipTuple(buf, index);
-           return;
-       }
-       
-       if(isBinary(type)) {
-           (void) getBinary(buf, index);
-           return;
-       }
-       
-       if(isString(type)) {
-           (void) getString(buf, index);
-           return;
-       }
-       
-       if(isList(type)) {
-           (void) skipList(buf, index);
-           return;
-       }
-
-       if(isBig(buf, index)) {
-           (void) getBig(buf, index);
-           return;
-       }
-       
-       if(isNil(type)) {
-           return;
-       }
-
-       ThrowRuntimeError("Unsupported term encountered -- can't skip");
-
+       return skipNext(buf, index);
     )
+
+void EiUtil::skipNext(char* buf, int* index)
+{
+       unsigned int opcode = (unsigned int)((unsigned char)buf[*index]);
+
+       switch (opcode) {
+       //------------------------------------------------------------
+       // uint8
+       //
+       //   byte 0: opcode
+       //   byte 1: 1-byte value
+       //------------------------------------------------------------
+       case ERL_SMALL_INTEGER_EXT:
+       {
+           *index += 2;
+       }
+       break;
+       //------------------------------------------------------------
+       // int32
+       // 
+       //   byte 0:   opcode
+       //   byte 1-3: 4-byte val
+       //------------------------------------------------------------
+       case ERL_INTEGER_EXT:
+       {
+           *index += 5;
+       }
+       break;
+       //------------------------------------------------------------
+       // float, stored as a string (!)
+       //
+       //   byte 0:    opcode
+       //   byte 1-32: 31-byte val
+       //
+       //   (yes, 31 bytes -- see www1.erlang.org/doc/apps/erts/erl_ext_dist.html)
+       //------------------------------------------------------------
+       case ERL_FLOAT_EXT:
+       {
+           *index += 32;
+       }
+       break;
+       //------------------------------------------------------------
+       // float stored as IEEE float
+       //
+       //   byte 0:   opcode
+       //   byte 1-8: 8-byte IEEE val
+       //------------------------------------------------------------
+       case NEW_FLOAT_EXT:
+       {
+           *index += 9;
+       }
+       break;
+       //------------------------------------------------------------
+       // small atom (both Latin1 and UTF8 are encoded the same way):
+       //
+       //   byte 0:        opcode
+       //   byte 1:        1-byte size
+       //   byte 2-2+size: atom bytes
+       // ------------------------------------------------------------
+       case ERL_SMALL_ATOM_EXT:
+       case ERL_SMALL_ATOM_UTF8_EXT:
+       {
+           unsigned int size = (unsigned int)((unsigned char)buf[*index + 1]);
+           *index += size + 2;
+       }
+       break;
+       //------------------------------------------------------------
+       // atom (both Latin1 and UTF8 are encoded the same way):
+       //
+       //   byte 0:        opcode
+       //   byte 1-2:      size, as unsigned short
+       //   byte 3-3+size: atom bytes
+       // ------------------------------------------------------------
+       case ERL_ATOM_EXT:
+       case ERL_ATOM_UTF8_EXT:
+       {
+           unsigned short size = ntohs(*((unsigned short*)(buf + *index + 1)));
+           *index += size + 3;
+       }
+       break;
+       //------------------------------------------------------------
+       // small tuple:
+       //
+       //   byte  0: opcode
+       //   byte  1: 1-byte nelem
+       //
+       // So we skip 1 (header) + 1 (opcode), then skip each element
+       // in turn
+       //------------------------------------------------------------
+       case ERL_SMALL_TUPLE_EXT:
+       {
+           unsigned int nelem = (unsigned int)((unsigned char)buf[*index + 1]);
+           *index += 2;
+           for(unsigned i=0; i < nelem; i++)
+               skipNext(buf, index);
+       }
+       break;
+       //------------------------------------------------------------
+       // large tuple:
+       //
+       //   byte  0:   opcode
+       //   byte  1-3: 4-byte nelem
+       //
+       // So we skip 4 (header) + 1 (opcode), then skip each element
+       // in turn
+       //------------------------------------------------------------
+       case ERL_LARGE_TUPLE_EXT:
+       {
+           unsigned int nelem = ntohl(*((unsigned int*)(buf + *index + 1)));
+
+           *index += 5;
+           for(unsigned i=0; i < nelem; i++)
+               skipNext(buf, index);
+       }
+       break;
+       //------------------------------------------------------------
+       // empty list: just opcode, no data
+       //
+       //   byte 0: opcode
+       //------------------------------------------------------------
+       case ERL_NIL_EXT:
+       {
+           *index += 1;
+       }
+       break;
+       //------------------------------------------------------------
+       // list of single-byte types, used by TTB to store simple
+       // integer arrays like [1,3,4,5], or equivalently, strings
+       //
+       //   byte 0:        opcode
+       //   byte 1-2:      two-byte size,
+       //   byte 3-3+size: 1-byte values
+       //------------------------------------------------------------
+       case ERL_STRING_EXT:
+       {
+           unsigned short size = ntohs(*((unsigned short*)(buf + *index + 1)));
+           *index += size + 3;
+       }
+       break;
+       //------------------------------------------------------------
+       // List of arbitrary types: -- opcode, followed by 4-byte
+       // nelem, followed by elements of the list.
+       //
+       //   byte 0:   opcode
+       //   byte 1-3: unsigned int nelem
+       //
+       // Then each element in turn, terminated by a tail.
+       // 
+       // www1.erlang.org/doc/apps/erts/erl_ext_dist.html says that
+       // the tail is a empty list (ERL_NIL_EXT) if it is a proper
+       // list, but may be anything if the list is improper.  Because
+       // of the tail, we must use nelem+1 in the loop below
+       //------------------------------------------------------------
+       case ERL_LIST_EXT:
+       {
+           unsigned int nelem = ntohl(*((unsigned int*)(buf + *index + 1)));
+           *index += 5;
+           for(unsigned i=0; i < nelem+1; i++) 
+               skipNext(buf, index);
+       }
+       break;
+       //------------------------------------------------------------
+       // binary:
+       //
+       //   byte 0:        opcode
+       //   byte 1-3:      unsigned size
+       //   byte 4-4+size: bytes
+       //------------------------------------------------------------
+       case ERL_BINARY_EXT:
+       {
+           unsigned int nbyte = ntohl(*((unsigned int*)(buf + *index + 1)));
+           *index += (5 + nbyte);
+       }
+       break;
+       //------------------------------------------------------------
+       // small big int:
+       //
+       //   byte 0:         opcode
+       //   byte 1:         nbyte
+       //   byte 2:         pos/neg flag
+       //   byte 3-3+nbyte: value bytes
+       //------------------------------------------------------------
+       case ERL_SMALL_BIG_EXT:
+       {
+           unsigned int nbyte = (unsigned int)((unsigned char)buf[*index + 1]);
+           *index += nbyte + 3;
+       }
+       break;
+       //------------------------------------------------------------
+       // large big int:
+       //
+       //   byte 0:         opcode
+       //   byte 1-4:       nbyte
+       //   byte 5:         pos/neg flag
+       //   byte 6-6+nbyte: value bytes
+       //------------------------------------------------------------
+       case ERL_LARGE_BIG_EXT:
+       {
+           unsigned int nbyte = (unsigned int)((unsigned char)buf[*index + 1]);
+           *index += nbyte + 6;
+       }
+       break;
+       default:
+           ThrowRuntimeError("Unsupported term encountered -- can't skip");
+       }
+       
+       return;
+}
 
 //=======================================================================
 // Format methods
@@ -709,10 +873,6 @@ FN_DEF(std::string, formatTuple,
        int arity = getTupleHeader(buf, index);
        std::ostringstream os;
 
-//       COUT("Arity = " << arity << " index = " << *index 
-//            << " next byte = " << (unsigned)((unsigned char)buf[*index])
-//            << " next byte = " << (unsigned)((unsigned char)buf[*index+1]));
-       
        os << "{";
        for(unsigned iCell=0; iCell < arity; iCell++) {
            os << formatTerm(buf, index);
@@ -790,7 +950,11 @@ FN_DEF(std::string, formatString,
     )
 
 //=======================================================================
-// Get methods
+// Macro-ized get methods.  These are macro-ized to allow each method
+// to be simultaneously declared as a per-object method that can be
+// called on an object with a pre-initialized encode buffer, and also
+// as a static method that can be called by explicitly passing in a
+// buffer
 //=======================================================================
 
 FN_DEF(std::string, getString,
@@ -844,15 +1008,15 @@ FN_DEF(std::string, getBinaryAsString,
 FN_DEF(std::string, getBinaryAsStringEml,
 
        //------------------------------------------------------------
-       // binary is opcode, followed by 4-byte size, followed by bytes
+       // Binary is opcode (1-byte), followed by size (4 bytes),
+       // followed by payload bytes
        //------------------------------------------------------------
 
-       unsigned int size = getUint(buf + *index + 1);
+       unsigned int size = ntohl(*((unsigned int*)(buf + *index + 1)));
 
-       // ei_decode_binary() copies exactly size bytes into the return
-       // buffer.  If we are interpreting the data as a string, the
-       // return buffer must be NULL terminated, else the conversion
-       // to a string will not be well defined
+       // Copy the bytes out of the payload into a StringBuf, null
+       // terminating the result since it will be interpreted as a
+       // string (hence size+1)                                      
        
        StringBuf sBuf(size+1);
        char* bufPtr = sBuf.getBuf();
@@ -861,6 +1025,8 @@ FN_DEF(std::string, getBinaryAsStringEml,
        for(unsigned i=0; i < size; i++)
            bufPtr[i] = buf[*index + 5 + i];
 
+       // Advance the index pointer to the next item
+       
        *index += 5 + size;
        
        return sBuf.getString();
@@ -887,7 +1053,9 @@ FN_DEF(bool, isBool,
            std::string atom = getAtom(buf, index);
            return atom == "false" || atom == "true";
        }
-       
+
+       // Not an atom, and not true or false?  Then not a boolean.
+
        return false;
     )
 
@@ -991,7 +1159,7 @@ FN_DEF(uint64_t, getBigAsUint64,
     )
 
 /**.......................................................................
- * Parse a map encoded as a msgpack object into component keys and
+ * Parse a map encoded as a ttb object into component keys and
  * datatypes
  */
 std::map<std::string, DataType::Type> EiUtil::parseMap()
@@ -1296,6 +1464,13 @@ CONVERT_DECL(double, EiUtil::Big, getBig,
              return val.isSigned_ ? -retVal : retVal;
     );
 
+//=======================================================================
+// Top-level methods to convert whatever the next encoded object is to
+// the specified type.  These are required because TTB encoding may
+// encode variables of the same apparent type in erlang (in particular
+// integer types) to different encoded types based on value.
+//=======================================================================
+
 uint8_t EiUtil::objectToUint8(char* buf, int* index)
 {
     DataType::Type type = typeOf(getType(buf, index), buf, index);
@@ -1337,6 +1512,10 @@ double EiUtil::objectToDouble(char* buf, int* index)
     return 0;
 }
 
+//=======================================================================
+// Build maps of type-conversion functions
+//=======================================================================
+
 std::map<DataType::Type, EI_CONV_UINT8_FN(*)>  EiUtil::constructUint8Map()
 {
     std::map<DataType::Type, EI_CONV_UINT8_FN(*)> convMap;
@@ -1365,157 +1544,3 @@ std::map<DataType::Type, EI_CONV_DOUBLE_FN(*)>  EiUtil::constructDoubleMap()
     return convMap;
 }
 
-//-----------------------------------------------------------------------
-// Test function to skip the next item in this buffer.  index should
-// point to a valid opcode on entry
-//-----------------------------------------------------------------------
-
-unsigned int EiUtil::getUint(char* buf)
-{
-    unsigned int ret=0;
-    char* iPtr = (char*)&ret;
-    for(unsigned i=0; i < 4; i++) {
-        iPtr[3-i] = *(buf + i);
-    }
-
-    return ret;
-}
-
-unsigned short EiUtil::getUshort(char* buf)
-{
-    unsigned short ret=0;
-    char* iPtr = (char*)&ret;
-    for(unsigned i=0; i < 2; i++)
-        iPtr[1-i] = *(buf + i);
-    return ret;
-}
-
-void EiUtil::skipNext(char* buf, int* index)
-{
-    unsigned int opcode = (unsigned int)((unsigned char)buf[*index]);
-
-//    COUT("Inside skipNext wiht opcode = " << opcode << " index = " << *index);
-//    COUT("opcode = " << (int)((unsigned char) *(buf + *index)));
-//       
-//    for(unsigned i=0; i < 4; i++) {
-//        COUT("Byte " << (*index + i) << " = " << (int)((unsigned char)buf[*index+i]));
-//    }
-            
-    switch (opcode) {
-        //------------------------------------------------------------
-        // uint8 -- opcode, followed by 1-byte val
-        //------------------------------------------------------------
-    case 97:
-    {
-        *index += 2;
-    }
-    break;
-    //------------------------------------------------------------
-    // int32 -- opcode, followed by 4-byte val
-    //------------------------------------------------------------
-    case 98:
-    {
-        *index += 5;
-    }
-    break;
-    //------------------------------------------------------------
-    // double -- opcode, followed by 31-byte val
-    //------------------------------------------------------------
-    case 99:
-    {
-        *index += 32;
-    }
-    break;
-    //------------------------------------------------------------
-    // binary -- opcode, followed by 4-byte size, followed by bytes
-    //------------------------------------------------------------
-    case 109:
-    {
-        unsigned int nbyte = getUint(buf + *index + 1);
-        *index += (5 + nbyte);
-    }
-    break;
-    //------------------------------------------------------------
-    // big int -- opcode followed by 2 header bytes:
-    //
-    //   first byte is #bytes
-    //   second is #signed
-    //
-    //   rest is bytes
-    // 
-    // So we skip nbyte + 2 (header) + 1 (opcode)
-    //------------------------------------------------------------
-    case 110:
-    {
-        unsigned int nbyte = (unsigned int)((unsigned char)buf[*index + 1]);
-        *index += nbyte + 3;
-    }
-    break;
-    //------------------------------------------------------------
-    // empty list -- no data, just opcode (1)
-    //------------------------------------------------------------
-    case 106:
-    {
-        *index += 1;
-    }
-    break;
-    //------------------------------------------------------------
-    // tuple -- opcode followed by 1 header byte:
-    //
-    //   first byte is #elements
-    //
-    // So we skip 1 (header) + 1 (opcode), then skip each element in
-    // turn
-    //------------------------------------------------------------
-    case 104:
-    {
-        unsigned int nelem = (unsigned int)((unsigned char)buf[*index + 1]);
-        *index += 2;
-        for(unsigned i=0; i < nelem; i++)
-            skipNext(buf, index);
-    }
-    break;
-    //------------------------------------------------------------
-    // atom -- opcode, followed by 2 header bytes:
-    //
-    //   two bytes are size
-    //
-    // So we skip 2 (size) + 1 (opcode)
-    //------------------------------------------------------------
-    case 100:
-    {
-        unsigned short size = getUshort(buf + *index + 1);
-        *index += size + 3;
-    }
-    break;
-    //------------------------------------------------------------
-    // list of single-byte types -- opcode, followed by two-byte size,
-    // just like atom, only different opcode
-    //------------------------------------------------------------
-    case 107:
-    {
-        unsigned short size = getUshort(buf + *index + 1);
-        *index += size + 3;
-    }
-    break;
-    //------------------------------------------------------------
-    // List of arbitrary types -- opcode, followed by 4-byte nelem, followed by elements
-    //
-    //   four bytes are size
-    //   then each element in turn
-    //   terminated by empty list (opcode 106)
-    //------------------------------------------------------------
-    case 108:
-    {
-        unsigned int nelem = getUint(buf + *index + 1);
-        *index += 5;
-        for(unsigned i=0; i < nelem+1; i++) 
-            skipNext(buf, index);
-    }
-    break;
-    default:
-        ThrowRuntimeError("Unsupported term encountered -- can't skip");
-    }
-
-    return;
-}

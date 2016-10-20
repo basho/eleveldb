@@ -12,6 +12,11 @@
     throw std::runtime_error(_macroOs.str());\
   }
 
+//------------------------------------------------------------
+// Macros not used in production code, but useful for debugging, so
+// I'm leaving them here.
+//------------------------------------------------------------
+
 #define COUT(text) {\
     std::ostringstream _macroOs;\
     _macroOs << text;		\

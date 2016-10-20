@@ -35,8 +35,18 @@ namespace eleveldb {
     class EiUtil {
     public:
 
+        //------------------------------------------------------------
+        // What I'm calling Big is a type encoded by TTB, but for
+        // which no encoding is implemented in the ei library.
+        // 
+        // It can contain a positive or negative value, and can store
+        // ints as an arbitrary number of bytes.
+        //
+        // This struct is for managing up to 8-byte integers encoded
+        // as a big
+        //------------------------------------------------------------
+        
         struct Big {
-
             bool isSigned_;
             unsigned size_;
             uint64_t val_;
@@ -127,8 +137,8 @@ namespace eleveldb {
         FN_DECL(Big,           getBig);
         FN_DECL(uint64_t,      getBigAsUint64);
         FN_DECL(std::vector<unsigned, char> getBinary);
-        FN_DECL(std::string, getBinaryAsString);
-        FN_DECL(std::string, getBinaryAsStringEml);
+        FN_DECL(std::string,   getBinaryAsString);
+        FN_DECL(std::string,   getBinaryAsStringEml);
         
         FN_DECL(std::string, formatAtom);
         FN_DECL(std::string, formatInteger);
@@ -144,8 +154,6 @@ namespace eleveldb {
         FN_DECL(void, skipLastReadObject);
 
         static void skipNext(char* buf, int* index);
-        static unsigned int getUint(char* buf);
-        static unsigned short getUshort(char* buf);
 
         std::map<std::string, DataType::Type> parseMap();
         static std::map<std::string, DataType::Type> parseMap(char* buf, int* index);
