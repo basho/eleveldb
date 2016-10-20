@@ -57,9 +57,6 @@ ERL_NIF_TERM streaming_ack(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 ERL_NIF_TERM streaming_stop(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 
 ERL_NIF_TERM currentMicroSeconds(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
-
-ERL_NIF_TERM decodeei(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
-
 } // namespace eleveldb
 
 
