@@ -193,7 +193,7 @@ parse_expression_node<bool>(ErlNifEnv* env, ERL_NIF_TERM root, ExtractorMap& ext
             if(op == eleveldb::filter::EQ_OP || 
                op == eleveldb::filter::EQEQ_OP) {
                 return parse_equals_expr(env, opArgs, ext, throwIfInvalid);
-	    } else if(op == eleveldb::filter::NEQ_OP) {
+            } else if(op == eleveldb::filter::NEQ_OP) {
                 return parse_nequals_expr(env, opArgs, ext, throwIfInvalid);
             } else if(op == eleveldb::filter::LT_OP) {
                 return parse_lt_expr(env, opArgs, ext, throwIfInvalid);

@@ -826,7 +826,7 @@ void RangeScanTask::sendMsg(ErlNifEnv * msg_env, ERL_NIF_TERM atom, ErlNifPid pi
 {
     if(!sync_obj_->IsConsumerDead()) {
         ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
-	ERL_NIF_TERM msg_str  = enif_make_string(msg_env, msg.c_str(), ERL_NIF_LATIN1);
+        ERL_NIF_TERM msg_str  = enif_make_string(msg_env, msg.c_str(), ERL_NIF_LATIN1);
         ERL_NIF_TERM msg      = enif_make_tuple3(msg_env, atom, ref_copy, msg_str);
         
         enif_send(NULL, &pid, msg_env, msg);
@@ -928,7 +928,7 @@ work_result RangeScanTask::DoWork()
             // If data are present in the batch (ie, out_offset != 0),
             // send the batch now
 
-	    if (out_offset) {
+            if (out_offset) {
             
                 // Shrink it to final size.
 
@@ -942,21 +942,21 @@ work_result RangeScanTask::DoWork()
             break;
         }
 
-	//------------------------------------------------------------
-	// Else keep going; shove the next entry in the batch, but
-	// only if it passes any user-specified filter.  We default to
-	// filter_passed = true, in case we are not using a filter,
-	// which will cause all keys to be returned
-	//------------------------------------------------------------
+        //------------------------------------------------------------
+        // Else keep going; shove the next entry in the batch, but
+        // only if it passes any user-specified filter.  We default to
+        // filter_passed = true, in case we are not using a filter,
+        // which will cause all keys to be returned
+        //------------------------------------------------------------
 
         leveldb::Slice key   = iter->key();
         leveldb::Slice value = iter->value();
 
         bool filter_passed = true;
 
-	//------------------------------------------------------------
-	// If we are using a filter, evaluate it here
-	//------------------------------------------------------------
+        //------------------------------------------------------------
+        // If we are using a filter, evaluate it here
+        //------------------------------------------------------------
 
         if(options_.useRangeFilter_) {
 
@@ -1030,9 +1030,9 @@ work_result RangeScanTask::DoWork()
         }
 
         if (filter_passed) {
-	  
+          
             const size_t ksz = key.size();
-	    const size_t vsz = value.size();
+            const size_t vsz = value.size();
 
             const size_t ksz_sz = VarintLength(ksz);
             const size_t vsz_sz = VarintLength(vsz);
@@ -1041,17 +1041,17 @@ work_result RangeScanTask::DoWork()
             const size_t next_offset = out_offset + esz;
 
             // Allocate the output data array if this is the first data
-	    // (i.e., if out_offset == 0)
+            // (i.e., if out_offset == 0)
 
             if(out_offset == 0) {
                 enif_alloc_binary(initial_bin_size, &bin);
                 binaryAllocated = true;
             }
 
-	    //------------------------------------------------------------
+            //------------------------------------------------------------
             // If we need more space, allocate it exactly since that means we
             // reached the batch max anyway and will send it right away
-	    //------------------------------------------------------------
+            //------------------------------------------------------------
 
             if(next_offset > bin.size)
                 enif_realloc_binary(&bin, next_offset);
@@ -1065,11 +1065,11 @@ work_result RangeScanTask::DoWork()
             memcpy(out + ksz_sz + ksz + vsz_sz, value.data(), vsz);
 
             out_offset = next_offset;
-	    
-	    //------------------------------------------------------------
-	    // If we've reached the maximum number of bytes to include in
-	    // the batch, possibly shrink the binary and send it
-	    //------------------------------------------------------------
+            
+            //------------------------------------------------------------
+            // If we've reached the maximum number of bytes to include in
+            // the batch, possibly shrink the binary and send it
+            //------------------------------------------------------------
 
             if(out_offset >= options_.max_batch_bytes) {
 
@@ -1083,18 +1083,18 @@ work_result RangeScanTask::DoWork()
                 sync_obj_->AddBytes(out_offset);
 
                 out_offset = 0;
-	    }
+            }
 
-	    //------------------------------------------------------------
-	    // Increment the number of keys read and step to the next
-	    // key
-	    //------------------------------------------------------------
+            //------------------------------------------------------------
+            // Increment the number of keys read and step to the next
+            // key
+            //------------------------------------------------------------
 
-	    ++num_read;
+            ++num_read;
 
-	} else {
-            //	  COUT("Filter DIDN'T pass");
-	}
+        } else {
+            //    COUT("Filter DIDN'T pass");
+        }
 
         iter->Next();
     }

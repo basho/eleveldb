@@ -435,7 +435,7 @@ bool Extractor::riakObjectContentsCanBeParsed(const char* data, size_t size, uns
  * contents portion of an encoded riak object
  */
 void Extractor::getToRiakObjectContents(const char* data, size_t size, 
-					const char** contentsPtr, size_t& contentsSize) 
+                                        const char** contentsPtr, size_t& contentsSize) 
 {
     const char* ptr = data;
 
@@ -560,8 +560,8 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
         if(!cmp_read_object(&cmp_, &key_obj) || !cmp_object_is_str(&key_obj))
             ThrowRuntimeError("Failed to read key");
 
-	uint32_t len=0;
-	if(!cmp_object_as_str(&key_obj, &len))
+        uint32_t len=0;
+        if(!cmp_object_as_str(&key_obj, &len))
             ThrowRuntimeError("Error parsing object as a string");
 
         sBuf.resize(len+1);
@@ -570,19 +570,19 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
 
         std::string key(sBuf.getBuf());
 
-	//------------------------------------------------------------
-	// Next read the field value
-	//------------------------------------------------------------
+        //------------------------------------------------------------
+        // Next read the field value
+        //------------------------------------------------------------
 
         cmp_object_t obj;
 
         if(!cmp_read_object(&cmp_, &obj))
             ThrowRuntimeError("Unable to read value for field " << key);
 
-	//------------------------------------------------------------
-	// If this field is one of the fields in our filter, try to
-	// process the value
-	//------------------------------------------------------------
+        //------------------------------------------------------------
+        // If this field is one of the fields in our filter, try to
+        // process the value
+        //------------------------------------------------------------
 
         if(expr_fields_.find(key) != expr_fields_.end()) {
 
@@ -816,14 +816,14 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
 
         std::string key = EiUtil::getBinaryAsStringEml(data, &index);
 
-	//------------------------------------------------------------
-	// Next up is the field value
-	//------------------------------------------------------------
+        //------------------------------------------------------------
+        // Next up is the field value
+        //------------------------------------------------------------
 
-	//------------------------------------------------------------
-	// If this field is one of the fields in our filter, try to
-	// process the value
-	//------------------------------------------------------------
+        //------------------------------------------------------------
+        // If this field is one of the fields in our filter, try to
+        // process the value
+        //------------------------------------------------------------
 
         if(expr_fields_.find(key) != expr_fields_.end()) {
 

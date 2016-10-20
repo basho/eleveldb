@@ -198,21 +198,21 @@ CmpUtil::parseMap(const char* data, size_t size)
         cmp_object_t key_obj;
 
         if(!cmp_read_object(&cmp, &key_obj) || !cmp_object_is_str(&key_obj))
-	  ThrowRuntimeError("Failed to read key");
+          ThrowRuntimeError("Failed to read key");
 
-	uint32_t len=0;
-	if(!cmp_object_as_str(&key_obj, &len))
-	  ThrowRuntimeError("Error parsing object as a string");
+        uint32_t len=0;
+        if(!cmp_object_as_str(&key_obj, &len))
+          ThrowRuntimeError("Error parsing object as a string");
 
         sBuf.resize(len+1);
         if(!cmp_object_to_str(&cmp, &key_obj, sBuf.getBuf(), len+1))
-	  ThrowRuntimeError("Error reading key string");
+          ThrowRuntimeError("Error reading key string");
 
         std::string key(sBuf.getBuf());
 
-	//------------------------------------------------------------
-	// Next read the field value
-	//------------------------------------------------------------
+        //------------------------------------------------------------
+        // Next read the field value
+        //------------------------------------------------------------
 
         cmp_object_t obj;
 

@@ -1386,14 +1386,3 @@ readKeysFromTable(Table) ->
 
 r() ->
     readKeysFromTable("1096126227998177188652763624537212264741949407232").
-
-testComp() ->
-    profiler:profile({start, m1}),
-    sut:realisticOps(msgpack),
-    profiler:profile({stop, m1}),
-
-    profiler:profile({start, e1}),
-    sut:realisticOps(erlang),
-    profiler:profile({stop, e1}),
-
-    profiler:profile({debug}).
