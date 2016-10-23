@@ -55,17 +55,31 @@ namespace leveldb {
                     if ((bc.size() - bKeySize) == 0) return 1;
                 }
 
-                // If keys are equal, continue with the vector clock
+                // If keys are equal, continue with the max value
                 // First trim the key
                 ac.remove_prefix(aKeySize);
                 bc.remove_prefix(bKeySize);
 
-                // Check lists
-                int aVCSize = checkList(ac);
-                int bVCSize = checkList(bc);
+                unsigned long long int valueA, valueB;
+                valueA = parseInt(ac);
+                valueB = parseInt(bc);
 
-                // Parse and compare VCs
-                return compareVCs(ac, aVCSize, bc, bVCSize);
+                if(valueA == valueB) {
+                    // If we are supplied with a key that only contains
+                    // the antidote key, and max value we can't continue parsing,
+                    // therefore return -1 or 1 according to which key is the shorter.
+                    if(ac.size() == 0) return -1;
+                    if(bc.size() == 0) return 1;
+                    // Keys are full, so return the comparison of the hash, etc..
+                    return -1 * ac.compare(bc);
+                }
+
+                // Max values are != so return their comparison
+                if(valueB > valueA) {
+                    return 1;
+                } else {
+                    return -1;
+                }
             }
 
             // Given a slice, checks that the first bytes match Erlang
@@ -94,38 +108,6 @@ namespace leveldb {
                 sc.remove_prefix(1);
 
                 return (int) sc[0];
-            }
-
-            // Given a slice, checks that a list follows, and returns its size.
-            static int checkList(Slice &s) {
-                // NIL_EXT = 106 (Empty list = Empty Snapshot)
-                if(s[0] == (char) 106) {
-                    s.remove_prefix(1);
-                    return 0;
-                }
-
-                // LIST_EXT = 108
-                assert(s[0] == (char) 108);
-                s.remove_prefix(1);
-
-                // parse list size
-                unsigned char size[4];
-                size[3] = s[0];
-                size[2] = s[1];
-                size[1] = s[2];
-                size[0] = s[3];
-
-                s.remove_prefix(4);
-                return *(int *)size;
-            }
-
-            static void checkTwoElementTuple(Slice &s) {
-                // SMALL_TUPLE_EXT == 104
-                assert(s[0] == (char) 104);
-                s.remove_prefix(1);
-                // LENGTH == 2 (DC, clock)
-                assert(s[0] == (char) 2);
-                s.remove_prefix(1);
             }
 
             // Given a Slice parses a SMALL_INTEGER_EXT (97), INTEGER_EXT (98)
@@ -200,89 +182,6 @@ namespace leveldb {
                     exp--;
                 }
                 return result;
-            }
-
-            // Given a Slice parses an ATOM_EXT
-            static string parseAtom(Slice &s) {
-                // ATOM_EXT = 100
-                assert(s[0] == (char) 100);
-                s.remove_prefix(1);
-
-                // LENGTH
-                Slice sc = Slice(s.data(), 2);
-                s.remove_prefix(2);
-                sc.remove_prefix(1);
-
-                // Create the result string and trim its size from the Slice.
-                string res (s.data(), sc[0]);
-                s.remove_prefix(sc[0]);
-                return res;
-            }
-
-            // This method returns -1 * the comparison value, since
-            // we are sorting keys from oldest to newest first.
-            static int compareVCs(Slice a, int aVCSize, Slice b, int bVCSize) {
-                // If any of them is an empty snapshot,
-                // return the comparison of the sizes
-                if (aVCSize == 0 || bVCSize == 0) {
-                    return sizeComparison(aVCSize, bVCSize);
-                }
-                unsigned long long int valueA, valueB;
-                string keyA, keyB;
-                int aSize = aVCSize, bSize = bVCSize;
-                // Iterate the vector clocks and compare them
-                while(aSize > 0 && bSize > 0) {
-                    checkTwoElementTuple(a);
-                    checkTwoElementTuple(b);
-                    keyA = parseAtom(a);
-                    keyB = parseAtom(b);
-                    valueA = parseInt(a);
-                    valueB = parseInt(b);
-
-                    if(valueB == valueA) {
-                        // Values for this key are equal,
-                        // continue to next key
-                        aSize--;
-                        bSize--;
-                        continue;
-                    }
-                    // Values are different, so return the comparison
-                    if(valueB > valueA) {
-                        return 1;
-                    } else {
-                        return -1;
-                    }
-                }
-                // VCs are the same until now
-                // Check if any of them has more keys
-                int vcSize = sizeComparison(aSize, bSize);
-                if (vcSize != 0) {
-                    return vcSize;
-                }
-
-                // If VCs are equal, compare Hashes and op/snap
-                // Usint the Slice compare method
-                return -1 * a.compare(b);
-            }
-
-            static int hashComparison(int hashA, int hashB) {
-                if(hashB > hashA) {
-                    return 1;
-                } else {
-                    return -1;
-                }
-            }
-
-            static int sizeComparison(int sizeA, int sizeB) {
-                if (sizeA == 0 && sizeB == 0){
-                    return 0;
-                } else {
-                    if (sizeA > 0 && sizeB == 0) {
-                        return -1;
-                    } else {
-                        return 1;
-                    }
-                }
             }
 
             // No need to shorten keys since it's fixed size.
