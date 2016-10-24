@@ -520,12 +520,29 @@ packObj_test() ->
 %% Utilities needed for operations tests
 %%-----------------------------------------------------------------------
 
-putKeyNormalOps(Ref) ->
+putKeyNormalOpsMsgpack(Ref) ->
     putKeyNormalOps(Ref, msgpack).
 
 putKeyNormalOpsErlang(Ref) ->
     putKeyNormalOps(Ref, erlang).
 
+putKeyNormalOpsMixed(Ref) ->
+    putKeyNormalOps(Ref, mixed).
+
+putKeyNormalOps(Ref, mixed) ->
+    Rows = getKeyNormalOps(),
+    lists:foreach(fun (Row) ->
+                          I = element(2, hd(Row)),
+			  io:format("Adding key ~p~n", [Row]),
+			  Enc = 
+			      case I rem 2 of
+				  0 ->
+				      msgpack;
+				  _ ->
+				      erlang
+			      end,
+                          addKey(Ref, I, Row, Enc)
+                  end, Rows);
 putKeyNormalOps(Ref, Enc) ->
     Rows = getKeyNormalOps(),
     lists:foreach(fun (Row) ->
@@ -540,7 +557,9 @@ putKeyNormalOps(Ref, Enc) ->
 
 getKeyNormalOps() ->
     FieldCount = 8,
-%    F2 = 2*FieldCount,
+
+    %% A function for constructing integer fields of variable type
+
     VarIntFn = 
         fun(I) ->
                 Prefactor = 
@@ -565,6 +584,9 @@ getKeyNormalOps() ->
                     end,
                 Prefactor * (I + AddFactor)
         end,
+
+    %% A function for constructing arbitrary-type fields as either
+    %% NULL or not-NULL (by use of supplied CF fun)
 
     CreateFn = 
 	fun(I, V1, V2, UseNull, CF) -> 
@@ -613,9 +635,11 @@ getKeyNormalOps() ->
 %------------------------------------------------------------
 
 getPutFn(msgpack) ->
-    fun putKeyNormalOps/1;
+    fun putKeyNormalOpsMsgpack/1;
 getPutFn(erlang) ->
-    fun putKeyNormalOpsErlang/1.
+    fun putKeyNormalOpsErlang/1;
+getPutFn(mixed) ->
+    fun putKeyNormalOpsMixed/1.
 
 %------------------------------------------------------------
 % Put realistic data
@@ -811,7 +835,7 @@ anyCompOps(Args) ->
 %%------------------------------------------------------------
 
 timestampOps_test() ->
-    timestampOps(erlang) and timestampOps(msgpack).
+    timestampOps(erlang) and timestampOps(msgpack) and timestampOps(mixed).
 
 timestampOps(Enc) ->
     io:format("timestampOps_test with ~p encoding~n", [Enc]),
@@ -832,7 +856,7 @@ timestampOps(Enc) ->
 %%------------------------------------------------------------
 
 sint64Ops_test() ->
-    sint64Ops(msgpack) and sint64Ops(erlang).
+    sint64Ops(msgpack) and sint64Ops(erlang) and sint64Ops(mixed).
 
 sint64Ops(Enc) ->
     io:format("sint64Ops_test with ~p encoding~n", [Enc]),
@@ -854,7 +878,7 @@ sint64Ops(Enc) ->
 %%------------------------------------------------------------
 
 varIntOps_test() ->
-    varIntOps(msgpack) and varIntOps(erlang).
+    varIntOps(msgpack) and varIntOps(erlang) and varIntOps(erlang).
 
 varIntOps(Enc) ->
     io:format("varIntOps_test with ~p encoding~n", [Enc]),
@@ -875,7 +899,7 @@ varIntOps(Enc) ->
 %%------------------------------------------------------------
 
 varcharOps_test() ->
-    varcharOps(msgpack) and varcharOps(erlang).
+    varcharOps(msgpack) and varcharOps(erlang) and varcharOps(mixed).
 
 varcharOps(Enc) ->
     io:format("varcharOps_test with ~p encoding~n", [Enc]),
@@ -896,7 +920,7 @@ varcharOps(Enc) ->
 %%------------------------------------------------------------
 
 doubleOps_test() ->
-    doubleOps(msgpack) and doubleOps(erlang).
+    doubleOps(msgpack) and doubleOps(erlang) and doubleOps(mixed).
 
 doubleOps(Enc) ->
     io:format("doubleOps_test with ~p encoding~n", [Enc]),
@@ -916,7 +940,7 @@ doubleOps(Enc) ->
 %%------------------------------------------------------------
 
 boolOps_test() ->
-    boolOps(msgpack) and boolOps(erlang).
+    boolOps(msgpack) and boolOps(erlang) and boolOps(mixed).
 
 boolOps(Enc) ->
     io:format("boolOps_test with ~p encoding~n", [Enc]),
@@ -936,7 +960,7 @@ boolOps(Enc) ->
 %%------------------------------------------------------------
 
 realisticOps_test() ->
-    realisticOps(erlang) and realisticOps(msgpack).
+    realisticOps(erlang) and realisticOps(msgpack) and realisticOps(mixed).
 
 realisticOps(Enc) ->
     io:format("realisticOps_test with ~p encoding~n", [Enc]),
@@ -963,7 +987,7 @@ anyOps_test() ->
     F = <<"f5">>,
     Val = em([1,2,3]),
     CompVal = [1,2,3],
-    PutFn  = fun putKeyNormalOps/1,
+    PutFn  = fun putKeyNormalOpsMsgpack/1,
     EvalFn = fun defaultEvalFn/1,
     Res = eqOpsOnly({F, {Val, CompVal}, any, PutFn, EvalFn, []}) and (anyCompOps({F, {Val, CompVal}, any, PutFn, EvalFn, []}) == false),
     ?assert(Res),
@@ -989,7 +1013,7 @@ andOps_test() ->
     Cond1 = {'>', {field, <<"f1">>, sint64}, {const, 3}},
     Cond2 = {'=', {field, <<"f3">>, double}, {const, 5.0}},
     Filter = {'and_', Cond1, Cond2},
-    PutFn  = fun putKeyNormalOps/1,
+    PutFn  = fun putKeyNormalOpsMsgpack/1,
     Keys = streamFoldTest(Filter, PutFn, []),
     {N1, NMatch1} = fieldsMatching(Keys, <<"f1">>, 3,   fun(V1,V2) -> V1 > V2 end),
     {N3, NMatch3} = fieldsMatching(Keys, <<"f3">>, 5.0, fun(V1,V2) -> V1 == V2 end),
@@ -1009,7 +1033,7 @@ orOps_test() ->
     Cond2 = {'=', {field, <<"f3">>, double}, {const, 5.0}},
     Filter = {'or_', Cond1, Cond2},
 
-    PutFn  = fun sut:putKeyNormalOps/1,
+    PutFn  = fun sut:putKeyNormalOpsMsgpack/1,
     AllKeys = getKeyNormalOps(),
 
     io:format("All keys = ~p~n", [AllKeys]),
@@ -1147,6 +1171,8 @@ abnormalOpsTests() ->
 
 %%=======================================================================
 %% Test filter on IS NULL and IS NOT NULL
+%%
+%% Changed to test both supported encodings
 %%=======================================================================
 
 isNullFieldOfTypeTestFactory(IsNull, Field) ->
@@ -1171,6 +1197,7 @@ isNullFieldOfTypeTestFactory(IsNull, Field, Enc) ->
 				     end),
     
     NNotNull = NTotal - NNull,
+
     ExpectedRowCount = case IsNull of
         true -> NNull;
         _ -> NNotNull
@@ -1371,6 +1398,9 @@ streamFoldTestOpts(Opts, FoldFun) ->
 %%------------------------------------------------------------
 %% Make sure that we iterate over the right number of keys when
 %% requesting start and end keys
+%%
+%% Changed to test scanning for both supported encodings, as well as
+%% mixed encoding case
 %%------------------------------------------------------------
 
 scanSome_test() ->
