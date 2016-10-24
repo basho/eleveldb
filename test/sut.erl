@@ -533,7 +533,6 @@ putKeyNormalOps(Ref, mixed) ->
     Rows = getKeyNormalOps(),
     lists:foreach(fun (Row) ->
                           I = element(2, hd(Row)),
-			  io:format("Adding key ~p~n", [Row]),
 			  Enc = 
 			      case I rem 2 of
 				  0 ->
@@ -547,7 +546,6 @@ putKeyNormalOps(Ref, Enc) ->
     Rows = getKeyNormalOps(),
     lists:foreach(fun (Row) ->
                           I = element(2, hd(Row)),
-			  io:format("Adding key ~p~n", [Row]),
                           addKey(Ref, I, Row, Enc)
                   end, Rows).
 
