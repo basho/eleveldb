@@ -85,6 +85,10 @@ namespace eleveldb {
         std::vector<unsigned char> getBinary(ERL_NIF_TERM term);
         static std::vector<unsigned char> getBinary(ErlNifEnv* env, ERL_NIF_TERM term);
 
+        std::vector<unsigned char> getBinaryOrEmptyList();
+        std::vector<unsigned char> getBinaryOrEmptyList(ERL_NIF_TERM term);
+        static std::vector<unsigned char> getBinaryOrEmptyList(ErlNifEnv* env, ERL_NIF_TERM term);
+
         std::vector<ERL_NIF_TERM> getListCells();
         std::vector<ERL_NIF_TERM> getListCells(ERL_NIF_TERM term);
         static std::vector<ERL_NIF_TERM> getListCells(ErlNifEnv* env, 
@@ -134,15 +138,19 @@ namespace eleveldb {
         static std::string formatTerm(ErlNifEnv* env, ERL_NIF_TERM term);
 
         static std::string formatAtom(  ErlNifEnv* env, ERL_NIF_TERM term);
-        static std::string formatBinary(ErlNifEnv* env, ERL_NIF_TERM term);
 
+        static std::string formatBinary(ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatBinary(unsigned char* buf, size_t size);
         static std::string formatBinary(char* buf, size_t size);
         
         static std::string formatList(  ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatNumber(ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatString(ErlNifEnv* env, ERL_NIF_TERM term);
+
         static std::string formatAsString(ErlNifEnv* env, ERL_NIF_TERM term);
+        static std::string formatAsString(unsigned char* buf, size_t size);
+        static std::string formatAsString(char* buf, size_t size);
+
         static std::string formatTuple( ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatTupleVec(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& tuple);
 

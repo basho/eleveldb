@@ -43,9 +43,6 @@
          parse_string/1,
          is_empty/1,
          encode/2,
-         decodeei/1,
-         decodeterm/1,
-         skipterm/2,
          current_usec/0]).
 
 %% for testing
@@ -183,15 +180,6 @@ encode(Val, binary) when is_binary(Val)->
     Val;
 encode(Val, _) ->
     term_to_binary(Val).
-
-decodeterm(Term) ->
-    decodeei({term_to_binary(Term), decode}).
-
-skipterm(Term, N) ->
-    decodeei({term_to_binary(Term), skip, N}).
-
-decodeei(_Bin) ->
-    erlang:nif_error({error, not_loaded}).
 
 -spec async_open(reference(), string(), open_options()) -> ok.
 async_open(_CallerRef, _Name, _Opts) ->

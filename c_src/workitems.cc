@@ -29,6 +29,7 @@
 #include "filter_parser.h"
 
 #include "ErlUtil.h"
+#include "StringBuf.h"
 
 #include "leveldb/atomics.h"
 #include "leveldb/cache.h"
@@ -974,9 +975,11 @@ work_result RangeScanTask::DoWork()
                 if(range_filter_) {
 
                     //------------------------------------------------------------
-                    // Also check if the key can be parsed.  If TS-encoded
-                    // data and non-TS encoded data are interleaved, this
-                    // causes us to ignore the non-TS-encoded data
+                    // Also check if the key can be parsed.
+                    //
+                    // Since TS-encoded and non-TS-encoded data can NOT be
+                    // interleaved, we are throwing if the riak object contents
+                    // can not be parsed.
                     //------------------------------------------------------------
 
                     unsigned char encMagic=0;
@@ -988,7 +991,7 @@ work_result RangeScanTask::DoWork()
                         // that it exists in the map because
                         // riakObjectContentsCanBeParsed() would have
                         // returned false if it didn't)
-                        
+
                         extractor_ = extractorMap_.extractorNoCheck(encMagic);
 
                         // And extract the field values that will be
@@ -1003,7 +1006,7 @@ work_result RangeScanTask::DoWork()
                         filter_passed = range_filter_->evaluate();
 
                     } else {
-                        filter_passed = false;
+                        ThrowRuntimeError("range_filter set, but couldn't parse riak object");
                     }
                 }
 
@@ -1013,9 +1016,16 @@ work_result RangeScanTask::DoWork()
                 //------------------------------------------------------------
                 
             } catch(std::runtime_error& err) {
+
                 std::ostringstream os;
+
+                // Attempt to format the key as a human-readable
+                // string.  This would make the error message more
+                // useful, if it were ever allowed to propagate up to
+                // the user by the erlang layer.
+                
                 os << err.what() << std::endl << "While processing key: " 
-                   << ErlUtil::formatBinary((unsigned char*)key.data(), key.size());
+                   << ErlUtil::formatAsString((unsigned char*)key.data(), key.size());
 
                 sendMsg(msg_env, ATOM_STREAMING_ERROR, pid, os.str());
 

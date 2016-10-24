@@ -48,6 +48,7 @@ namespace eleveldb {
         // Copy a byte array into our buffer
 
         void copy(char* buf, size_t size);
+        void copyAsString(char* buf, size_t size);
 
         // Return the buffer size
 

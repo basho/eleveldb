@@ -586,6 +586,8 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
 
         if(expr_fields_.find(key) != expr_fields_.end()) {
 
+            ++nField_;
+
             DataType::Type specType = expr_fields_[key];
 
             //------------------------------------------------------------
@@ -611,8 +613,6 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
             } else {
 
                 try {
-
-                    ++nField_;
 
                     switch (specType) {
                     case DataType::UINT8:
@@ -680,7 +680,6 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
                     break;
                     }
                 } catch(std::runtime_error& err) {
-
                     ThrowRuntimeError(err.what() 
                                       << std::endl << "While processing field: " << key);
                 }
@@ -775,12 +774,7 @@ void ExtractorErlang::setBinaryVal(ExpressionNode<bool>* root, std::string& key,
 {
     size_t size=0;
     unsigned char* ptr = EiUtil::getDataPtr(buf, index, size, includeMarker);
-
     root->set_value(key, &ptr, DataType::UCHAR_PTR, size);
-
-    // And increment the pointer as if we read it
-
-    *index += includeMarker ? size : size + 5;
 }
 
 void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>* root) 
@@ -815,7 +809,7 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
         //------------------------------------------------------------
 
         std::string key = EiUtil::getBinaryAsStringEml(data, &index);
-
+        
         //------------------------------------------------------------
         // Next up is the field value
         //------------------------------------------------------------
@@ -829,11 +823,16 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
 
             DataType::Type specType = expr_fields_[key];
 
+            ++nField_;
+            
             //------------------------------------------------------------
-            // If there is no value for this field, do nothing
+            // If there is no value for this field, do nothing.
+            // Unlike ExtractorMsgpack, because of the way the ei
+            // interface works, we still need to skip the NIL object
             //------------------------------------------------------------
             
             if(EiUtil::isNil(data, &index)) {
+                EiUtil::skipLastReadObject(data, &index);
                 continue;
             
                 //------------------------------------------------------------
@@ -849,11 +848,9 @@ void ExtractorErlang::extract(const char* ptr, size_t size, ExpressionNode<bool>
                 //------------------------------------------------------------
                 
             } else {
-                
+
                 try {
                 
-                    ++nField_;
-                    
                     switch (specType) {
                     case DataType::UINT8:
                     {

@@ -175,9 +175,9 @@ FN_DEF(int, getType,
     )
         
 /**.......................................................................
- * Return the size of this object
+ * Return the size of this object in elements
  */
-FN_DEF(int, getSize,
+FN_DEF(int, getSizeInElements,
        
        int size=0;
        int type=0;
@@ -187,6 +187,27 @@ FN_DEF(int, getSize,
        
        return size;
     )
+
+/**.......................................................................
+ * Return the total size in bytes of the next object in the buffer
+ */
+void EiUtil::getSizeInBytes(char* buf, int* index, unsigned& nHeaderBytes, unsigned& nDataBytes)
+{
+    // Store the index position before reading the next term
+    
+    int indexBefore = *index;
+
+    // Initialize these to zero before reading
+    
+    nHeaderBytes=0;
+    nDataBytes=0;
+    
+    skipNext(buf, index, nHeaderBytes, nDataBytes);
+
+    // Restore index to where it was before we called skipNext
+    
+    *index = indexBefore;
+}
 
 /**.......................................................................
  * Return true if this is an integer
@@ -584,36 +605,50 @@ DataType::Type EiUtil::typeOf(int type, char* buf, int* index)
  * int* index should point to a valid opcode on entry
  */
 FN_DEF(void, skipLastReadObject,
-       return skipNext(buf, index);
+       unsigned nHead=0;
+       unsigned nData=0;
+       
+       return skipNext(buf, index, nHead, nData);
     )
 
-void EiUtil::skipNext(char* buf, int* index)
+void EiUtil::skipNext(char* buf, int* index, unsigned& nHeaderBytes, unsigned& nDataBytes)
 {
        unsigned int opcode = (unsigned int)((unsigned char)buf[*index]);
 
        switch (opcode) {
+
        //------------------------------------------------------------
        // uint8
        //
        //   byte 0: opcode
        //   byte 1: 1-byte value
        //------------------------------------------------------------
+
        case ERL_SMALL_INTEGER_EXT:
        {
+           nHeaderBytes += 1;
+           nDataBytes   += 1;
+           
            *index += 2;
        }
        break;
+
        //------------------------------------------------------------
        // int32
        // 
        //   byte 0:   opcode
        //   byte 1-3: 4-byte val
        //------------------------------------------------------------
+
        case ERL_INTEGER_EXT:
        {
+           nHeaderBytes += 1;
+           nDataBytes   += 4;
+
            *index += 5;
        }
        break;
+
        //------------------------------------------------------------
        // float, stored as a string (!)
        //
@@ -622,22 +657,32 @@ void EiUtil::skipNext(char* buf, int* index)
        //
        //   (yes, 31 bytes -- see www1.erlang.org/doc/apps/erts/erl_ext_dist.html)
        //------------------------------------------------------------
+
        case ERL_FLOAT_EXT:
        {
+           nHeaderBytes += 1;
+           nDataBytes   += 31;
+
            *index += 32;
        }
        break;
+
        //------------------------------------------------------------
        // float stored as IEEE float
        //
        //   byte 0:   opcode
        //   byte 1-8: 8-byte IEEE val
        //------------------------------------------------------------
+
        case NEW_FLOAT_EXT:
        {
+           nHeaderBytes += 1;
+           nDataBytes   += 8;
+
            *index += 9;
        }
        break;
+
        //------------------------------------------------------------
        // small atom (both Latin1 and UTF8 are encoded the same way):
        //
@@ -645,13 +690,19 @@ void EiUtil::skipNext(char* buf, int* index)
        //   byte 1:        1-byte size
        //   byte 2-2+size: atom bytes
        // ------------------------------------------------------------
+
        case ERL_SMALL_ATOM_EXT:
        case ERL_SMALL_ATOM_UTF8_EXT:
        {
            unsigned int size = (unsigned int)((unsigned char)buf[*index + 1]);
+
+           nHeaderBytes += 2;
+           nDataBytes   += size;
+
            *index += size + 2;
        }
        break;
+
        //------------------------------------------------------------
        // atom (both Latin1 and UTF8 are encoded the same way):
        //
@@ -659,13 +710,19 @@ void EiUtil::skipNext(char* buf, int* index)
        //   byte 1-2:      size, as unsigned short
        //   byte 3-3+size: atom bytes
        // ------------------------------------------------------------
+
        case ERL_ATOM_EXT:
        case ERL_ATOM_UTF8_EXT:
        {
            unsigned short size = ntohs(*((unsigned short*)(buf + *index + 1)));
+
+           nHeaderBytes += 3;
+           nDataBytes   += size;
+
            *index += size + 3;
        }
        break;
+
        //------------------------------------------------------------
        // small tuple:
        //
@@ -675,14 +732,29 @@ void EiUtil::skipNext(char* buf, int* index)
        // So we skip 1 (header) + 1 (opcode), then skip each element
        // in turn
        //------------------------------------------------------------
+
        case ERL_SMALL_TUPLE_EXT:
        {
            unsigned int nelem = (unsigned int)((unsigned char)buf[*index + 1]);
+
+           // For Tuples, we count just the tuple header as header bytes
+
+           nHeaderBytes += 2;
+
            *index += 2;
+           
+           unsigned int nHead=0, nData=0;
+
            for(unsigned i=0; i < nelem; i++)
-               skipNext(buf, index);
+               skipNext(buf, index, nHead, nData);
+
+           // For tuples, all subsequent bytes count as part of the
+           // payload (including header bytes of each element)
+
+           nDataBytes += nHead + nData;
        }
        break;
+
        //------------------------------------------------------------
        // large tuple:
        //
@@ -692,25 +764,43 @@ void EiUtil::skipNext(char* buf, int* index)
        // So we skip 4 (header) + 1 (opcode), then skip each element
        // in turn
        //------------------------------------------------------------
+
        case ERL_LARGE_TUPLE_EXT:
        {
            unsigned int nelem = ntohl(*((unsigned int*)(buf + *index + 1)));
 
+           // For Tuples, we count just the tuple header as header bytes
+
+           nHeaderBytes += 5;
+
            *index += 5;
+
+           unsigned int nHead=0, nData=0;
+
            for(unsigned i=0; i < nelem; i++)
-               skipNext(buf, index);
+               skipNext(buf, index, nHead, nData);
+
+           // For tuples, all subsequent bytes count as part of the
+           // payload (including header bytes of each element)
+
+           nDataBytes += nHead + nData;
        }
        break;
+
        //------------------------------------------------------------
        // empty list: just opcode, no data
        //
        //   byte 0: opcode
        //------------------------------------------------------------
+
        case ERL_NIL_EXT:
        {
+           nHeaderBytes += 1;
+           
            *index += 1;
        }
        break;
+
        //------------------------------------------------------------
        // list of single-byte types, used by TTB to store simple
        // integer arrays like [1,3,4,5], or equivalently, strings
@@ -719,12 +809,18 @@ void EiUtil::skipNext(char* buf, int* index)
        //   byte 1-2:      two-byte size,
        //   byte 3-3+size: 1-byte values
        //------------------------------------------------------------
+
        case ERL_STRING_EXT:
        {
            unsigned short size = ntohs(*((unsigned short*)(buf + *index + 1)));
+
+           nHeaderBytes += 3;
+           nDataBytes   += size;
+
            *index += size + 3;
        }
        break;
+
        //------------------------------------------------------------
        // List of arbitrary types: -- opcode, followed by 4-byte
        // nelem, followed by elements of the list.
@@ -739,14 +835,29 @@ void EiUtil::skipNext(char* buf, int* index)
        // list, but may be anything if the list is improper.  Because
        // of the tail, we must use nelem+1 in the loop below
        //------------------------------------------------------------
+
        case ERL_LIST_EXT:
        {
            unsigned int nelem = ntohl(*((unsigned int*)(buf + *index + 1)));
+
+           // For lists, we count just the list header as header bytes
+
+           nHeaderBytes += 5;
+
            *index += 5;
+
+           unsigned int nHead=0, nData=0;
+
            for(unsigned i=0; i < nelem+1; i++) 
-               skipNext(buf, index);
+               skipNext(buf, index, nHead, nData);
+
+           // For lists, all subsequent bytes count as part of the
+           // payload (including header bytes of each element)
+
+           nDataBytes += nHead + nData;
        }
        break;
+
        //------------------------------------------------------------
        // binary:
        //
@@ -754,12 +865,18 @@ void EiUtil::skipNext(char* buf, int* index)
        //   byte 1-3:      unsigned size
        //   byte 4-4+size: bytes
        //------------------------------------------------------------
+
        case ERL_BINARY_EXT:
        {
            unsigned int nbyte = ntohl(*((unsigned int*)(buf + *index + 1)));
-           *index += (5 + nbyte);
+
+           nHeaderBytes += 5;
+           nDataBytes   += nbyte;
+
+           *index += nbyte + 5;
        }
        break;
+
        //------------------------------------------------------------
        // small big int:
        //
@@ -768,12 +885,18 @@ void EiUtil::skipNext(char* buf, int* index)
        //   byte 2:         pos/neg flag
        //   byte 3-3+nbyte: value bytes
        //------------------------------------------------------------
+
        case ERL_SMALL_BIG_EXT:
        {
            unsigned int nbyte = (unsigned int)((unsigned char)buf[*index + 1]);
+
+           nHeaderBytes += 3;
+           nDataBytes   += nbyte;
+
            *index += nbyte + 3;
        }
        break;
+
        //------------------------------------------------------------
        // large big int:
        //
@@ -782,12 +905,18 @@ void EiUtil::skipNext(char* buf, int* index)
        //   byte 5:         pos/neg flag
        //   byte 6-6+nbyte: value bytes
        //------------------------------------------------------------
+
        case ERL_LARGE_BIG_EXT:
        {
            unsigned int nbyte = (unsigned int)((unsigned char)buf[*index + 1]);
+
+           nHeaderBytes += 6;
+           nDataBytes   += nbyte;
+
            *index += nbyte + 6;
        }
        break;
+
        default:
            ThrowRuntimeError("Unsupported term encountered -- can't skip");
        }
@@ -834,7 +963,7 @@ FN_DEF(std::string, formatTerm,
            return "[]";
 
        std::stringstream os;
-       os << "?" << type << "size=" << getSize(buf, index);
+       os << "?" << type << "size=" << getSizeInElements(buf, index);
 
        return os.str();
     )
@@ -959,7 +1088,7 @@ FN_DEF(std::string, formatString,
 
 FN_DEF(std::string, getString,
 
-       int size = getSize(buf, index);
+       int size = getSizeInElements(buf, index);
 
        // ei_decode_string() copies a NULL-terminated version of the
        // binary data into the return buffer, so the buffer should be
@@ -976,7 +1105,7 @@ FN_DEF(std::string, getString,
 
 FN_DEF(std::vector<unsigned char>, getBinary,
 
-       int size = getSize(buf, index);
+       int size = getSizeInElements(buf, index);
        std::vector<unsigned char> ret(size);
        
        long len = 0;
@@ -988,7 +1117,7 @@ FN_DEF(std::vector<unsigned char>, getBinary,
 
 FN_DEF(std::string, getBinaryAsString,
 
-       int size = getSize(buf, index);
+       int size = getSizeInElements(buf, index);
 
        // ei_decode_binary() copies exactly size bytes into the return
        // buffer.  If we are interpreting the data as a string, the
@@ -1215,13 +1344,25 @@ unsigned char* EiUtil::getDataPtr(char* buf, int* index, size_t& size, bool incl
     // the data is the size returned by getSize(), plus the size of
     // the opcode and prefix (1 + 4)
 
-    size = getSize(buf, index)  + (includeMarker ? 5 : 0);
+    unsigned nHead=0, nData=0;
+    getSizeInBytes(buf, index, nHead, nData);
+
+    // If including the opcode and prefix, then the total size is
+    // nHead + nData, Else it is just the data payload
+    
+    size = (includeMarker ? nHead + nData : nData);
 
     // If we are including the opcode and prefix, just return the
-    // pointer at the current location.  Else advance by the opcode
-    // and prefix length
+    // pointer at the current location.  Else return the pointer just
+    // to the data payload
 
-    return (unsigned char*)(buf + *index + (includeMarker ? 0 : 5));
+    int ind = *index + (includeMarker ? 0 : nHead);
+
+    // And advance the index pointer as if we had decoded this object
+    
+    *index += nHead + nData;
+    
+    return (unsigned char*)(buf + ind);
 }
                                                  
 void EiUtil::checkBuf() 

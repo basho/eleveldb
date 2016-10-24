@@ -38,6 +38,7 @@
 #include "CmpUtil.h"
 #include "ErlUtil.h"
 #include "EiUtil.h"
+#include "exceptionutils.h"
 
 #include "leveldb/db.h"
 #include "leveldb/env.h"

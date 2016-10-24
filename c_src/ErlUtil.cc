@@ -329,6 +329,37 @@ std::vector<unsigned char> ErlUtil::getBinary(ErlNifEnv* env, ERL_NIF_TERM term)
     return ret;
 }
 
+std::vector<unsigned char> ErlUtil::getBinaryOrEmptyList()
+{
+    checkTerm();
+    return getBinaryOrEmptyList(term_);
+}
+
+std::vector<unsigned char> ErlUtil::getBinaryOrEmptyList(ERL_NIF_TERM term)
+{
+    checkEnv();
+    return getBinaryOrEmptyList(env_, term);
+}
+
+std::vector<unsigned char> ErlUtil::getBinaryOrEmptyList(ErlNifEnv* env, ERL_NIF_TERM term)
+{
+    // SQL NULL represented as [] w/i Riak TS
+    if(enif_is_list(env, term)) {
+        unsigned length;
+        if(enif_get_list_length(env, term, &length)) {
+            if(length == 0) {
+                std::vector<unsigned char> ret(0);
+                return ret;
+            }
+        }
+        ThrowRuntimeError("Invalid list as binary, only empty list may be" <<
+                " treated as a binary");
+    }
+
+    return getBinary(env, term);
+}
+
+
 std::string ErlUtil::getString()
 {
     checkTerm();
@@ -582,7 +613,7 @@ std::vector<std::pair<std::string, ERL_NIF_TERM> > ErlUtil::getListTuples(ERL_NI
         const ERL_NIF_TERM* array=0;
         if(enif_get_tuple(env_, curr, &arity, &array)==0)
             ThrowRuntimeError("Unable to get tuple");
-  
+
         if(arity != 2)
             ThrowRuntimeError("Malformed tuple");
 
@@ -1153,6 +1184,23 @@ std::string ErlUtil::formatBinary(unsigned char* buf, size_t size)
             os << ", ";
     }
     os << ">>";
+
+    return os.str();
+}
+
+std::string ErlUtil::formatAsString(char* buf, size_t size)
+{
+    return formatAsString((unsigned char*) buf, size);
+}
+
+std::string ErlUtil::formatAsString(unsigned char* buf, size_t size)
+{
+    std::ostringstream os;
+
+    for(unsigned iByte=0; iByte < size; iByte++)
+        os << (char)buf[iByte];
+
+    os << std::ends;
 
     return os.str();
 }

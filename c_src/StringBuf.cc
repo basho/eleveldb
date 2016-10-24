@@ -66,6 +66,14 @@ void StringBuf::copy(char* buf, size_t size)
     dataSize_ = size;
 }
 
+void StringBuf::copyAsString(char* buf, size_t size)
+{
+    resize(size+1);
+    memcpy(bufPtr_, buf, size);
+    bufPtr_[size] = '\0';
+    dataSize_ = size;
+}
+
 /**.......................................................................                                                                  
  * Destructor frees any allocated memory, and resets to init state                                                                          
  */

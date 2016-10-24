@@ -81,7 +81,16 @@ namespace eleveldb {
         FN_DECL(ei_term, decodeTerm);
         
         FN_DECL(int, getType);
-        FN_DECL(int, getSize);
+
+        // This is the size as returned by ei_get_type, which is _not_
+        // the size in bytes of an object, but size in # elements
+        
+        FN_DECL(int, getSizeInElements);
+
+        // This returns the size in bytes of the next object in the
+        // buffer
+        
+        static void getSizeInBytes(char* buf, int* index, unsigned& nHeaderBytes, unsigned& nDataBytes);
 
         FN_DECL(bool, isInteger);
         FN_DECL(bool, isFloat);
@@ -153,7 +162,7 @@ namespace eleveldb {
         FN_DECL(void, skipList);
         FN_DECL(void, skipLastReadObject);
 
-        static void skipNext(char* buf, int* index);
+        static void skipNext(char* buf, int* index, unsigned int& nHeaderBytes, unsigned int& nDataBytes);
 
         std::map<std::string, DataType::Type> parseMap();
         static std::map<std::string, DataType::Type> parseMap(char* buf, int* index);
