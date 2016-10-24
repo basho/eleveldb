@@ -1,6 +1,6 @@
-#include "ErlUtil.h"
 #include "CmpUtil.h"
 #include "EiUtil.h"
+#include "ErlUtil.h"
 #include "StringBuf.h"
 
 #include "cmp.h"
