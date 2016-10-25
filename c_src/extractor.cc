@@ -549,7 +549,7 @@ void ExtractorMsgpack::extract(const char* data, size_t size, ExpressionNode<boo
     unsigned nField = 0;
     
     StringBuf sBuf;
-    for(int i=0; i < map_size && nField < nField_; i++) {
+    for(unsigned int i=0; i < map_size && nField < nField_; i++) {
 
         //------------------------------------------------------------
         // First read the field key
