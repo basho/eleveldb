@@ -1140,9 +1140,11 @@ std::string ErlUtil::formatList(ErlNifEnv* env, ERL_NIF_TERM term)
 
     os << "[";
     for(unsigned iCell=0; iCell < cells.size(); iCell++) {
-        os << formatTerm(env, cells[iCell]);
-        if(iCell < cells.size()-1)
+
+        if(iCell > 0)
             os << ", ";
+
+        os << formatTerm(env, cells[iCell]);
     }
     os << "]";
 
@@ -1160,9 +1162,8 @@ std::string ErlUtil::formatBinary(ErlNifEnv* env, ERL_NIF_TERM term)
     os << "<<";
     for(unsigned iByte=0; iByte < bin.size; iByte++) {
 
-        if(iByte > 0) {
+        if(iByte > 0)
             os << ", ";
-        }
 
         os << (int)bin.data[iByte];
     }
@@ -1182,9 +1183,11 @@ std::string ErlUtil::formatBinary(unsigned char* buf, size_t size)
 
     os << "<<";
     for(unsigned iByte=0; iByte < size; iByte++) {
-        os << (int)buf[iByte];
-        if(iByte < size-1)
+
+        if(iByte > 0)
             os << ", ";
+
+        os << (int)buf[iByte];
     }
     os << ">>";
 
@@ -1214,11 +1217,12 @@ std::string ErlUtil::formatTupleVec(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& c
     
     os << "{";
     for(unsigned iCell=0; iCell < cells.size(); iCell++) {
-        os << formatTerm(env, cells[iCell]);
-        if(iCell < cells.size()-1)
-            os << ", ";
-    }
 
+        if(iCell > 0)
+            os << ", ";
+
+        os << formatTerm(env, cells[iCell]);
+    }
     os << "}";
 
     return os.str();

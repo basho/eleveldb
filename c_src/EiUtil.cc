@@ -1004,9 +1004,11 @@ FN_DEF(std::string, formatTuple,
 
        os << "{";
        for(int iCell=0; iCell < arity; iCell++) {
-           os << formatTerm(buf, index);
-           if(iCell < arity-1)
+
+           if(iCell > 0)
                os << ", ";
+
+           os << formatTerm(buf, index);
        }
        
        os << "}";
@@ -1029,11 +1031,12 @@ FN_DEF(std::string, formatList,
 
        os << "[";
        for(int iCell=0; iCell < arity; iCell++) {
-           os << formatTerm(buf, index);
-           if(iCell < arity-1)
+
+           if(iCell > 0)
                os << ", ";
+
+           os << formatTerm(buf, index);
        }
-       
        os << "]";
        
        return os.str();
@@ -1052,11 +1055,12 @@ FN_DEF(std::string, formatBinary,
        std::ostringstream os;
        os << "<<";
        std::vector<unsigned char> bin = getBinary(buf, index);
-       unsigned int size = bin.size();
-       for(unsigned int i=0; i < size; i++) {
-           os << (int)bin[i];
-           if(i < size-1)
+       for(unsigned int i=0; i < bin.size(); i++) {
+
+           if(i > 0)
                os << ", ";
+
+           os << (int)bin[i];
        }
        os << ">>";
        
@@ -1069,13 +1073,11 @@ FN_DEF(std::string, formatString,
        std::string str = getString(buf, index);
        os << "\"" << str << "\"";
        os << " (aka [";
-       unsigned int size=str.size();
-       for(unsigned int i=0; i < size; i++) {
+       for(unsigned int i=0; i < str.size(); i++) {
 
-           if(i > 0) {
+           if(i > 0)
                os << ", ";
-           }
-           
+
            os << (int)str[i];
        }
        os << "])";
