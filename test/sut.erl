@@ -845,8 +845,7 @@ timestampOps(Enc) ->
 
     %% Timestamps support all ops
 
-%%    Res = allOps({F, {Val}, timestamp, PutFn, EvalFn, []}),
-    Res = eqOps({F, {Val}, timestamp, PutFn, EvalFn, []}),
+    Res = allOps({F, {Val}, timestamp, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -854,8 +853,17 @@ timestampOps(Enc) ->
 %% Test sint64 operations, because now that's what we're calling integers
 %%------------------------------------------------------------
 
-sint64Ops_test() ->
-    sint64Ops(msgpack) and sint64Ops(erlang) and sint64Ops(mixed).
+sint64OpsTests() ->
+    sint64OpsMsgpack_test() and sint64OpsErlang_test() and sint64OpsMixed_test().
+
+sint64OpsMsgpack_test() ->
+    sint64Ops(msgpack).
+
+sint64OpsErlang_test() ->
+    sint64Ops(erlang).
+
+sint64OpsMixed_test() ->
+    sint64Ops(mixed).
 
 sint64Ops(Enc) ->
     io:format("sint64Ops_test with ~p encoding~n", [Enc]),
@@ -997,7 +1005,7 @@ anyOps_test() ->
 %%------------------------------------------------------------
 
 normalOpsTests() ->
-    sint64Ops_test() and varcharOps_test() and boolOps_test() and doubleOps_test() and anyOps_test() and timestampOps_test().
+    sint64OpsTests() and varcharOps_test() and boolOps_test() and doubleOps_test() and anyOps_test() and timestampOps_test().
 
 %%=======================================================================
 %% Test AND + OR comparators
