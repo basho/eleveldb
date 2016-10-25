@@ -1,16 +1,14 @@
-// $Id: $
-
 #ifndef ELEVELDB_DATATYPE_H
 #define ELEVELDB_DATATYPE_H
 
 /**
- * @file DataType.h
+ * DataType
  * 
+ *   A class for managing data-type scpecifications
+ *
  * Tagged: Wed Sep  9 11:10:10 PDT 2015
  * 
- * @version: $Revision: $, $Date: $
- * 
- * @author /bin/bash: username: command not found
+ * Original author: eleitch@basho.com
  */
 #include <sstream>
 

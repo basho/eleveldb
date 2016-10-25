@@ -1159,9 +1159,12 @@ std::string ErlUtil::formatBinary(ErlNifEnv* env, ERL_NIF_TERM term)
 
     os << "<<";
     for(unsigned iByte=0; iByte < bin.size; iByte++) {
-        os << (int)bin.data[iByte];
-        if(iByte < bin.size-1)
+
+        if(iByte > 0) {
             os << ", ";
+        }
+
+        os << (int)bin.data[iByte];
     }
     os << ">>";
 

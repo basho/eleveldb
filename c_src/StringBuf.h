@@ -1,18 +1,15 @@
-// $Id: $
-
 #ifndef ELEVELDB_STRINGBUF_H
 #define ELEVELDB_STRINGBUF_H
 
 #define STRING_BUF_MIN_SIZE 1024
 
 /**
- * @file StringBuf.h
+ * StringBuf
  * 
- * Tagged: Tue Oct 20 16:30:05 PDT 2015
- * 
- * @version: $Revision: $, $Date: $
- * 
- * @author /bin/bash: username: command not found
+ *   A class for managing a char buffer, initially allocated on the
+ *   stack, but grown from the heap if resized beyond a fixed limit.
+ *
+ * Original author: eleitch@basho.com
  */
 #include <stdlib.h>
 #include <stddef.h>

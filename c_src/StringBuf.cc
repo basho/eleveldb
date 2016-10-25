@@ -4,7 +4,7 @@
 
 using namespace eleveldb;
 
-/**.......................................................................                                                                  
+/**.......................................................................
  * Bare constructor just calls initialize()
  */
 StringBuf::StringBuf()
@@ -12,9 +12,9 @@ StringBuf::StringBuf()
     initialize();
 }
 
-/**.......................................................................                                                                  
- * Constructor initializes size to minBufSize_, and sets internal buf                                                                       
- * pointer to point to the stack buffer                                                                                                     
+/**.......................................................................
+ * Constructor initializes size to minBufSize_, and sets internal buf
+ * pointer to point to the stack buffer
  */
 StringBuf::StringBuf(size_t size)
 {
@@ -22,9 +22,9 @@ StringBuf::StringBuf(size_t size)
     resize(size);
 }
 
-/**.......................................................................                                                                  
- * Initializes size to minBufSize_, and sets internal buf pointer to                                                                        
- * point to the stack buffer                                                                                                                
+/**.......................................................................
+ * Initializes size to minBufSize_, and sets internal buf pointer to
+ * point to the stack buffer
  */
 void StringBuf::initialize()
 {
@@ -74,8 +74,8 @@ void StringBuf::copyAsString(char* buf, size_t size)
     dataSize_ = size;
 }
 
-/**.......................................................................                                                                  
- * Destructor frees any allocated memory, and resets to init state                                                                          
+/**.......................................................................
+ * Destructor frees any allocated memory, and resets to init state
  */
 StringBuf::~StringBuf()
 {

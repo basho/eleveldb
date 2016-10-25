@@ -2,13 +2,14 @@
 #define ELEVELDB_EIUTIL_H
 
 /**
- * @file EiUtil.h
+ * EiUtil
+ *
+ *   A class for operating on erlang term_to_binary-encoded data,
+ *   using the ei library (see http://erlang.org/doc/man/ei.html)
  * 
- * Tagged: Wed Sep  9 17:32:28 PDT 2015
+ * Created: Wed Sep  9 17:32:28 PDT 2015
  * 
- * @version: $Revision: $, $Date: $
- * 
- * @author /bin/bash: username: command not found
+ * Original author: eleitch@basho.com
  */
 #include <stdlib.h>
 #include <stddef.h>

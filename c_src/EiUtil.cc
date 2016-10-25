@@ -1071,9 +1071,12 @@ FN_DEF(std::string, formatString,
        os << " (aka [";
        unsigned int size=str.size();
        for(unsigned int i=0; i < size; i++) {
-           os << (int)str[i];
-           if(i < size-1)
+
+           if(i > 0) {
                os << ", ";
+           }
+           
+           os << (int)str[i];
        }
        os << "])";
        

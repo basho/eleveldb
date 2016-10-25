@@ -1,16 +1,16 @@
-// $Id: $
-
 #ifndef ELEVELDB_ERLUTIL_H
 #define ELEVELDB_ERLUTIL_H
 
 /**
- * @file ErlUtil.h
+ * ErlUtil
+ *
+ *   A class for manipulating erlang terms passed across the NIF
+ *   interface, based on the erl_nif library library (see
+ *   http://erlang.org/doc/man/erl_nif.html)
  * 
- * Tagged: Wed Sep  2 14:46:45 PDT 2015
+ * Created: Wed Sep  9 17:32:28 PDT 2015
  * 
- * @version: $Revision: $, $Date: $
- * 
- * @author /bin/bash: username: command not found
+ * Original author: eleitch@basho.com
  */
 #include "erl_nif.h"
 #include "workitems.h"
