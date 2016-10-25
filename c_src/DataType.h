@@ -4,7 +4,7 @@
 /**
  * DataType
  * 
- *   A class for managing data-type scpecifications
+ *   A class for managing data-type specifications
  *
  * Tagged: Wed Sep  9 11:10:10 PDT 2015
  * 
