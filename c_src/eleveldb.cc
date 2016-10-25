@@ -85,7 +85,6 @@ static ErlNifFunc nif_funcs[] =
     {"streaming_stop", 1, eleveldb::streaming_stop},
 
     {"current_usec",    0, eleveldb::currentMicroSeconds},
-    {"print_to_stdout", 1, eleveldb::printToStdout},
 };
 
 
@@ -1274,8 +1273,6 @@ streaming_start(ErlNifEnv * env,
     const ERL_NIF_TERM end_key_term     = argv[2];
     const ERL_NIF_TERM options_list     = argv[3];
 
-    STDOUT("Inside SS with opts = " << ErlUtil::formatTerm(env, options_list));
-
     ReferencePtr<DbObject> db_ptr;
     db_ptr.assign(DbObject::RetrieveDbObject(env, db_ref));
 
@@ -1392,16 +1389,6 @@ currentMicroSeconds(
 {
   return enif_make_int64(env, getCurrentMicroSeconds());
 } // currentMicroSeconds
-
-ERL_NIF_TERM
-printToStdout(
-    ErlNifEnv* env,
-    int argc,
-    const ERL_NIF_TERM argv[])
-{
-    STDOUT(ErlUtil::formatTerm(env, argv[0]));
-    return ATOM_OK;
-}
 
 /**
  * HEY YOU ... please make async

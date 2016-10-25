@@ -1003,7 +1003,7 @@ FN_DEF(std::string, formatTuple,
        std::ostringstream os;
 
        os << "{";
-       for(unsigned iCell=0; iCell < arity; iCell++) {
+       for(int iCell=0; iCell < arity; iCell++) {
            os << formatTerm(buf, index);
            if(iCell < arity-1)
                os << ", ";
@@ -1028,7 +1028,7 @@ FN_DEF(std::string, formatList,
        std::ostringstream os;
 
        os << "[";
-       for(unsigned iCell=0; iCell < arity; iCell++) {
+       for(int iCell=0; iCell < arity; iCell++) {
            os << formatTerm(buf, index);
            if(iCell < arity-1)
                os << ", ";
@@ -1052,7 +1052,7 @@ FN_DEF(std::string, formatBinary,
        std::ostringstream os;
        os << "<<";
        std::vector<unsigned char> bin = getBinary(buf, index);
-       for(unsigned i=0; i < bin.size(); i++) {
+       for(int i=0; i < bin.size(); i++) {
            os << (int)bin[i];
            if(i < bin.size()-1)
                os << ", ";
@@ -1068,7 +1068,7 @@ FN_DEF(std::string, formatString,
        std::string str = getString(buf, index);
        os << "\"" << str << "\"";
        os << " (aka [";
-       for(unsigned i=0; i < str.size(); i++) {
+       for(int i=0; i < str.size(); i++) {
            os << (int)str[i];
            if(i < str.size()-1)
                os << ", ";

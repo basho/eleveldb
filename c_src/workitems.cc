@@ -997,8 +997,6 @@ work_result RangeScanTask::DoWork()
                         // And extract the field values that will be
                         // evaluated against the filter
 
-                        STDOUT("Extracting object for " << ErlUtil::formatAsString((char*)key.data(), key.size()));
-                        
                         extractor_->extractRiakObject(value.data(), value.size(), range_filter_);
                         
                         //------------------------------------------------------------
@@ -1006,9 +1004,6 @@ work_result RangeScanTask::DoWork()
                         //------------------------------------------------------------
                         
                         filter_passed = range_filter_->evaluate();
-
-                        STDOUT("Done extracting object for " << ErlUtil::formatAsString((char*)key.data(), key.size())
-                               << " filter_passed = " << filter_passed);
 
                     } else {
                         ThrowRuntimeError("range_filter set, but couldn't parse riak object");
@@ -1032,8 +1027,6 @@ work_result RangeScanTask::DoWork()
                 os << err.what() << std::endl << "While processing key: " 
                    << ErlUtil::formatAsString((unsigned char*)key.data(), key.size());
 
-                STDOUT("Caught an error: " << os.str());
-                
                 sendMsg(msg_env, ATOM_STREAMING_ERROR, pid, os.str());
 
                 if(binaryAllocated)

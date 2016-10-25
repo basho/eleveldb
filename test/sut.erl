@@ -438,7 +438,6 @@ streamFoldTest(Filter, PutKeyFun, []) ->
                  [getKeyVal(K,V) | Acc]
          end,
 
-    eleveldb:stdout("Folding with Ops = ~p~n", [Opts]),
     Keys = 
         try 
             Acc = eleveldb:fold(Ref, FF, [], Opts),
@@ -457,7 +456,6 @@ streamFoldTest(Filter, PutKeyFun, []) ->
                 ok = eleveldb:close(Ref),
                 []
         end,
-    eleveldb:stdout("Done folding with Ops = ~p~n Key size = ~p~n", [Opts, length(Keys)]),
     Keys.
 
 get_field(Field, List) ->
@@ -834,6 +832,9 @@ anyCompOps(Args) ->
 %%------------------------------------------------------------
 
 timestampOps_test() ->
+    {timeout, 60, fun() -> timestampOpsTests() end}.
+			  
+timestampOpsTests() ->
     timestampOps(erlang) and timestampOps(msgpack) and timestampOps(mixed).
 
 timestampOps(Enc) ->
@@ -853,17 +854,11 @@ timestampOps(Enc) ->
 %% Test sint64 operations, because now that's what we're calling integers
 %%------------------------------------------------------------
 
+sint64Ops_test() ->
+    {timeout, 60, fun() -> sint64OpsTests() end}.
+
 sint64OpsTests() ->
-    sint64OpsMsgpack_test() and sint64OpsErlang_test() and sint64OpsMixed_test().
-
-sint64OpsMsgpack_test() ->
-    sint64Ops(msgpack).
-
-sint64OpsErlang_test() ->
-    sint64Ops(erlang).
-
-sint64OpsMixed_test() ->
-    sint64Ops(mixed).
+    sint64Ops(msgpack) and sint64Ops(erlang) and sint64Ops(mixed).
 
 sint64Ops(Enc) ->
     io:format("sint64Ops_test with ~p encoding~n", [Enc]),
@@ -885,6 +880,9 @@ sint64Ops(Enc) ->
 %%------------------------------------------------------------
 
 varIntOps_test() ->
+    {timeout, 60, fun() -> varIntOpsTests() end}.
+
+varIntOpsTests() ->
     varIntOps(msgpack) and varIntOps(erlang) and varIntOps(erlang).
 
 varIntOps(Enc) ->
@@ -906,6 +904,9 @@ varIntOps(Enc) ->
 %%------------------------------------------------------------
 
 varcharOps_test() ->
+   {timeout, 60, fun() -> varcharOpsTests() end}.
+			 
+varcharOpsTests() ->
     varcharOps(msgpack) and varcharOps(erlang) and varcharOps(mixed).
 
 varcharOps(Enc) ->
@@ -927,6 +928,9 @@ varcharOps(Enc) ->
 %%------------------------------------------------------------
 
 doubleOps_test() ->
+    {timeout, 60, fun() -> doubleOpsTests() end}.
+
+doubleOpsTests() ->
     doubleOps(msgpack) and doubleOps(erlang) and doubleOps(mixed).
 
 doubleOps(Enc) ->
@@ -947,6 +951,9 @@ doubleOps(Enc) ->
 %%------------------------------------------------------------
 
 boolOps_test() ->
+    {timeout, 60, fun() -> boolOpsTests() end}.
+			  
+boolOpsTests() ->
     boolOps(msgpack) and boolOps(erlang) and boolOps(mixed).
 
 boolOps(Enc) ->
@@ -967,6 +974,9 @@ boolOps(Enc) ->
 %%------------------------------------------------------------
 
 realisticOps_test() ->
+    {timeout, 60, fun() -> realisticOpsTests() end}.
+
+realisticOpsTests() ->
     realisticOps(erlang) and realisticOps(msgpack) and realisticOps(mixed).
 
 realisticOps(Enc) ->

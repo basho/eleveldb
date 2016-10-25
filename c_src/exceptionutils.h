@@ -30,11 +30,4 @@
         outfile.close();                                                \
     }
 
-#define STDOUT(text) {                                                    \
-        std::fstream outfile;                                           \
-        outfile.open("/dev/stdout", std::fstream::out|std::fstream::app); \
-        outfile << text << std::endl;                                   \
-        outfile.close();                                                \
-    }
-
 #endif
