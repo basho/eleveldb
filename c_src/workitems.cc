@@ -997,6 +997,8 @@ work_result RangeScanTask::DoWork()
                         // And extract the field values that will be
                         // evaluated against the filter
 
+                        STDOUT("Extracting object for " << key.data());
+                        
                         extractor_->extractRiakObject(value.data(), value.size(), range_filter_);
                         
                         //------------------------------------------------------------
