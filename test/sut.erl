@@ -438,6 +438,7 @@ streamFoldTest(Filter, PutKeyFun, []) ->
                  [getKeyVal(K,V) | Acc]
          end,
 
+    eleveldb:stdout("Folding with Ops = ~p~n", [Opts]),
     Keys = 
         try 
             Acc = eleveldb:fold(Ref, FF, [], Opts),
@@ -456,7 +457,7 @@ streamFoldTest(Filter, PutKeyFun, []) ->
                 ok = eleveldb:close(Ref),
                 []
         end,
-
+    eleveldb:stdout("Done folding with Ops = ~p~n Key size = ~p~n", [Opts, length(Keys)]),
     Keys.
 
 get_field(Field, List) ->

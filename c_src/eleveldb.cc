@@ -84,7 +84,8 @@ static ErlNifFunc nif_funcs[] =
     {"streaming_ack", 2, eleveldb::streaming_ack},
     {"streaming_stop", 1, eleveldb::streaming_stop},
 
-    {"current_usec",   0, eleveldb::currentMicroSeconds},
+    {"current_usec",    0, eleveldb::currentMicroSeconds},
+    {"print_to_stdout", 1, eleveldb::printToStdout},
 };
 
 
@@ -1391,6 +1392,16 @@ currentMicroSeconds(
 {
   return enif_make_int64(env, getCurrentMicroSeconds());
 } // currentMicroSeconds
+
+ERL_NIF_TERM
+printToStdout(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    STDOUT(ErlUtil::formatTerm(env, argv[0]));
+    return ATOM_OK;
+}
 
 /**
  * HEY YOU ... please make async

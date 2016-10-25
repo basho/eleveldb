@@ -43,7 +43,8 @@
          parse_string/1,
          is_empty/1,
          encode/2,
-         current_usec/0]).
+         current_usec/0,
+	 stdout/2]).
 
 %% for testing
 -export([
@@ -180,6 +181,13 @@ encode(Val, binary) when is_binary(Val)->
     Val;
 encode(Val, _) ->
     term_to_binary(Val).
+
+stdout(Format, Data) ->
+    Bytes = io:format(Format, Data),
+    print_to_stdout(Bytes).
+
+print_to_stdout(_Bytes) ->
+    erlang:nif_error({error, not_loaded}).
 
 -spec async_open(reference(), string(), open_options()) -> ok.
 async_open(_CallerRef, _Name, _Opts) ->
