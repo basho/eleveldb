@@ -49,6 +49,21 @@ std::string Encoding::encodingAtom(Encoding::Type type)
     }
 }
 
+unsigned char Encoding::encodingByte(Encoding::Type type)
+{
+    switch(type) {
+    case Encoding::ERLANG:
+        return ERLANG_MAGIC;
+        break;
+    case Encoding::MSGPACK:
+        return MSGPACK_MAGIC;
+        break;
+    default:
+        return 0;
+        break;
+    }
+}
+
 Encoding::Type Encoding::typeOf(std::string str, bool doThrow)
 {
     if(str == encodingAtom(ERLANG))

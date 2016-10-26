@@ -26,27 +26,27 @@ namespace eleveldb {
     }
 }
 
-ExpressionNode<bool>* parse_range_filter_opts(ErlNifEnv* env, ERL_NIF_TERM options, Extractor& ext, bool throwIfInvalid);
+ExpressionNode<bool>* parse_range_filter_opts(ErlNifEnv* env, ERL_NIF_TERM options, ExtractorMap& ext, bool throwIfInvalid);
 
 template<typename T>
-ExpressionNode<T>* parse_expression_node(ErlNifEnv* env, ERL_NIF_TERM root, Extractor& ext, bool throwIfInvalid);
+ExpressionNode<T>* parse_expression_node(ErlNifEnv* env, ERL_NIF_TERM root, ExtractorMap& ext, bool throwIfInvalid);
 
 template<typename T>
-ExpressionNode<T>* parse_expression_node(ErlNifEnv* env, ERL_NIF_TERM rooti, Extractor& ext, bool throwIfInvalid);
+ExpressionNode<T>* parse_expression_node(ErlNifEnv* env, ERL_NIF_TERM rooti, ExtractorMap& ext, bool throwIfInvalid);
 
 template<typename T>
-ExpressionNode<T>* parse_field_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext);
+ExpressionNode<T>* parse_field_expr(ErlNifEnv* env, ERL_NIF_TERM operand, ExtractorMap& ext);
 
 template<typename T>
-ExpressionNode<T>* parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, Extractor& ext);
+ExpressionNode<T>* parse_const_expr(ErlNifEnv* env, ERL_NIF_TERM operand, ExtractorMap& ext);
 
 
-ExpressionNode<bool>* parse_equals_expr( ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid);
-ExpressionNode<bool>* parse_nequals_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid);
-ExpressionNode<bool>* parse_lt_expr(     ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid);
-ExpressionNode<bool>* parse_lte_expr(    ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid);
-ExpressionNode<bool>* parse_gt_expr(     ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid);
-ExpressionNode<bool>* parse_gte_expr(    ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid);
-ExpressionNode<bool>* parse_and_expr(    ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid);
-ExpressionNode<bool>* parse_or_expr(     ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, Extractor& ext, bool throwIfInvalid);
+ExpressionNode<bool>* parse_equals_expr( ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid);
+ExpressionNode<bool>* parse_nequals_expr(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid);
+ExpressionNode<bool>* parse_lt_expr(     ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid);
+ExpressionNode<bool>* parse_lte_expr(    ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid);
+ExpressionNode<bool>* parse_gt_expr(     ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid);
+ExpressionNode<bool>* parse_gte_expr(    ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid);
+ExpressionNode<bool>* parse_and_expr(    ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid);
+ExpressionNode<bool>* parse_or_expr(     ErlNifEnv* env, std::vector<ERL_NIF_TERM>& args, ExtractorMap& ext, bool throwIfInvalid);
 #endif

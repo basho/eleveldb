@@ -164,13 +164,20 @@ public:
     virtual ~AndOperator() {};
 
     virtual bool evaluate() const {
-        if(has_value()) {
-            return left_->evaluate() && right_->evaluate();
-        } else {
-            return false;
-        }
-    }
 
+        // Note: now that we are allowing NULLs, we can no longer
+        // check binary has_value() in AndOperator.
+        //
+        // What if one of our conditions is a NULL comparison, e.g.,
+        // 'f1 == []'?  Then left->has_value()==false should _not_
+        // cause us to return false here!
+        //
+        // We must instead evaluate both clauses, and allow the
+        // evaluate functions to determine whether or not
+        // has_value()==false is an error condition
+        
+        return left_->evaluate() && right_->evaluate();
+    }
 };
 
 //------------------------------------------------------------
@@ -186,11 +193,23 @@ public:
     virtual ~OrOperator() {};
 
     virtual bool evaluate() const {
-        if(has_value()) {
-            return left_->evaluate() || right_->evaluate();
-        } else {
-            return false;
-        }
+
+        // Note: now that we are allowing NULLs, we can no longer
+        // check binary has_value() in OrOperator.
+        //
+        // What if one of our conditions is a NULL comparison, e.g.,
+        // 'f1 == []'?  Then left->has_value()==false should _not_
+        // cause us to return false here!
+        //
+        // A different example: what if our condition is 'f1 > 3 OR f3
+        // <= 5.0'?  If f3 is NULL (has_value()==false) but f1 == 4,
+        // then this operator should logically return true
+        //
+        // We must instead evaluate both clauses, and allow the
+        // evaluate functions to determine whether or not
+        // has_value()==false is an error condition
+
+        return left_->evaluate() || right_->evaluate();
     }
 };
 

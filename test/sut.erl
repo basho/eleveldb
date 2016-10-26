@@ -338,40 +338,68 @@ myformat(T,Val1, Val2) ->
 %%=======================================================================
 
 %%------------------------------------------------------------
-%% Recursive function to putkeys in the database
+%% Recursive function to put keys in the database
 %%------------------------------------------------------------
 
 putKeysObj(N) -> 
+    putKeysObj(N, msgpack).
+
+putKeysObj(N, Enc) -> 
     clearDb(),
-    putKeysObj(open(), N).
-putKeysObj(Ref,N) -> 
-    putKeysObj(Ref,N,1).
-putKeysObj(Ref,N,Acc) when Acc =< N -> 
+    putKeysObj(open(), N, Enc).
+putKeysObj(Ref, N, Enc) -> 
+    putKeysObj(Ref, N, 1, Enc).
+putKeysObj(Ref, N, Acc, Enc) when Acc =< N -> 
     ValList = [{<<"f1">>, Acc},  {<<"f2">>, <<"test2">>}, {<<"f3">>, 3}, {<<"f4">>, [1,2,3]}, {<<"f5">>, false}],
-    addKey(Ref, ValList, Acc, N);
-putKeysObj(Ref,N,Acc) when Acc > N ->
+    addKey(Ref, ValList, Acc, N, Enc);
+putKeysObj(Ref, N, Acc, _Enc) when Acc > N ->
     close(Ref).
 
 %%------------------------------------------------------------
 %% Iterative function add a key to the backend
 %%------------------------------------------------------------
 
-addKey(Ref, ValList, Acc, N) ->
+%% If Enc = mixed, alternate encodings between msgpack and erlang
+
+addKey(Ref, ValList, Acc, N, mixed) ->
     Ndig = trunc(math:log10(N)) + 1,
     Key  = list_to_binary("key" ++ string:right(integer_to_list(Acc), Ndig, $0)),
     Obj  = new(<<"bucket">>, Key, ValList),
-    Val  = to_binary(v1, Obj, msgpack),
+    Enc = 
+        case Acc rem 2 of
+            0 ->
+                msgpack;
+            _ ->
+                erlang
+        end,
+    Val  = to_binary(v1, Obj, Enc),
     ok   = eleveldb:put(Ref, Key, Val, []),
-    putKeysObj(Ref,N,Acc+1).
+    putKeysObj(Ref, N, Acc+1, mixed);
+
+%% Else just use the specified encoding
+
+addKey(Ref, ValList, Acc, N, Enc) ->
+    Ndig = trunc(math:log10(N)) + 1,
+    Key  = list_to_binary("key" ++ string:right(integer_to_list(Acc), Ndig, $0)),
+    Obj  = new(<<"bucket">>, Key, ValList),
+    Val  = to_binary(v1, Obj, Enc),
+    ok   = eleveldb:put(Ref, Key, Val, []),
+    putKeysObj(Ref, N, Acc+1, Enc).
 
 %%------------------------------------------------------------
 %% Explicit function to add a key to the backend
 %%------------------------------------------------------------
 
 addKey(Ref, KeyNum, ValList) ->
+    addKey(Ref, KeyNum, ValList, msgpack).
+
+addKey(Ref, ValList, Acc, N) when is_integer(N) ->
+    addKey(Ref, ValList, Acc, N, msgpack);
+
+addKey(Ref, KeyNum, ValList, Enc) ->
     Key = list_to_binary("key"++integer_to_list(KeyNum)),
     Obj = new(<<"bucket">>, Key, ValList),
-    Val = to_binary(v1, Obj, msgpack),
+    Val = to_binary(v1, Obj, Enc),
     ok = eleveldb:put(Ref, Key, Val, []).
 
 %%------------------------------------------------------------
@@ -396,11 +424,10 @@ getKeyVal(B,K,V) ->
 %%
 %%------------------------------------------------------------
 
-streamFoldTest(Filter, PutKeyFun) ->
+streamFoldTest(Filter, PutKeyFun, []) ->
     clearDb(),
     Opts=[{fold_method, streaming},
-	  {range_filter, Filter},
-	  {encoding, msgpack}],
+          {range_filter, Filter}],
     Ref = open(),
 
     PutKeyFun(Ref),
@@ -408,19 +435,28 @@ streamFoldTest(Filter, PutKeyFun) ->
 % Build a list of returned keys
 
     FF = fun({K,V}, Acc) -> 
-		 [getKeyVal(K,V) | Acc]
-	 end,
+                 [getKeyVal(K,V) | Acc]
+         end,
 
-    try 
-	Acc = eleveldb:fold(Ref, FF, [], Opts),
-	ok = eleveldb:close(Ref),
-	lists:reverse(Acc)
-    catch
-	error:_Error ->
-	    io:format(user, "Caught an error: closing db~n", []),
-	    ok = eleveldb:close(Ref),
-	    []
-    end.
+    Keys = 
+        try 
+            Acc = eleveldb:fold(Ref, FF, [], Opts),
+            ok = eleveldb:close(Ref),
+            lists:reverse(Acc)
+        catch
+            error:_Error ->
+
+		%% This is used for deliberate failure testing, and
+		%% the 'correct' behavior is indicated by return of an
+		%% empty list [].  We fail quietly, so that we don't
+		%% print alarming messages during unit testing
+		%%
+		%%io:format(user, "Caught an error: closing db~n", []),
+
+                ok = eleveldb:close(Ref),
+                []
+        end,
+    Keys.
 
 get_field(Field, List) ->
     lists:keyfind(Field, 1, List).
@@ -428,26 +464,33 @@ get_field(Field, List) ->
 match([], _, _, _) ->
     0;
 match(List, Field, CompVal, CompFun) ->
-%    io:format("~p~n", [lists:flatten(List)]),
     {_,Val} = get_field(Field, List),
-    Match = match(Val,CompVal,CompFun),
-%    io:format("Checking ~p again ~p match = ~p ~n", [Val, CompVal, Match]),
-    Match.
+    match(Val,CompVal,CompFun).
 
 match(V1,{CompVal},CompFun) ->
     match(V1, CompVal, CompFun);
 match(V1,{_FilterVal, CompVal},CompFun) ->
     match(V1, CompVal, CompFun);
+%% Match of empty list against empty list is valid
+match([],[],_CompFun) ->
+    1;
+%% Match of empty list against anything else is not
+match([],_V2,_CompFun) ->
+    0;
 match(V1,V2,CompFun) ->
+
     case CompFun(V1,V2) of
-	true -> 1;
-	_ -> 0
+        true -> 
+%%	    io:format("Match: comparing ~p to ~p returning true~n", [V1, V2]),
+	    1;
+        _ -> 
+%%	    io:format("Match: comparing ~p to ~p returning false~n", [V1, V2]),
+	    0
     end.
 
 fieldsMatching(Vals, Field, CompVal, CompFun) ->
-    %% io:format("Got Vals = ~p~n", [lists:flatten(Vals)]),
     lists:foldl(fun(Val, {N, Nmatch}) -> 
-			{N + 1, Nmatch + match(Val, Field, CompVal, CompFun)} end, {0,0}, Vals).
+                        {N + 1, Nmatch + match(Val, Field, CompVal, CompFun)} end, {0,0}, Vals).
 
 %%=======================================================================
 %% Actual tests begin here
@@ -476,57 +519,221 @@ packObj_test() ->
 %% Utilities needed for operations tests
 %%-----------------------------------------------------------------------
 
-putKeyNormalOps(Ref) ->
-    FieldCount = 6,
-    Rows = [ [{<<"f1">>, I },
-              {<<"f2">>, case I of
-                      2 -> [];
-                      12 -> [];
-                      _ -> list_to_binary("test" ++ integer_to_list(I))
-              end}, %%<< varchar
-              {<<"f3">>, case I of
-                      4 -> [];
-                      12 -> [];
-                      _ -> I * 1.0
-              end}, %%<< double
-              {<<"f4">>, case I of
-                      6 -> [];
-                      12 -> [];
-                      _ -> I rem 2 =:= 0
-              end}, %%<< boolean
-              {<<"f5">>, case I of
-                      8 -> [];
-                      12 -> [];
-                      _ -> lists:seq(I, I + 2)
-              end}, %%<< list (not a TS type)
-              {<<"f6">>, case I of
-                      10 -> [];
-                      12 -> [];
-                      _ -> I * 1000
-              end}, %%<< sint64 stored as a small num
-              {<<"f7">>, case I of
-                      10 -> [];
-                      12 -> [];
-                      _ -> 1467563367600 + I * 1000
-              end} %%<< sint64 stored as a big num
-             ] || I <- lists:seq(1, FieldCount * 2) ], %%<< twice to store a NULL value for each field type
-    lists:foreach(fun (Row) ->
-                I = element(2, hd(Row)),
-                addKey(Ref, I, Row)
-        end, Rows).
+putKeyNormalOpsMsgpack(Ref) ->
+    putKeyNormalOps(Ref, msgpack).
 
-defaultEvalFn({Val,NullMatch=[]}) ->
+putKeyNormalOpsErlang(Ref) ->
+    putKeyNormalOps(Ref, erlang).
+
+putKeyNormalOpsMixed(Ref) ->
+    putKeyNormalOps(Ref, mixed).
+
+putKeyNormalOps(Ref, mixed) ->
+    Rows = getKeyNormalOps(),
+    lists:foreach(fun (Row) ->
+                          I = element(2, hd(Row)),
+			  Enc = 
+			      case I rem 2 of
+				  0 ->
+				      msgpack;
+				  _ ->
+				      erlang
+			      end,
+                          addKey(Ref, I, Row, Enc)
+                  end, Rows);
+putKeyNormalOps(Ref, Enc) ->
+    Rows = getKeyNormalOps(),
+    lists:foreach(fun (Row) ->
+                          I = element(2, hd(Row)),
+                          addKey(Ref, I, Row, Enc)
+                  end, Rows).
+
+%------------------------------------------------------------
+% Return a list of keys used for testing
+%------------------------------------------------------------
+
+getKeyNormalOps() ->
+    FieldCount = 8,
+
+    %% A function for constructing integer fields of variable type
+
+    VarIntFn = 
+        fun(I) ->
+                Prefactor = 
+                    case I rem 2 of
+                        0 -> 
+                            1;
+                        _ ->
+                            -1
+                    end,
+                AddFactor = 
+                    case (I-1) div 2 of
+                        0 ->
+                            0;
+                        1 ->
+                            256;
+                        2 ->
+                            65536;
+                        3 ->
+                            4294967296;
+                        _ ->
+                            1099511627776
+                    end,
+                Prefactor * (I + AddFactor)
+        end,
+
+    %% A function for constructing arbitrary-type fields as either
+    %% NULL or not-NULL (by use of supplied CF fun)
+
+    CreateFn = 
+	fun(I, V1, V2, UseNull, CF) -> 
+		case UseNull of
+		    true ->
+			case I of
+			    V1 -> [];
+			    V2 -> [];
+			    _ -> CF(I)
+			end;
+		    _ ->
+			CF(I)
+		end
+	end,
+
+    UseNull = true,
+    F2 = 2*FieldCount,
+
+    Rows = [ [{<<"f1">>, I},
+              {<<"f2">>, 
+	       CreateFn(I, 4, F2, UseNull, fun(Ind) -> list_to_binary("test" ++ integer_to_list(Ind)) end)
+	      }, %%<< varchar
+              {<<"f3">>, 
+	       CreateFn(I, 6, F2, UseNull, fun(Ind) -> Ind * 1.0 end)
+	      }, %%<< double
+              {<<"f4">>, 
+	       CreateFn(I, 8, F2, UseNull, fun(Ind) -> Ind rem 2 =:= 0 end)
+	      }, %%<< boolean
+	      {<<"f5">>, 
+	       CreateFn(I, 8, F2, UseNull, fun(Ind) -> lists:seq(Ind, Ind + 2) end)
+	      }, %%<< list (not a TS type)
+	      {<<"f6">>, 
+	       CreateFn(I, 10, F2, UseNull, fun(Ind) -> Ind * 1000 end)
+	      }, %%<< sint64
+	      {<<"f7">>, 
+	       CreateFn(I, 12, F2, UseNull, fun(Ind) -> 1467563367600 + Ind * 1000 end)
+	      }, %%<< sint64 stored as a big num
+	      {<<"f8">>, 
+	       CreateFn(I, 12, F2, UseNull, fun(Ind) -> VarIntFn(Ind) end)
+	      }  %%<< sint64 stored as a variety of types
+             ] || I <- lists:seq(1, FieldCount * 2) ],  %%<< twice to store a NULL value for each field type
+    Rows.
+
+%------------------------------------------------------------
+% Return the appropriate put fn for whichever encoding we want to test
+%------------------------------------------------------------
+
+getPutFn(msgpack) ->
+    fun putKeyNormalOpsMsgpack/1;
+getPutFn(erlang) ->
+    fun putKeyNormalOpsErlang/1;
+getPutFn(mixed) ->
+    fun putKeyNormalOpsMixed/1.
+
+%------------------------------------------------------------
+% Put realistic data
+%------------------------------------------------------------
+
+putKeyRealisticOpsMsgpack(Ref) ->
+    putSequentialRealisticData({Ref, msgpack, 1467554400000, 1467563400000, 0.5}, 20, 0).
+
+putKeyRealisticOpsErlang(Ref) ->
+    putSequentialRealisticData({Ref, erlang,  1467554400000, 1467563400000, 0.5}, 20, 0).
+
+putSequentialRealisticData(_Args, _Nrow, _Nrow) ->
+    ok;
+putSequentialRealisticData(Args, Nrow, AccRow) ->
+    {Ref, Enc, StartTime, Delta, LapsFrac} = Args,
+    Data = getRealisticData(<<"596044d8-86f5-462f-8d94-65b25e7d3fe9">>, StartTime + AccRow * Delta, LapsFrac),
+
+%%    case AccRow rem 10 of 
+%%      0 ->
+%%          io:format("Putting row ~p Data = ~p~n", [AccRow, Data]);
+%%      _ ->
+%%          ok
+%%    end,
+
+    addKey(Ref, AccRow, Data, Enc),
+    putSequentialRealisticData(Args, Nrow, AccRow+1).
+
+getRealisticData(SportEventUuid, Timestamp, LapsFrac) ->
+    VarcharSize = length(binary_to_list(SportEventUuid)),
+
+    LapsRand = random:uniform(1000),
+    LapsComp = LapsFrac * 1000,
+    Laps = 
+        case LapsRand =< LapsComp of
+            true ->
+                10;
+            false ->
+                -1
+        end,
+    [{<<"sport_event_uuid">>,        SportEventUuid}, 
+     {<<"time">>,                    Timestamp}, 
+     {<<"club_uuid">>,               list_to_binary(get_random_string(VarcharSize))},
+     {<<"person_uuid">>,                     list_to_binary(get_random_string(VarcharSize))},
+     {<<"sport_uuid">>,              list_to_binary(get_random_string(VarcharSize))},
+     {<<"discipline_uuid">>,         list_to_binary(get_random_string(VarcharSize))},
+     {<<"driver_number">>,           list_to_binary(get_random_string(VarcharSize))},
+     {<<"person_full_name">>,        list_to_binary(get_random_string(VarcharSize))},
+     {<<"club_full_name">>,          list_to_binary(get_random_string(VarcharSize))},
+     {<<"abandoned">>,               false},
+     {<<"best_gap_in_time">>,        float(random:uniform(100))},
+     {<<"best_gap_in_lap">>,         random:uniform(100)},
+     {<<"best_lap">>,                float(random:uniform(100))},
+     {<<"best_position">>,           random:uniform(100)},
+     {<<"best_sector_1">>,           float(random:uniform(100))},
+     {<<"best_sector_2">>,           float(random:uniform(100))},
+     {<<"best_sector_3">>,           float(random:uniform(100))},
+     {<<"best_speed">>,              float(random:uniform(100))},
+     {<<"gap_in_time">>,                     float(random:uniform(100))},
+     {<<"gap_in_lap">>,              random:uniform(100)},
+     {<<"lap_timel">>,               float(random:uniform(100))},
+     {<<"laps">>,                    Laps},
+     {<<"position">>,                random:uniform(100)},
+     {<<"qualification_position">>,   random:uniform(100)},
+     {<<"sector_1">>,                float(random:uniform(100))},
+     {<<"sector_2">>,                float(random:uniform(100))},
+     {<<"sector_3">>,                float(random:uniform(100))},
+     {<<"info">>,                    list_to_binary(get_random_string(VarcharSize))}].
+
+get_random_string(Length) ->
+    AllowedChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+    lists:foldl(fun(_, Acc) ->
+                        [lists:nth(random:uniform(length(AllowedChars)),
+                                   AllowedChars)]
+                            ++ Acc
+                end, [], lists:seq(1, Length)).
+
+%------------------------------------------------------------
+% Default evaluation function checks that the total number of keys
+% returned from a filter is greater than zero and equals the expected
+% number of keys
+%------------------------------------------------------------
+
+defaultEvalFn({Val, NullMatch=[]}) ->
     ?assertEqual(Val, NullMatch);
 defaultEvalFn({Null=[], NullMatch}) ->
     ?assertEqual(Null, NullMatch);
-defaultEvalFn({N,Nmatch}) ->
-    ?assertEqual(Nmatch, N),
+defaultEvalFn({N, Nmatch}) ->
     (N > 0) and (N == Nmatch).
 
 filterVal({FilterVal}) ->
     FilterVal;
 filterVal({FilterVal, _CompVal}) ->
     FilterVal.
+
+%------------------------------------------------------------
+% Test each operation against the specified Field and Val
+%------------------------------------------------------------
 
 isNullOpsFactory(IsNull, Field, PutFn, EvalFn) ->
     %% for NULL equality check, cast to binary is needed, the alternative of
@@ -540,7 +747,7 @@ isNullOpsFactory(IsNull, Field, PutFn, EvalFn) ->
         _ -> '!='
     end,
     Filter = {Op, {field, Field, Type}, {const, Val}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, []),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 == V2 end)).
 
 isNullOps({Field, _Val, _Type, PutFn, EvalFn}) ->
@@ -549,68 +756,97 @@ isNullOps({Field, _Val, _Type, PutFn, EvalFn}) ->
 isNotNullOps({Field, _Val, _Type, PutFn, EvalFn}) ->
     isNullOpsFactory(false, Field, PutFn, EvalFn).
 
-eqOps({Field, Val, Type, PutFn, EvalFn}) ->
+eqOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
     Filter = {'=', {field, Field, Type}, {const, filterVal(Val)}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, OtherArgs),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 == V2 end)).
     
-eqEqOps({Field, Val, Type, PutFn, EvalFn}) ->
+eqEqOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
     Filter = {'==', {field, Field, Type}, {const, filterVal(Val)}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, OtherArgs),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 == V2 end)).
 
-neqOps({Field, Val, Type, PutFn, EvalFn}) ->
+neqOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
     Filter = {'!=', {field, Field, Type}, {const, filterVal(Val)}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, OtherArgs),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 /= V2 end)).
 
-gtOps({Field, Val, Type, PutFn, EvalFn}) ->
+gtOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
     Filter = {'>', {field, Field, Type}, {const, filterVal(Val)}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, OtherArgs),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 > V2 end)).
 
-gteOps({Field, Val, Type, PutFn, EvalFn}) ->
+gteOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
     Filter = {'>=', {field, Field, Type}, {const, filterVal(Val)}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, OtherArgs),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 >= V2 end)).
 
-ltOps({Field, Val, Type, PutFn, EvalFn}) ->
+ltOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
     Filter = {'<', {field, Field, Type}, {const, filterVal(Val)}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, OtherArgs),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 < V2 end)).
 
-lteOps({Field, Val, Type, PutFn, EvalFn}) ->
+lteOps({Field, Val, Type, PutFn, EvalFn, OtherArgs}) ->
     Filter = {'=<', {field, Field, Type}, {const, filterVal(Val)}},
-    Keys = streamFoldTest(Filter, PutFn),
+    Keys = streamFoldTest(Filter, PutFn, OtherArgs),
     EvalFn(fieldsMatching(Keys, Field, Val, fun(V1,V2) -> V1 =< V2 end)).
+
+%------------------------------------------------------------
+% All of the above operation tests
+%------------------------------------------------------------
 
 allOps(Args) ->
     eqOps(Args) and eqEqOps(Args) and neqOps(Args) and 
-	gtOps(Args) and gteOps(Args) and
-	ltOps(Args) and lteOps(Args).
+        gtOps(Args) and gteOps(Args) and
+        ltOps(Args) and lteOps(Args).
+
+%------------------------------------------------------------
+% Only equality operations
+%------------------------------------------------------------
 
 eqOpsOnly(Args) ->
     eqOps(Args) and eqEqOps(Args) and neqOps(Args).
 
+%------------------------------------------------------------
+% All comparison operations
+%------------------------------------------------------------
+
 allCompOps(Args) ->
     gtOps(Args) and gteOps(Args) and
-	ltOps(Args) and lteOps(Args).
+        ltOps(Args) and lteOps(Args).
+
+%------------------------------------------------------------
+% Any comparison operation
+%------------------------------------------------------------
 
 anyCompOps(Args) ->
     gtOps(Args) or gteOps(Args) or
-	ltOps(Args) or lteOps(Args).
+        ltOps(Args) or lteOps(Args).
+
+%%=======================================================================
+%% Data-type specific tests
+%%=======================================================================
 
 %%------------------------------------------------------------
 %% Test timestamp operations
 %%------------------------------------------------------------
 
 timestampOps_test() ->
-    io:format("timestampOps_test~n"),
+    {timeout, 60, fun() -> timestampOpsTests() end}.
+			  
+timestampOpsTests() ->
+    timestampOps(erlang) and timestampOps(msgpack) and timestampOps(mixed).
+
+timestampOps(Enc) ->
+    io:format("timestampOps_test with ~p encoding~n", [Enc]),
     F = <<"f6">>,
     Val = 2000,
-    PutFn = fun putKeyNormalOps/1,
+    PutFn = getPutFn(Enc),
     EvalFn = fun defaultEvalFn/1,
-    Res = allOps({F, {Val}, timestamp, PutFn, EvalFn}),
+
+    %% Timestamps support all ops
+
+    Res = allOps({F, {Val}, timestamp, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -619,12 +855,46 @@ timestampOps_test() ->
 %%------------------------------------------------------------
 
 sint64Ops_test() ->
-    io:format("sint64Ops_test~n"),
+    {timeout, 60, fun() -> sint64OpsTests() end}.
+
+sint64OpsTests() ->
+    sint64Ops(msgpack) and sint64Ops(erlang) and sint64Ops(mixed).
+
+sint64Ops(Enc) ->
+    io:format("sint64Ops_test with ~p encoding~n", [Enc]),
     F = <<"f1">>,
     Val = 3,
-    PutFn = fun putKeyNormalOps/1,
+    PutFn = getPutFn(Enc),
     EvalFn = fun defaultEvalFn/1,
-    Res = allOps({F, {Val}, sint64, PutFn, EvalFn}),
+
+    %% sint64s support all ops
+
+    Res = allOps({F, {Val}, sint64, PutFn, EvalFn, []}),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% Test variable-type integer operations (both msgpack and ttb encode
+%% integers differently according to value, field f8 is specifically
+%% designed to probe all possible cases)
+%%------------------------------------------------------------
+
+varIntOps_test() ->
+    {timeout, 60, fun() -> varIntOpsTests() end}.
+
+varIntOpsTests() ->
+    varIntOps(msgpack) and varIntOps(erlang) and varIntOps(erlang).
+
+varIntOps(Enc) ->
+    io:format("varIntOps_test with ~p encoding~n", [Enc]),
+    F = <<"f8">>,
+    Val = 2,
+    PutFn = getPutFn(Enc),
+    EvalFn = fun defaultEvalFn/1,
+
+    %% variable integers support all ops
+
+    Res = allOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -634,12 +904,21 @@ sint64Ops_test() ->
 %%------------------------------------------------------------
 
 varcharOps_test() ->
-    io:format("varcharOps_test~n"),
+   {timeout, 60, fun() -> varcharOpsTests() end}.
+			 
+varcharOpsTests() ->
+    varcharOps(msgpack) and varcharOps(erlang) and varcharOps(mixed).
+
+varcharOps(Enc) ->
+    io:format("varcharOps_test with ~p encoding~n", [Enc]),
     F = <<"f2">>,
     Val = <<"test3">>,
-    PutFn = fun putKeyNormalOps/1,
+    PutFn = getPutFn(Enc),
     EvalFn = fun defaultEvalFn/1,
-    Res = eqOpsOnly({F, {Val}, varchar, PutFn, EvalFn}) and (anyCompOps({F, {Val}, varchar, PutFn, EvalFn}) == false),
+
+    %% varchar types support only equality operations
+
+    Res = eqOpsOnly({F, {Val}, varchar, PutFn, EvalFn, []}) and (anyCompOps({F, {Val}, varchar, PutFn, EvalFn, []}) == false),
     ?assert(Res),
     Res.
 
@@ -649,12 +928,21 @@ varcharOps_test() ->
 %%------------------------------------------------------------
 
 doubleOps_test() ->
-    io:format("doubleOps_test~n"),
+    {timeout, 60, fun() -> doubleOpsTests() end}.
+
+doubleOpsTests() ->
+    doubleOps(msgpack) and doubleOps(erlang) and doubleOps(mixed).
+
+doubleOps(Enc) ->
+    io:format("doubleOps_test with ~p encoding~n", [Enc]),
     F = <<"f3">>,
     Val = 3.0,
-    PutFn = fun putKeyNormalOps/1,
+    PutFn = getPutFn(Enc),
     EvalFn = fun defaultEvalFn/1,
-    Res = allOps({F, {Val}, double, PutFn, EvalFn}),
+
+    %% double types support all operations
+
+    Res = allOps({F, {Val}, double, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -663,12 +951,47 @@ doubleOps_test() ->
 %%------------------------------------------------------------
 
 boolOps_test() ->
-    io:format("boolOps_test~n"),
+    {timeout, 60, fun() -> boolOpsTests() end}.
+			  
+boolOpsTests() ->
+    boolOps(msgpack) and boolOps(erlang) and boolOps(mixed).
+
+boolOps(Enc) ->
+    io:format("boolOps_test with ~p encoding~n", [Enc]),
     F = <<"f4">>,
     Val = true,
-    PutFn = fun putKeyNormalOps/1,
+    PutFn = getPutFn(Enc),
     EvalFn = fun defaultEvalFn/1,
-    Res = eqOpsOnly({F, {Val}, boolean, PutFn, EvalFn}) and (anyCompOps({F, {Val}, boolean, PutFn, EvalFn}) == false),
+
+    %% boolean types support only equality ops
+
+    Res = eqOpsOnly({F, {Val}, boolean, PutFn, EvalFn, []}) and (anyCompOps({F, {Val}, boolean, PutFn, EvalFn, []}) == false),
+    ?assert(Res),
+    Res.
+
+%%------------------------------------------------------------
+%% Test filtering with realistic data
+%%------------------------------------------------------------
+
+realisticOps_test() ->
+    {timeout, 60, fun() -> realisticOpsTests() end}.
+
+realisticOpsTests() ->
+    realisticOps(erlang) and realisticOps(msgpack) and realisticOps(mixed).
+
+realisticOps(Enc) ->
+    io:format("realisticOps_test with ~p encoding~n", [Enc]),
+    F = <<"laps">>,
+    Val = 0,
+    PutFn = 
+        case Enc of 
+            msgpack ->
+                fun putKeyRealisticOpsMsgpack/1;
+            _ ->
+                fun putKeyRealisticOpsErlang/1
+        end,
+    EvalFn = fun defaultEvalFn/1,
+    Res = gteOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -681,9 +1004,9 @@ anyOps_test() ->
     F = <<"f5">>,
     Val = em([1,2,3]),
     CompVal = [1,2,3],
-    PutFn  = fun putKeyNormalOps/1,
+    PutFn  = fun putKeyNormalOpsMsgpack/1,
     EvalFn = fun defaultEvalFn/1,
-    Res = eqOpsOnly({F, {Val, CompVal}, any, PutFn, EvalFn}) and (anyCompOps({F, {Val, CompVal}, any, PutFn, EvalFn}) == false),
+    Res = eqOpsOnly({F, {Val, CompVal}, any, PutFn, EvalFn, []}) and (anyCompOps({F, {Val, CompVal}, any, PutFn, EvalFn, []}) == false),
     ?assert(Res),
     Res.
 
@@ -692,7 +1015,7 @@ anyOps_test() ->
 %%------------------------------------------------------------
 
 normalOpsTests() ->
-    sint64Ops_test() and varcharOps_test() and boolOps_test() and doubleOps_test() and anyOps_test() and timestampOps_test().
+    sint64OpsTests() and varcharOps_test() and boolOps_test() and doubleOps_test() and anyOps_test() and timestampOps_test().
 
 %%=======================================================================
 %% Test AND + OR comparators
@@ -707,8 +1030,8 @@ andOps_test() ->
     Cond1 = {'>', {field, <<"f1">>, sint64}, {const, 3}},
     Cond2 = {'=', {field, <<"f3">>, double}, {const, 5.0}},
     Filter = {'and_', Cond1, Cond2},
-    PutFn  = fun putKeyNormalOps/1,
-    Keys = streamFoldTest(Filter, PutFn),
+    PutFn  = fun putKeyNormalOpsMsgpack/1,
+    Keys = streamFoldTest(Filter, PutFn, []),
     {N1, NMatch1} = fieldsMatching(Keys, <<"f1">>, 3,   fun(V1,V2) -> V1 > V2 end),
     {N3, NMatch3} = fieldsMatching(Keys, <<"f3">>, 5.0, fun(V1,V2) -> V1 == V2 end),
     ?assertEqual(1, N1),
@@ -716,7 +1039,6 @@ andOps_test() ->
     ?assertEqual(1, N3),
     ?assertEqual(1, NMatch3),
     pass.
-
 
 %%------------------------------------------------------------
 %% Test OR filtering
@@ -727,15 +1049,37 @@ orOps_test() ->
     Cond1 = {'>', {field, <<"f1">>, sint64}, {const, 3}},
     Cond2 = {'=', {field, <<"f3">>, double}, {const, 5.0}},
     Filter = {'or_', Cond1, Cond2},
-    PutFn  = fun putKeyNormalOps/1,
-    Keys = streamFoldTest(Filter, PutFn),
+
+    PutFn  = fun sut:putKeyNormalOpsMsgpack/1,
+    AllKeys = getKeyNormalOps(),
+
+    io:format("All keys = ~p~n", [AllKeys]),
+
+    {NTotal, NExpected1} = fieldsMatching(AllKeys, <<"f1">>, 3,   fun(V1,V2) -> V1 > V2 end),
+    {NTotal, NExpected3} = fieldsMatching(AllKeys, <<"f3">>, 5.0, fun(V1,V2) -> V1 == V2 end),
+
+    NExpected =
+        case NExpected1 > NExpected3 of
+            true ->
+                NExpected1;
+            _ ->
+                NExpected3
+        end,
+
+    io:format("NExpected = ~p~n", [NExpected]),
+
+    Keys = streamFoldTest(Filter, PutFn, []),
+
+    io:format("Keys = ~p Size = ~p~n", [Keys, length(Keys)]),
+
     {N1, NMatch1} = fieldsMatching(Keys, <<"f1">>, 3,   fun(V1,V2) -> V1 > V2 end),
-    {N3, NMatch3} = fieldsMatching(Keys, <<"f3">>, 5.0, fun(V1,V2) -> V1 == V2 end),
-    ?assertEqual(7, N1),
-    ?assertEqual(7, NMatch1),
-    ?assertEqual(7, N3),
-    ?assertEqual(1, NMatch3),
-    pass.
+    {N1, NMatch3} = fieldsMatching(Keys, <<"f3">>, 5.0, fun(V1,V2) -> V1 == V2 end),
+
+    io:format("N1 = ~p NMatch1 = ~p NMatch3 = ~p~n", [N1, NMatch1, NMatch3]),
+
+    Res = (N1 == NExpected) and (NMatch1 == NExpected1) and (NMatch3 == NExpected3),
+    ?assert(Res),
+    Res.
 
 %%------------------------------------------------------------
 %% Test all AND + OR ops
@@ -758,6 +1102,11 @@ putKeyAbnormalOps(Ref) ->
     addKey(Ref, 3, [{<<"f1">>,   3}, {<<"f2">>,           3}, {<<"f3">>, "3.0"}, {<<"f4">>,  false}, {<<"f5">>, em([3,4,5])}, {<<"f6">>,  3000}]),
     addKey(Ref, 4, [{<<"f1">>,   4}, {<<"f2">>, <<"test4">>}, {<<"f3">>,   4.0}, {<<"f4">>, "true"}, {<<"f5">>,           4}, {<<"f6">>,  4000}]).
 
+%%------------------------------------------------------------
+%% Evaluation for abnormal conditions checks that no matching records
+%% were returned
+%%------------------------------------------------------------
+
 abnormalEvalFn({N,_Nmatch}) ->
     (N == 0).
 
@@ -771,7 +1120,7 @@ badInt_test() ->
     Val = 0,
     PutFn = fun putKeyAbnormalOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -785,7 +1134,7 @@ badTimestamp_test() ->
     Val = 2000,
     PutFn = fun putKeyAbnormalOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, timestamp, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, timestamp, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -798,7 +1147,7 @@ badBinary_test() ->
     F = <<"f2">>,
     Val = <<"test">>,
     PutFn = fun putKeyAbnormalOps/1,
-    Res = neqOps({F, {Val}, varchar, PutFn, fun({N,_}) -> N == 4 end}),
+    Res = neqOps({F, {Val}, varchar, PutFn, fun({N,_}) -> N == 4 end, []}),
     ?assert(Res),
     Res.
 
@@ -812,7 +1161,7 @@ badFloat_test() ->
     Val = 0.0,
     PutFn = fun putKeyAbnormalOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, double, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, double, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -826,44 +1175,51 @@ badBool_test() ->
     Val = false,
     PutFn = fun putKeyAbnormalOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = eqOps({F, {Val}, boolean, PutFn, EvalFn}),
+    Res = eqOps({F, {Val}, boolean, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
-
-%%-----------------------------------------------------------------------
-%% Test reading any data: comparison should succeed!
-%%-----------------------------------------------------------------------
-
-badAny_test() ->
-    io:format("badAny_test~n"),
-    F = <<"f5">>,
-    Val = em([1,2,3]),
-    CompVal = [1,2,3],
-    PutFn  = fun putKeyNormalOps/1,
-    ExpectedRowCount = 9,
-    EvalFn = fun({N,_}) -> ?assertEqual(ExpectedRowCount, N) end,
-    neqOps({F, {Val, CompVal}, any, PutFn, EvalFn}).
 
 %%------------------------------------------------------------
 %% All abnormal ops tests
 %%------------------------------------------------------------
 
 abnormalOpsTests() ->
-    badInt_test() and badBinary_test() and badFloat_test() and badBool_test() and badTimestamp_test() and badAny_test().
+    badInt_test() and badBinary_test() and badFloat_test() and badBool_test() and badTimestamp_test().
 
 %%=======================================================================
 %% Test filter on IS NULL and IS NOT NULL
+%%
+%% Changed to test both supported encodings
 %%=======================================================================
+
 isNullFieldOfTypeTestFactory(IsNull, Field) ->
+    isNullFieldOfTypeTestFactory(IsNull, Field, msgpack),
+    isNullFieldOfTypeTestFactory(IsNull, Field, erlang).
+
+isNullFieldOfTypeTestFactory(IsNull, Field, Enc) ->
     %% if curious why varchar, see comment on isNullOpsFactory
     Type = varchar,
     Val = [],
     CompVal = [],
-    PutFn = fun putKeyNormalOps/1,
+
+    PutFn = getPutFn(Enc),
+
+    Keys = getKeyNormalOps(),
+    {NTotal, NNull} = fieldsMatching(Keys, Field, [], 
+				     fun(V1,[]) -> 
+					     case V1 of
+						 [] -> true;
+						 _ -> false
+					     end
+				     end),
+    
+    NNotNull = NTotal - NNull,
+
     ExpectedRowCount = case IsNull of
-        true -> 2;
-        _ -> 10
+        true -> NNull;
+        _ -> NNotNull
     end,
+
     EvalFn = fun({N,_}) -> ?assertEqual(ExpectedRowCount, N) end,
     IsNullOpsFn = case IsNull of
         true -> fun isNullOps/1;
@@ -911,12 +1267,12 @@ isNotNullLargeInteger_test() ->
 
 putKeyMissingOps(Ref) ->
     addKey(Ref, 1, [{<<"f1">>, 1}, {<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
-    addKey(Ref, 2, [{<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
+    addKey(Ref, 2, [               {<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
     addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
     addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
 
 putKeyFirstMissingOps(Ref) ->
-    addKey(Ref, 1, [{<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
+    addKey(Ref, 1, [               {<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
     addKey(Ref, 2, [{<<"f1">>, 2}, {<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
     addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
     addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
@@ -929,9 +1285,9 @@ putKeyEmptyOps(Ref) ->
 
 putKeyFirstEmptyOps(Ref) ->
     addKey(Ref, 1, [{<<"f1">>, []}, {<<"f2">>, "test1"}, {<<"f3">>, 1.0}, {<<"f4">>, false}, {<<"f5">>, [1,2,3]}, {<<"f6">>, 1000}]),
-    addKey(Ref, 2, [{<<"f1">>, 2}, {<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
-    addKey(Ref, 3, [{<<"f1">>, 3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
-    addKey(Ref, 4, [{<<"f1">>, 4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
+    addKey(Ref, 2, [{<<"f1">>,  2}, {<<"f2">>, "test2"}, {<<"f3">>, 2.0}, {<<"f4">>, true},  {<<"f5">>, [2,3,4]}, {<<"f6">>, 2000}]),
+    addKey(Ref, 3, [{<<"f1">>,  3}, {<<"f2">>, "test3"}, {<<"f3">>, 3.0}, {<<"f4">>, false}, {<<"f5">>, [3,4,5]}, {<<"f6">>, 3000}]),
+    addKey(Ref, 4, [{<<"f1">>,  4}, {<<"f2">>, "test4"}, {<<"f3">>, 4.0}, {<<"f4">>, true},  {<<"f5">>, [4,5,6]}, {<<"f6">>, 4000}]).
 
 %%------------------------------------------------------------
 %% Valid filter, but values are missing for referenced keys
@@ -943,7 +1299,7 @@ missingKey_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun defaultEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -953,7 +1309,7 @@ missingFirstKey_test() ->
     Val = 0,
     PutFn = fun putKeyFirstMissingOps/1,
     EvalFn = fun defaultEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -963,7 +1319,7 @@ emptyKey_test() ->
     Val = 0,
     PutFn = fun putKeyEmptyOps/1,
     EvalFn = fun defaultEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -973,7 +1329,7 @@ emptyFirstKey_test() ->
     Val = 0,
     PutFn = fun putKeyFirstEmptyOps/1,
     EvalFn = fun defaultEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -988,7 +1344,7 @@ filterRefMissingKey_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -1002,7 +1358,7 @@ filterRefWrongType_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, sint64, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -1016,7 +1372,7 @@ filterRefInvalidType_test() ->
     Val = 0,
     PutFn = fun putKeyMissingOps/1,
     EvalFn = fun abnormalEvalFn/1,
-    Res = gtOps({F, {Val}, map, PutFn, EvalFn}),
+    Res = gtOps({F, {Val}, map, PutFn, EvalFn, []}),
     ?assert(Res),
     Res.
 
@@ -1026,7 +1382,7 @@ filterRefInvalidType_test() ->
 
 exceptionalTests() ->
     missingKey_test() and emptyKey_test() and filterRefMissingKey_test() and 
-	filterRefWrongType_test() and filterRefInvalidType_test().
+        filterRefWrongType_test() and filterRefInvalidType_test().
 
 %%=======================================================================
 %% Test scanning
@@ -1039,33 +1395,46 @@ exceptionalTests() ->
 streamFoldTestOpts(Opts, FoldFun) ->
     Ref = open(),
     try
-	Acc = eleveldb:fold(Ref, FoldFun, [], Opts),
-	ok = eleveldb:close(Ref),
-	Keys = lists:reverse(Acc)
+        Acc = eleveldb:fold(Ref, FoldFun, [], Opts),
+        ok = eleveldb:close(Ref),
+        Keys = lists:reverse(Acc)
     catch
-	error:Error ->
-	    io:format("Caught an error: closing db~n"),
-	    ok = eleveldb:close(Ref),
-	    error(Error)
+        error:Error ->
+
+	    %% This is used for deliberate failure testing, and
+	    %% the 'correct' behavior is indicated by return of an
+	    %% empty list [].  We fail quietly, so that we don't
+	    %% print alarming messages during unit testing
+	    %%
+	    %%io:format(user, "Caught an error: closing db~n", []),
+
+            ok = eleveldb:close(Ref),
+            error(Error)
     end.
 
 %%------------------------------------------------------------
 %% Make sure that we iterate over the right number of keys when
 %% requesting start and end keys
+%%
+%% Changed to test scanning for both supported encodings, as well as
+%% mixed encoding case
 %%------------------------------------------------------------
 
 scanSome_test() ->
-    io:format("scanSome_test~n"),
+    scanSome_test(msgpack) and scanSome_test(erlang) and scanSome_test(mixed).
+
+scanSome_test(Enc) ->
+    io:format("scanSome_test with Enc = ~p~n", [Enc]),
     N = 100,
-    putKeysObj(N),
+    putKeysObj(N, Enc),
     Opts=[{fold_method, streaming},
-	  {start_key, <<"key002">>},
-	  {end_key,  <<"key099">>},
-	  {end_inclusive,  true}],
+          {start_key, <<"key002">>},
+          {end_key,  <<"key099">>},
+          {end_inclusive,  true}],
 
     FoldFun = fun({K,_V}, Acc) -> 
-		      [K | Acc]
-	      end,
+                      [K | Acc]
+              end,
 
     Keys = streamFoldTestOpts(Opts, FoldFun),
     Len = length(Keys),
@@ -1079,13 +1448,16 @@ scanSome_test() ->
 %%------------------------------------------------------------
 
 scanAll_test() ->
-    io:format("scanAll_test~n"),
+    scanAll_test(msgpack) and scanAll_test(erlang) and scanAll_test(mixed).
+
+scanAll_test(Enc) ->
+    io:format("scanAll_test with Enc = ~p~n", [Enc]),
     N = 100,
-    putKeysObj(N),
+    putKeysObj(N, Enc),
     Opts=[{fold_method, streaming}],
     FoldFun = fun({K,V}, Acc) -> 
-		      [getKeyVal(K,V) | Acc]
-	      end,
+                      [getKeyVal(K,V) | Acc]
+              end,
     Keys = streamFoldTestOpts(Opts, FoldFun),
     Len = length(Keys),
     Res = (Len =:= N),
@@ -1097,16 +1469,19 @@ scanAll_test() ->
 %%------------------------------------------------------------
 
 scanNoStart_test() ->
-    io:format("scanNoStart_test~n"),
+    scanNoStart_test(msgpack) and scanNoStart_test(erlang) and scanNoStart_test(mixed).
+
+scanNoStart_test(Enc) ->
+    io:format("scanNoStart_test with Enc = ~p~n", [Enc]),
     N = 100,
-    putKeysObj(N),
+    putKeysObj(N, Enc),
     Opts=[{fold_method, streaming},
-	  {start_inclusive, false},
-	  {start_key, <<"key001">>}],
+          {start_inclusive, false},
+          {start_key, <<"key001">>}],
 
     FoldFun = fun({K,_V}, Acc) -> 
-		      [K | Acc]
-	      end,
+                      [K | Acc]
+              end,
 
     Keys = streamFoldTestOpts(Opts, FoldFun),
     [Key1 | _Rest] = Keys,
@@ -1119,12 +1494,12 @@ scanNoStartTest() ->
     N = 100,
     putKeysObj(N),
     Opts=[{fold_method, streaming},
-	  {start_inclusive, false},
-	  {start_key, <<"key001">>}],
+          {start_inclusive, false},
+          {start_key, <<"key001">>}],
 
     FoldFun = fun({K,_V}, Acc) -> 
-		      [K | Acc]
-	      end,
+                      [K | Acc]
+              end,
 
     streamFoldTestOpts(Opts, FoldFun).
 
@@ -1133,18 +1508,21 @@ scanNoStartTest() ->
 %%------------------------------------------------------------
 
 scanNoStartOrEnd_test() ->
-    io:format("scanNoStartOrEnd_test~n"),
+    scanNoStartOrEnd_test(msgpack) and scanNoStartOrEnd_test(erlang) and scanNoStartOrEnd_test(mixed).
+
+scanNoStartOrEnd_test(Enc) ->
+    io:format("scanNoStartOrEnd_test with Enc = ~p~n", [Enc]),
     N = 100,
-    putKeysObj(N),
+    putKeysObj(N, Enc),
     Opts=[{fold_method, streaming},
-	  {start_inclusive, false},
-	  {end_inclusive, false},
-	  {start_key, <<"key001">>},
-	  {end_key,   <<"key100">>}],
+          {start_inclusive, false},
+          {end_inclusive, false},
+          {start_key, <<"key001">>},
+          {end_key,   <<"key100">>}],
 
     FoldFun = fun({K,_V}, Acc) -> 
-		      [K | Acc]
-	      end,
+                      [K | Acc]
+              end,
 
     Keys = streamFoldTestOpts(Opts, FoldFun),
 
@@ -1163,95 +1541,13 @@ scanNoStartOrEnd_test() ->
 scanTests() ->
     scanAll_test() and scanSome_test() and scanNoStart_test() and scanNoStartOrEnd_test().
 
-%%=======================================================================
-%% Encoding options tests
-%%=======================================================================
-
-%%------------------------------------------------------------
-%% This test should throw an exception because no encoding option was
-%% specified
-%%------------------------------------------------------------
-
-noEncodingOptions_test() ->
-    io:format("noEncodingOptions_test~n"),
-    try
-	N = 100,
-	putKeysObj(N),
-	Filter = {'>', {field, <<"f1">>, sint64}, {const, 1}},
-	Opts=[{fold_method, streaming},
-	      {range_filter, Filter}],
-	
-	FoldFun = fun({K,_V}, Acc) -> 
-			  [K | Acc]
-		  end,
-	
-	Keys = streamFoldTestOpts(Opts, FoldFun),
-	Len = length(Keys),
-	Res = (Len > 0),
-	?assert(Res),
-	Res
-    of
-	_ -> 
-	    io:format("Function returned ok.  Shouldn't have!"),
-	    ?assert(false),
-	    false
-    catch
-	error:Error ->
-	    io:format("Caught an error: ~p.  Ok.~n", [Error]),
-	    ?assert(true),
-	    true
-    end.
-
-%%------------------------------------------------------------
-%% This test should throw an exception because an invalid encoding
-%% option was specified
-%%------------------------------------------------------------
-
-badEncodingOptions_test() ->
-    io:format("badEncodingOptions_test~n"),
-    try
-	N = 100,
-	putKeysObj(N),
-	Filter = {'>', {field, <<"f1">>, sint64}, {const, 1}},
-	Opts=[{fold_method, streaming},
-	      {range_filter, Filter},
-	      {encoding, unknown}],
-	
-	FoldFun = fun({K,_V}, Acc) -> 
-			  [K | Acc]
-		  end,
-	
-	Keys = streamFoldTestOpts(Opts, FoldFun),
-	Len = length(Keys),
-	Res = (Len > 0),
-	?assert(Res),
-	Res
-    of
-	_ -> 
-	    io:format("Function returned ok.  Shouldn't have!"),
-	    ?assert(false),
-	    false
-    catch
-	error:Error ->
-	    io:format("Caught an error: ~p.  Ok.~n", [Error]),
-	    ?assert(true),
-	    true
-    end.
-
-%%------------------------------------------------------------
-%% All encoding options tests
-%%------------------------------------------------------------
-
-encodingOptionsTests() ->
-    noEncodingOptions_test() and badEncodingOptions_test().
-
 %%------------------------------------------------------------
 %% All tests in this file
 %%------------------------------------------------------------
 
 allTests() ->
     packObj_test() and normalOpsTests() and abnormalOpsTests() and exceptionalTests() 
-	and scanTests()and encodingOptionsTests().
+        and scanTests().
 
 %%=======================================================================
 %% Test code to filter & decode TS keys from a leveldb table
@@ -1264,17 +1560,17 @@ readKeysFromTable(Table) ->
     Cond3 = {'>', {field, <<"time">>, timestamp}, {const,  9990000}},
     Filter = {'and_', Cond1, {'and_', Cond2, Cond3}},
     Opts=[{fold_method, streaming},
-	  {range_filter, Filter},
-	  {encoding, msgpack}],
+          {range_filter, Filter},
+          {encoding, msgpack}],
     io:format("Filter = ~p~n", [lists:flatten([Filter])]),
     TableName = "/Users/eml/projects/riak/riak_end_to_end_timeseries/dev/dev1/data/leveldb/" ++ Table,
     io:format("Attemping to open ~ts~n", [TableName]),
     Ref = open(TableName),
     Bucket = {<<"GeoCheckin">>, <<"GeoCheckin">>},
     FoldFun = fun({_K,V}, _Acc) -> 
-		      Contents = getKeyVal(Bucket, <<"key">>, V),
-		      io:format("Val = ~p~n", [lists:flatten(Contents)])
-	      end,
+                      Contents = getKeyVal(Bucket, <<"key">>, V),
+                      io:format("Val = ~p~n", [lists:flatten(Contents)])
+              end,
 
     eleveldb:fold(Ref, FoldFun, [], Opts),
     ok = eleveldb:close(Ref).

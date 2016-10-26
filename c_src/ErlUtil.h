@@ -1,16 +1,16 @@
-// $Id: $
-
 #ifndef ELEVELDB_ERLUTIL_H
 #define ELEVELDB_ERLUTIL_H
 
 /**
- * @file ErlUtil.h
+ * ErlUtil
+ *
+ *   A class for manipulating erlang terms passed across the NIF
+ *   interface, based on the erl_nif library library (see
+ *   http://erlang.org/doc/man/erl_nif.html)
  * 
- * Tagged: Wed Sep  2 14:46:45 PDT 2015
+ * Created: Wed Sep  9 17:32:28 PDT 2015
  * 
- * @version: $Revision: $, $Date: $
- * 
- * @author /bin/bash: username: command not found
+ * Original author: eleitch@basho.com
  */
 #include "erl_nif.h"
 #include "workitems.h"
@@ -138,13 +138,19 @@ namespace eleveldb {
         static std::string formatTerm(ErlNifEnv* env, ERL_NIF_TERM term);
 
         static std::string formatAtom(  ErlNifEnv* env, ERL_NIF_TERM term);
+
         static std::string formatBinary(ErlNifEnv* env, ERL_NIF_TERM term);
-
         static std::string formatBinary(unsigned char* buf, size_t size);
-
+        static std::string formatBinary(char* buf, size_t size);
+        
         static std::string formatList(  ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatNumber(ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatString(ErlNifEnv* env, ERL_NIF_TERM term);
+
+        static std::string formatAsString(ErlNifEnv* env, ERL_NIF_TERM term);
+        static std::string formatAsString(unsigned char* buf, size_t size);
+        static std::string formatAsString(char* buf, size_t size);
+
         static std::string formatTuple( ErlNifEnv* env, ERL_NIF_TERM term);
         static std::string formatTupleVec(ErlNifEnv* env, std::vector<ERL_NIF_TERM>& tuple);
 

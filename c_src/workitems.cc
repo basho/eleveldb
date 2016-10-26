@@ -29,6 +29,7 @@
 #include "filter_parser.h"
 
 #include "ErlUtil.h"
+#include "StringBuf.h"
 
 #include "leveldb/atomics.h"
 #include "leveldb/cache.h"
@@ -629,7 +630,6 @@ RangeScanOptions::RangeScanOptions() :
     end_inclusive(false), 
     fill_cache(false), 
     verify_checksums(true), 
-    encodingType_(Encoding::NONE),
     env_(0), 
     useRangeFilter_(false) {};
 
@@ -639,32 +639,7 @@ RangeScanOptions::~RangeScanOptions() {};
 // Sanity-check filter options
 //------------------------------------------------------------
 
-void RangeScanOptions::checkOptions() 
-{
-        
-    //------------------------------------------------------------
-    // If a filter was specified, we don't allocate the extractor
-    // until we're done parsing the options.  This is because we
-    // require that an a valid encoding is specified before we can
-    // choose which extractor to use
-    //------------------------------------------------------------
-    
-    if(useRangeFilter_) {
-        switch (encodingType_) {
-        case Encoding::MSGPACK:
-            break;
-        case Encoding::NONE:
-            ThrowRuntimeError("No object encoding was specified");
-            break;
-        case Encoding::UNKNOWN:
-            ThrowRuntimeError("An invalud object encoding was specified");
-            break;
-        default:
-            ThrowRuntimeError("An unsupported object encoding was specified: " << encodingType_);
-            break;
-        }
-    }
-};
+void RangeScanOptions::checkOptions() {}
 
 /**
  * RangeScanTask::SyncObject
@@ -793,22 +768,7 @@ RangeScanTask::RangeScanTask(ErlNifEnv * caller_env,
     //------------------------------------------------------------
     
     if(options_.useRangeFilter_) {
-        if(options_.encodingType_ == Encoding::MSGPACK)
-            extractor_ = new ExtractorMsgpack();
-        else {
-            ThrowRuntimeError("An invalid object encoding was specified");
-        }
 
-        //------------------------------------------------------------
-        // Since the data types are now passed with the filter, we no
-        // longer need to wait to decode some data to determine them,
-        // so parse the filter up-front.  Note that to use the code
-        // as-is, we need to set extractor_->typesParsed_ to true as
-        // if we had parsed the datatypes
-        //------------------------------------------------------------
-
-        bool throwIfBadFilter = true;
-        
         //------------------------------------------------------------
         // The code allows for individual filter conditions to be bad,
         // i.e., conditions that reference fields that don't exist, or
@@ -821,12 +781,12 @@ RangeScanTask::RangeScanTask(ErlNifEnv * caller_env,
         // filter conditions are ignored (always true), and the rest of
         // the filter will be evaluated anyway
         //------------------------------------------------------------
-        
-        extractor_->typesParsed_ = true;
+
+        bool throwIfBadFilter = true;
 
         range_filter_ = parse_range_filter_opts(options_.env_, 
                                                 options_.rangeFilterSpec_, 
-                                                *(extractor_), throwIfBadFilter);
+                                                extractorMap_, throwIfBadFilter);
     }
     
     if(!sync_obj_) {
@@ -846,13 +806,11 @@ RangeScanTask::~RangeScanTask()
         delete range_filter_;
         range_filter_ = 0;
     }
-    
-    if(extractor_) {
-        delete extractor_;
-        extractor_ = 0;
-    }
-    
+
     sync_obj_->RefDec();
+
+    // NB: extractor_ is now just a temp pointer to the extractor for the
+    // current data record, and is managed by extractorMap_
 }
 
 void RangeScanTask::sendMsg(ErlNifEnv * msg_env, ERL_NIF_TERM atom, ErlNifPid pid)
@@ -869,7 +827,7 @@ void RangeScanTask::sendMsg(ErlNifEnv * msg_env, ERL_NIF_TERM atom, ErlNifPid pi
 {
     if(!sync_obj_->IsConsumerDead()) {
         ERL_NIF_TERM ref_copy = enif_make_copy(msg_env, caller_ref_term);
-	ERL_NIF_TERM msg_str  = enif_make_string(msg_env, msg.c_str(), ERL_NIF_LATIN1);
+        ERL_NIF_TERM msg_str  = enif_make_string(msg_env, msg.c_str(), ERL_NIF_LATIN1);
         ERL_NIF_TERM msg      = enif_make_tuple3(msg_env, atom, ref_copy, msg_str);
         
         enif_send(NULL, &pid, msg_env, msg);
@@ -968,12 +926,12 @@ work_result RangeScanTask::DoWork()
                  cmp->Compare(iter->key(), ekey_slice) >= 0
                 ))) {
 
-	  // If data are present in the batch (ie, out_offset != 0),
-	  // send the batch now
+            // If data are present in the batch (ie, out_offset != 0),
+            // send the batch now
 
-	    if (out_offset) {
+            if (out_offset) {
             
-	      // Shrink it to final size.
+                // Shrink it to final size.
 
                 if (out_offset != bin.size)
                     enif_realloc_binary(&bin, out_offset);
@@ -985,21 +943,21 @@ work_result RangeScanTask::DoWork()
             break;
         }
 
-	//------------------------------------------------------------
-	// Else keep going; shove the next entry in the batch, but
-	// only if it passes any user-specified filter.  We default to
-	// filter_passed = true, in case we are not using a filter,
-	// which will cause all keys to be returned
-	//------------------------------------------------------------
+        //------------------------------------------------------------
+        // Else keep going; shove the next entry in the batch, but
+        // only if it passes any user-specified filter.  We default to
+        // filter_passed = true, in case we are not using a filter,
+        // which will cause all keys to be returned
+        //------------------------------------------------------------
 
         leveldb::Slice key   = iter->key();
         leveldb::Slice value = iter->value();
 
         bool filter_passed = true;
 
-	//------------------------------------------------------------
-	// If we are using a filter, evaluate it here
-	//------------------------------------------------------------
+        //------------------------------------------------------------
+        // If we are using a filter, evaluate it here
+        //------------------------------------------------------------
 
         if(options_.useRangeFilter_) {
 
@@ -1023,9 +981,22 @@ work_result RangeScanTask::DoWork()
                     // interleaved, we are throwing if the riak object contents
                     // can not be parsed.
                     //------------------------------------------------------------
-                    
-                    if(extractor_->riakObjectContentsCanBeParsed(value.data(), value.size())) {
-                        
+
+                    unsigned char encMagic=0;
+
+                    if(Extractor::riakObjectContentsCanBeParsed(value.data(), value.size(), encMagic)) {
+
+                        // Point extractor_ to the right extractor for
+                        // this data record.  (We don't have to check
+                        // that it exists in the map because
+                        // riakObjectContentsCanBeParsed() would have
+                        // returned false if it didn't)
+
+                        extractor_ = extractorMap_.extractorNoCheck(encMagic);
+
+                        // And extract the field values that will be
+                        // evaluated against the filter
+
                         extractor_->extractRiakObject(value.data(), value.size(), range_filter_);
                         
                         //------------------------------------------------------------
@@ -1045,10 +1016,17 @@ work_result RangeScanTask::DoWork()
                 //------------------------------------------------------------
                 
             } catch(std::runtime_error& err) {
+
                 std::ostringstream os;
-                os << err.what() << std::endl << "While processing key: " 
-                   << ErlUtil::formatBinary((unsigned char*)key.data(), key.size());
+
+                // Attempt to format the key as a human-readable
+                // string.  This would make the error message more
+                // useful, if it were ever allowed to propagate up to
+                // the user by the erlang layer.
                 
+                os << err.what() << std::endl << "While processing key: " 
+                   << ErlUtil::formatAsString((unsigned char*)key.data(), key.size());
+
                 sendMsg(msg_env, ATOM_STREAMING_ERROR, pid, os.str());
 
                 if(binaryAllocated)
@@ -1062,9 +1040,9 @@ work_result RangeScanTask::DoWork()
         }
 
         if (filter_passed) {
-	  
+          
             const size_t ksz = key.size();
-	    const size_t vsz = value.size();
+            const size_t vsz = value.size();
 
             const size_t ksz_sz = VarintLength(ksz);
             const size_t vsz_sz = VarintLength(vsz);
@@ -1073,17 +1051,17 @@ work_result RangeScanTask::DoWork()
             const size_t next_offset = out_offset + esz;
 
             // Allocate the output data array if this is the first data
-	    // (i.e., if out_offset == 0)
+            // (i.e., if out_offset == 0)
 
             if(out_offset == 0) {
                 enif_alloc_binary(initial_bin_size, &bin);
                 binaryAllocated = true;
             }
 
-	    //------------------------------------------------------------
+            //------------------------------------------------------------
             // If we need more space, allocate it exactly since that means we
             // reached the batch max anyway and will send it right away
-	    //------------------------------------------------------------
+            //------------------------------------------------------------
 
             if(next_offset > bin.size)
                 enif_realloc_binary(&bin, next_offset);
@@ -1097,11 +1075,11 @@ work_result RangeScanTask::DoWork()
             memcpy(out + ksz_sz + ksz + vsz_sz, value.data(), vsz);
 
             out_offset = next_offset;
-	    
-	    //------------------------------------------------------------
-	    // If we've reached the maximum number of bytes to include in
-	    // the batch, possibly shrink the binary and send it
-	    //------------------------------------------------------------
+            
+            //------------------------------------------------------------
+            // If we've reached the maximum number of bytes to include in
+            // the batch, possibly shrink the binary and send it
+            //------------------------------------------------------------
 
             if(out_offset >= options_.max_batch_bytes) {
 
@@ -1115,18 +1093,18 @@ work_result RangeScanTask::DoWork()
                 sync_obj_->AddBytes(out_offset);
 
                 out_offset = 0;
-	    }
+            }
 
-	    //------------------------------------------------------------
-	    // Increment the number of keys read and step to the next
-	    // key
-	    //------------------------------------------------------------
+            //------------------------------------------------------------
+            // Increment the number of keys read and step to the next
+            // key
+            //------------------------------------------------------------
 
-	    ++num_read;
+            ++num_read;
 
-	} else {
-            //	  COUT("Filter DIDN'T pass");
-	}
+        } else {
+            //    COUT("Filter DIDN'T pass");
+        }
 
         iter->Next();
     }

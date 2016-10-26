@@ -157,10 +157,7 @@ init() ->
 
 -type fold_method() :: iterator | streaming.
 
--type encoding() :: erlang | msgpack.
-
 -type fold_options() :: [read_option() |
-                         {encoding, encoding()} |
                          {fold_method, fold_method()} |
                          {start_key, binary()} |
                          {end_key, binary() | undefined} |
