@@ -165,7 +165,7 @@ ErlRefObject::RefDec()
 
     return(cur_count);
 
-}   // DbObject::RefDec
+}   // ErlRefObject::RefDec
 
 
 /**
@@ -535,6 +535,37 @@ ItrObject::~ItrObject()
     return;
 
 }   // ItrObject::~ItrObject
+
+
+/**
+ * matthewv - This is a hack to compensate for Riak AAE
+ *   having two active processes using the same iterator.
+ *   One process attempts a close while the other iterates along.
+ *   This is to help the close succeed.  (October 2016)
+ */
+uint32_t
+ItrObject::RefDec()
+{
+    uint32_t cur_count;
+
+    // Race condition:
+    //  Thread trying to close gets into InitiateCloseRequest() and
+    //   finishes call to Shutdown().  Thread iterating gets far enough
+    //   into async_iterator_move() to not see GetCloseRequest() set, but
+    //   is able to create a new MoveItem within reuse_move.
+    //  This hack knows that async_iterator_move() uses ItrObjectPtr_t that
+    //   holds "this" until the end of the function.  ItrObjectPtr_t will
+    //   call RefDec in its destructor.  Gives a chance to cleanup a tad.
+    if (1==GetCloseRequested())
+        ReleaseReuseMove();
+
+    // WARNING:  the following call could delete this object.
+    //           make no references to object members afterward
+    cur_count=ErlRefObject::RefDec();
+
+    return(cur_count);
+
+}   // ItrObject::RefDec
 
 
 void

@@ -123,7 +123,7 @@ public:
         : t(NULL)
     {};
 
-    ReferencePtr(TargetT *_t)
+    explicit ReferencePtr(TargetT *_t)
         : t(_t)
     {
         if (NULL!=t)
@@ -327,6 +327,8 @@ public:
     ItrObject(DbObjectPtr_t &, bool, leveldb::ReadOptions &);
 
     virtual ~ItrObject(); // needs to perform free_itr
+
+    virtual uint32_t RefDec();
 
     virtual void Shutdown();
 
