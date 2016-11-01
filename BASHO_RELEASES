@@ -1,6 +1,15 @@
-github.com tag 2.0.30 - October 11, 2016
+github.com tag 2.0.31 - November 1, 2016
 ----------------------------------------
  - version shipped with Riak 2.2
+ - includes leveldb 2.0.31 (mv-no-md-expiry & mv-tuning8)
+mv-ref-hardening:   - series of thread hardening changes
+                      related to AAE use of iterators. Biggest
+                      fix was isolating AAE using one thread to
+                      close while another was still moving, then
+                      defending against it
+
+github.com tag 2.0.30 - October 11, 2016
+----------------------------------------
  - includes leveldb 2.0.30 (mv-delayed-bloom)
 
 github.com tag 2.0.28 - September 7, 2016
