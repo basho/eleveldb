@@ -165,7 +165,7 @@ ErlRefObject::RefDec()
 
     return(cur_count);
 
-}   // DbObject::RefDec
+}   // ErlRefObject::RefDec
 
 
 /**
@@ -341,7 +341,6 @@ DbObject::Shutdown()
 //            if (leveldb::compare_and_swap(itr_ptr->m_ErlangThisPtr, itr_ptr, (ItrObject *)NULL))
             if (itr_ptr->ClaimCloseFromCThread())
             {
-                itr_ptr->m_Iter->LogIterator();
                 itr_ptr->ItrObject::InitiateCloseRequest();
             }   // if
         }   // if
@@ -388,51 +387,23 @@ DbObject::RemoveReference(
  */
 
 LevelIteratorWrapper::LevelIteratorWrapper(
-    ItrObject * ItrPtr,
-    bool KeysOnly,
-    leveldb::ReadOptions & Options,
-    ERL_NIF_TERM itr_ref)
-    : m_DbPtr(ItrPtr->m_DbPtr.get()), m_ItrPtr(ItrPtr), m_Snapshot(NULL), m_Iterator(NULL),
-      m_HandoffAtomic(0), m_KeysOnly(KeysOnly), m_PrefetchStarted(false),
-      m_Options(Options), itr_ref(itr_ref),
+    DbObjectPtr_t & DbPtr,                  //!< db access for local iterator rebuild
+    leveldb::ReadOptions & Options)         //!< options to use in iterator rebuild
+    : m_DbPtr(DbPtr), m_Options(Options),
+      m_Snapshot(NULL), m_Iterator(NULL),
+      m_HandoffAtomic(0), m_PrefetchStarted(false),
       m_IteratorStale(0), m_StillUse(true),
-      m_IteratorCreated(0), m_LastLogReport(0), m_MoveCount(0), m_IsValid(false)
+      m_IsValid(false)
 {
-    struct timeval tv;
-
-    gettimeofday(&tv, NULL);
-    m_IteratorCreated=tv.tv_sec;
-    m_LastLogReport=tv.tv_sec;
 
     RebuildIterator();
 
 }   // LevelIteratorWrapper::LevelIteratorWrapper
 
-/**
- * put info about this iterator into leveldb LOG
- */
-
-void
-LevelIteratorWrapper::LogIterator()
-{
-#if 0 // available in different branch
-    struct tm created;
-
-    localtime_r(&m_IteratorCreated, &created);
-
-    leveldb::Log(m_DbPtr->m_Db->GetLogger(),
-                 "Iterator created %d/%d/%d %d:%d:%d, move operations %zd (%p)",
-                 created.tm_mon, created.tm_mday, created.tm_year-100,
-                 created.tm_hour, created.tm_min, created.tm_sec,
-                 m_MoveCount, m_Iterator);
-#endif
-}   // LevelIteratorWrapper::LogIterator()
-
 
 /**
  * Iterator management object (Erlang memory)
  */
-
 ErlNifResourceType * ItrObject::m_Itr_RESOURCE(NULL);
 
 
@@ -453,7 +424,7 @@ ItrObject::CreateItrObjectType(
 
 void *
 ItrObject::CreateItrObject(
-    DbObject * DbPtr,
+    DbObjectPtr_t & DbPtr,
     bool KeysOnly,
     leveldb::ReadOptions & Options)
 {
@@ -530,13 +501,15 @@ ItrObject::ItrObjectResourceCleanup(
 
 
 ItrObject::ItrObject(
-    DbObject * DbPtr,
+    DbObjectPtr_t & DbPtr,
     bool KeysOnly,
     leveldb::ReadOptions & Options)
-    : keys_only(KeysOnly), m_ReadOptions(Options), reuse_move(NULL),
+    : keys_only(KeysOnly), m_ReadOptions(Options),
+      m_Wrap(DbPtr, m_ReadOptions),
+      reuse_move(NULL),
       m_DbPtr(DbPtr), itr_ref_env(NULL)
 {
-    if (NULL!=DbPtr)
+    if (NULL!=DbPtr.get())
         DbPtr->AddReference(this);
 
 }   // ItrObject::ItrObject
@@ -564,6 +537,37 @@ ItrObject::~ItrObject()
 }   // ItrObject::~ItrObject
 
 
+/**
+ * matthewv - This is a hack to compensate for Riak AAE
+ *   having two active processes using the same iterator.
+ *   One process attempts a close while the other iterates along.
+ *   This is to help the close succeed.  (October 2016)
+ */
+uint32_t
+ItrObject::RefDec()
+{
+    uint32_t cur_count;
+
+    // Race condition:
+    //  Thread trying to close gets into InitiateCloseRequest() and
+    //   finishes call to Shutdown().  Thread iterating gets far enough
+    //   into async_iterator_move() to not see GetCloseRequest() set, but
+    //   is able to create a new MoveItem within reuse_move.
+    //  This hack knows that async_iterator_move() uses ItrObjectPtr_t that
+    //   holds "this" until the end of the function.  ItrObjectPtr_t will
+    //   call RefDec in its destructor.  Gives a chance to cleanup a tad.
+    if (1==GetCloseRequested())
+        ReleaseReuseMove();
+
+    // WARNING:  the following call could delete this object.
+    //           make no references to object members afterward
+    cur_count=ErlRefObject::RefDec();
+
+    return(cur_count);
+
+}   // ItrObject::RefDec
+
+
 void
 ItrObject::Shutdown()
 {
@@ -571,9 +575,6 @@ ItrObject::Shutdown()
     //  (reuse_move holds a counter to this object, which will
     //   release when move object destructs)
     ReleaseReuseMove();
-
-    // ItrObject and m_Iter each hold pointers to other, release ours
-    m_Iter.assign(NULL);
 
     return;
 
