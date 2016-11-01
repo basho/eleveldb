@@ -69,7 +69,7 @@ class WorkTask : public leveldb::ThreadTask
  public:
     WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref);
 
-    WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref, DbObject * DbPtr);
+    WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref, DbObjectPtr_t & DbPtr);
 
     virtual ~WorkTask();
 
@@ -137,7 +137,7 @@ protected:
 public:
 
     WriteTask(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
-                DbObject * _db_handle,
+                DbObjectPtr_t & _db_handle,
                 leveldb::WriteBatch* _batch,
                 leveldb::WriteOptions* _options)
         : WorkTask(_owner_env, _caller_ref, _db_handle),
@@ -207,7 +207,7 @@ protected:
 public:
     GetTask(ErlNifEnv *_caller_env,
             ERL_NIF_TERM _caller_ref,
-            DbObject *_db_handle,
+            DbObjectPtr_t & _db_handle,
             ERL_NIF_TERM _key_term,
             leveldb::ReadOptions &_options)
         : WorkTask(_caller_env, _caller_ref, _db_handle),
@@ -256,7 +256,7 @@ protected:
 public:
     IterTask(ErlNifEnv *_caller_env,
              ERL_NIF_TERM _caller_ref,
-             DbObject *_db_handle,
+             DbObjectPtr_t & _db_handle,
              const bool _keys_only,
              leveldb::ReadOptions &_options)
         : WorkTask(_caller_env, _caller_ref, _db_handle),
@@ -274,15 +274,12 @@ protected:
         void * itr_ptr_ptr;
 
         // NOTE: transfering ownership of options to ItrObject
-        itr_ptr_ptr=ItrObject::CreateItrObject(m_DbPtr.get(), keys_only, options);
+        itr_ptr_ptr=ItrObject::CreateItrObject(m_DbPtr, keys_only, options);
 
         // Copy caller_ref to reuse in future iterator_move calls
         itr_ptr=*(ItrObject**)itr_ptr_ptr;
         itr_ptr->itr_ref_env = enif_alloc_env();
         itr_ptr->itr_ref = enif_make_copy(itr_ptr->itr_ref_env, caller_ref());
-
-        itr_ptr->m_Iter.assign(new LevelIteratorWrapper(itr_ptr, keys_only,
-                                                        options, itr_ptr->itr_ref));
 
         ERL_NIF_TERM result = enif_make_resource(local_env(), itr_ptr_ptr);
 
@@ -301,7 +298,7 @@ public:
     typedef enum { FIRST, LAST, NEXT, PREV, SEEK, PREFETCH, PREFETCH_STOP } action_t;
 
 protected:
-    ReferencePtr<LevelIteratorWrapper> m_ItrWrap;             //!< access to database, and holds reference
+    ItrObjectPtr_t m_Itr;
 
 public:
     action_t                                       action;
@@ -311,9 +308,9 @@ public:
 
     // No seek target:
     MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
-             LevelIteratorWrapper * IterWrap, action_t& _action)
-        : WorkTask(NULL, _caller_ref, IterWrap->m_DbPtr.get()),
-        m_ItrWrap(IterWrap), action(_action)
+             ItrObjectPtr_t & Iter, action_t& _action)
+        : WorkTask(NULL, _caller_ref, Iter->m_DbPtr),
+        m_Itr(Iter), action(_action)
     {
         // special case construction
         local_env_=NULL;
@@ -322,10 +319,10 @@ public:
 
     // With seek target:
     MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
-             LevelIteratorWrapper * IterWrap, action_t& _action,
+             ItrObjectPtr_t & Iter, action_t& _action,
              std::string& _seek_target)
-        : WorkTask(NULL, _caller_ref, IterWrap->m_DbPtr.get()),
-        m_ItrWrap(IterWrap), action(_action),
+        : WorkTask(NULL, _caller_ref, Iter->m_DbPtr),
+        m_Itr(Iter), action(_action),
         seek_target(_seek_target)
         {
             // special case construction
@@ -355,7 +352,7 @@ protected:
 public:
 
     CloseTask(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
-              DbObject * _db_handle)
+              DbObjectPtr_t & _db_handle)
         : WorkTask(_owner_env, _caller_ref, _db_handle)
     {}
 
@@ -403,7 +400,7 @@ protected:
 public:
 
     ItrCloseTask(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
-              ItrObject * _itr_handle)
+              ItrObjectPtr_t & _itr_handle)
         : WorkTask(_owner_env, _caller_ref),
         m_ItrPtr(_itr_handle)
     {}
