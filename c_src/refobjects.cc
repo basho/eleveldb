@@ -428,14 +428,17 @@ ItrObject::CreateItrObject(
     bool KeysOnly,
     leveldb::ReadOptions & Options)
 {
+    ItrObjErlang * erl_ptr;
     ItrObject * ret_ptr;
     void * alloc_ptr;
 
     // the alloc call initializes the reference count to "one"
-    alloc_ptr=enif_alloc_resource(m_Itr_RESOURCE, sizeof(ItrObject *));
+    alloc_ptr=enif_alloc_resource(m_Itr_RESOURCE, sizeof(ItrObjErlang));
+    erl_ptr=(ItrObjErlang *)alloc_ptr;
 
     ret_ptr=new ItrObject(DbPtr, KeysOnly, Options);
-    *(ItrObject **)alloc_ptr=ret_ptr;
+    erl_ptr->m_ItrPtr=ret_ptr;
+    erl_ptr->m_SpinLock=0;
 
     // manual reference increase to keep active until "eleveldb_iterator_close" called
     ret_ptr->RefInc();
@@ -449,18 +452,25 @@ ItrObject::CreateItrObject(
 ItrObject *
 ItrObject::RetrieveItrObject(
     ErlNifEnv * Env,
-    const ERL_NIF_TERM & ItrTerm, bool ItrClosing)
+    const ERL_NIF_TERM & ItrTerm,
+    bool ItrClosing,
+    ItrObjectPtr_t & counted_ptr)
 {
-    ItrObject ** itr_ptr_ptr, * ret_ptr;
+    ItrObjErlang * erl_ptr;
+    ItrObject * ret_ptr;
 
     ret_ptr=NULL;
 
-    if (enif_get_resource(Env, ItrTerm, m_Itr_RESOURCE, (void **)&itr_ptr_ptr))
+    if (enif_get_resource(Env, ItrTerm, m_Itr_RESOURCE, (void **)&erl_ptr))
     {
-        ret_ptr=*itr_ptr_ptr;
+        ret_ptr=erl_ptr->m_ItrPtr;
 
+        // only continue if close sequence not started
         if (NULL!=ret_ptr)
         {
+            // lock access ... spin
+            while(!leveldb::compare_and_swap(&erl_ptr->m_SpinLock, 0, 1)) ;
+
             // has close been requested?
             if (ret_ptr->GetCloseRequested()
                 || (!ItrClosing && ret_ptr->m_DbPtr->GetCloseRequested()))
@@ -468,6 +478,12 @@ ItrObject::RetrieveItrObject(
                 // object already closing
                 ret_ptr=NULL;
             }   // if
+
+            // set during spin lock
+            counted_ptr.assign(ret_ptr);
+
+            // use cas for memory fencing, we own the lock
+            leveldb::compare_and_swap(&erl_ptr->m_SpinLock, 1, 0);
         }   // if
     }   // if
 
@@ -481,14 +497,15 @@ ItrObject::ItrObjectResourceCleanup(
     ErlNifEnv * Env,
     void * Arg)
 {
-    ItrObject * volatile * erl_ptr;
+
+    ItrObjErlang * erl_ptr;
     ItrObject * itr_ptr;
 
-    erl_ptr=(ItrObject * volatile *)Arg;
-    itr_ptr=*erl_ptr;
+    erl_ptr=(ItrObjErlang *)Arg;
+    itr_ptr=erl_ptr->m_ItrPtr;
 
     // is Erlang first to initiate close?
-    if (leveldb::compare_and_swap(erl_ptr, itr_ptr, (ItrObject *)NULL)
+    if (leveldb::compare_and_swap(&erl_ptr->m_ItrPtr, itr_ptr, (ItrObject *)NULL)
         && NULL!=itr_ptr)
     {
         leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);

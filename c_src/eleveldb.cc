@@ -849,7 +849,7 @@ async_iterator_move(
 
     ReferencePtr<ItrObject> itr_ptr;
 
-    itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_handle_ref));
+    ItrObject::RetrieveItrObject(env, itr_handle_ref, false, itr_ptr);
 
     if(NULL==itr_ptr.get() || 0!=itr_ptr->GetCloseRequested())
         return enif_make_badarg(env);
@@ -1081,7 +1081,7 @@ async_iterator_close(
 
     ReferencePtr<ItrObject> itr_ptr;
 
-    itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_ref));
+    ItrObject::RetrieveItrObject(env, itr_ref, false, itr_ptr);
 
     if(NULL==itr_ptr.get() || 0!=itr_ptr->GetCloseRequested())
     {
