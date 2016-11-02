@@ -854,6 +854,9 @@ async_iterator_move(
     if(NULL==itr_ptr.get() || 0!=itr_ptr->GetCloseRequested())
         return enif_make_badarg(env);
 
+    // Nov 2, 2016:  Hack against AAE using iterator on two threads
+    leveldb::MutexLock lock(&itr_ptr->m_CloseMutex);
+
     // Reuse ref from iterator creation
     const ERL_NIF_TERM& caller_ref = itr_ptr->itr_ref;
 
@@ -1085,6 +1088,9 @@ async_iterator_close(
        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug4);
        return enif_make_badarg(env);
     }
+
+    // Nov 2, 2016:  Hack against AAE using iterator on two threads
+    leveldb::MutexLock lock(&itr_ptr->m_CloseMutex);
 
     // verify that Erlang has not called ItrObjectResourceCleanup AND
     //  that a database close has not already started death proceedings
