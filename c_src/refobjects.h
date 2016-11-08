@@ -363,7 +363,7 @@ typedef ReferencePtr<class ItrObject> ItrObjectPtr_t;
 struct ItrObjErlang
 {
     ItrObject * m_ItrPtr;
-    volatile int m_SpinLock;
+    volatile uint32_t m_SpinLock;
 };
 
 } // namespace eleveldb
