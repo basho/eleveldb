@@ -468,8 +468,11 @@ ItrObject::RetrieveItrObject(
         // only continue if close sequence not started
         if (NULL!=ret_ptr)
         {
+            // need to use "const int" instead of literals for
+            //  solaris and smartos compare_and_swap to compile
+            const int zero(0), one(1);
             // lock access ... spin
-            while(!leveldb::compare_and_swap(&erl_ptr->m_SpinLock, 0, 1)) ;
+            while(!leveldb::compare_and_swap(&erl_ptr->m_SpinLock, zero, one)) ;
 
             // has close been requested?
             if (ret_ptr->GetCloseRequested()
@@ -483,7 +486,7 @@ ItrObject::RetrieveItrObject(
             counted_ptr.assign(ret_ptr);
 
             // use cas for memory fencing, we own the lock
-            leveldb::compare_and_swap(&erl_ptr->m_SpinLock, 1, 0);
+            leveldb::compare_and_swap(&erl_ptr->m_SpinLock, one, zero);
         }   // if
     }   // if
 
