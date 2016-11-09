@@ -337,7 +337,8 @@ public:
     static void * CreateItrObject(DbObjectPtr_t & Db, bool KeysOnly, leveldb::ReadOptions & Options);
 
     static ItrObject * RetrieveItrObject(ErlNifEnv * Env, const ERL_NIF_TERM & DbTerm,
-                                         bool ItrClosing=false);
+                                         bool ItrClosing,
+                                         ReferencePtr<class ItrObject> & CountedPtr);
 
     static void ItrObjectResourceCleanup(ErlNifEnv *Env, void * Arg);
 
@@ -350,7 +351,20 @@ private:
 
 };  // class ItrObject
 
+
 typedef ReferencePtr<class ItrObject> ItrObjectPtr_t;
+
+
+/**
+ * Container stored in Erlang heap.  Used
+ *  to allow erlang heap to destroy iterator if process(s) holding
+ *  iterator go away.
+ */
+struct ItrObjErlang
+{
+    ItrObject * m_ItrPtr;
+    volatile uint32_t m_SpinLock;
+};
 
 } // namespace eleveldb
 

@@ -277,7 +277,7 @@ protected:
         itr_ptr_ptr=ItrObject::CreateItrObject(m_DbPtr, keys_only, options);
 
         // Copy caller_ref to reuse in future iterator_move calls
-        itr_ptr=*(ItrObject**)itr_ptr_ptr;
+        itr_ptr=((ItrObjErlang*)itr_ptr_ptr)->m_ItrPtr;
         itr_ptr->itr_ref_env = enif_alloc_env();
         itr_ptr->itr_ref = enif_make_copy(itr_ptr->itr_ref_env, caller_ref());
 
