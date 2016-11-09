@@ -1,3 +1,11 @@
+github.com tag 2.0.32 - November 8, 2016
+----------------------------------------
+** additional race condition hardening when faced with two threads on same iterator
+**  (one iterating async_iterator_move() and one closing async_iterator_close())
+ - wrap async_iterator_move operations with locked CloseMutex
+ - create and then use new manual SpinLock within RetrieveItrObject
+ - adapt origin spin lock code for Solaris / SmartOS compiling
+
 github.com tag 2.0.31 - November 1, 2016
 ----------------------------------------
  - version shipped with Riak 2.2
