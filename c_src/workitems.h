@@ -73,7 +73,7 @@ class WorkTask : public leveldb::ThreadTask
  public:
     WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref);
 
-    WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref, DbObject * DbPtr);
+    WorkTask(ErlNifEnv *caller_env, ERL_NIF_TERM& caller_ref, DbObjectPtr_t & DbPtr);
 
     virtual ~WorkTask();
 
@@ -140,7 +140,7 @@ protected:
 
 public:
     WriteTask(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
-                DbObject * _db_handle,
+                DbObjectPtr_t & _db_handle,
                 leveldb::WriteBatch* _batch,
               leveldb::WriteOptions* _options);
 
@@ -202,7 +202,7 @@ protected:
 public:
     GetTask(ErlNifEnv *_caller_env,
             ERL_NIF_TERM _caller_ref,
-            DbObject *_db_handle,
+            DbObjectPtr_t & _db_handle,
             ERL_NIF_TERM _key_term,
             leveldb::ReadOptions &_options);
 
@@ -228,7 +228,7 @@ protected:
 public:
     IterTask(ErlNifEnv *_caller_env,
              ERL_NIF_TERM _caller_ref,
-             DbObject *_db_handle,
+             DbObjectPtr_t & _db_handle,
              const bool _keys_only,
              leveldb::ReadOptions &_options);
 
@@ -245,7 +245,7 @@ public:
     typedef enum { FIRST, LAST, NEXT, PREV, SEEK, PREFETCH, PREFETCH_STOP } action_t;
 
 protected:
-    ReferencePtr<LevelIteratorWrapper> m_ItrWrap;             //!< access to database, and holds reference
+    ItrObjectPtr_t m_Itr;
 
 public:
     action_t                                       action;
@@ -254,14 +254,12 @@ public:
 public:
 
     // No seek target:
-
     MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
-             LevelIteratorWrapper * IterWrap, action_t& _action);
+             ItrObjectPtr_t & Iter, action_t& _action);
 
     // With seek target:
-
     MoveTask(ErlNifEnv *_caller_env, ERL_NIF_TERM _caller_ref,
-             LevelIteratorWrapper * IterWrap, action_t& _action,
+             ItrObjectPtr_t & Iter, action_t& _action,
              std::string& _seek_target);
 
     virtual ~MoveTask();
@@ -287,7 +285,7 @@ protected:
 public:
 
     CloseTask(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
-              DbObject * _db_handle);
+              DbObjectPtr_t & _db_handle);
 
     virtual ~CloseTask();
 
@@ -307,7 +305,7 @@ protected:
 
 public:
     ItrCloseTask(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
-                 ItrObject * _itr_handle);
+              ItrObjectPtr_t & _itr_handle);
 
     virtual ~ItrCloseTask();
 
@@ -448,7 +446,7 @@ public:
 
     RangeScanTask(ErlNifEnv* caller_env,
                   ERL_NIF_TERM caller_ref,
-                  DbObject* db_handle,
+                  DbObjectPtr_t & _db_handle,
                   const std::string& start_key,
                   const std::string* end_key,
                   RangeScanOptions&  options,

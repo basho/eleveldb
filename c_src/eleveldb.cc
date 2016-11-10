@@ -704,7 +704,7 @@ ERL_NIF_TERM send_reply(ErlNifEnv *env, ERL_NIF_TERM ref, ERL_NIF_TERM reply)
     return ATOM_OK;
 }
 
-// Boilerplate for submitting to the thread queue.  
+// Boilerplate for submitting to the thread queue.
 // Takes ownership of the item. assumes allocated through new
 
 ERL_NIF_TERM
@@ -823,7 +823,7 @@ async_write(
     fold(env, argv[3], parse_write_option, *opts);
 
     eleveldb::WorkTask* work_item = new eleveldb::WriteTask(env, caller_ref,
-                                                            db_ptr.get(), batch, opts);
+                                                            db_ptr, batch, opts);
     return submit_to_thread_queue(work_item, env, caller_ref);
 }
 
@@ -906,7 +906,7 @@ async_get(
     fold(env, opts_ref, parse_read_option, opts);
 
     eleveldb::WorkTask *work_item = new eleveldb::GetTask(env, caller_ref,
-                                                          db_ptr.get(), key_ref, opts);
+                                                          db_ptr, key_ref, opts);
     return submit_to_thread_queue(work_item, env, caller_ref);
 
 }   // async_get
@@ -942,7 +942,7 @@ async_iterator(
     fold(env, options_ref, parse_read_option, opts);
 
     eleveldb::WorkTask *work_item = new eleveldb::IterTask(env, caller_ref,
-                                                           db_ptr.get(), keys_only, opts);
+                                                           db_ptr, keys_only, opts);
     return submit_to_thread_queue(work_item, env, caller_ref);
 }   // async_iterator
 
@@ -962,10 +962,13 @@ async_iterator_move(
 
     ReferencePtr<ItrObject> itr_ptr;
 
-    itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_handle_ref));
+    ItrObject::RetrieveItrObject(env, itr_handle_ref, false, itr_ptr);
 
     if(NULL==itr_ptr.get() || 0!=itr_ptr->GetCloseRequested())
         return enif_make_badarg(env);
+
+    // Nov 2, 2016:  Hack against AAE using iterator on two threads
+    leveldb::MutexLock lock(&itr_ptr->m_CloseMutex);
 
     // Reuse ref from iterator creation
     const ERL_NIF_TERM& caller_ref = itr_ptr->itr_ref;
@@ -986,12 +989,12 @@ async_iterator_move(
     }   // if
 
     // debug syslog(LOG_ERR, "move state: %d, %d, %d",
-    //              action, itr_ptr->m_Iter->m_PrefetchStarted, itr_ptr->m_Iter->m_HandoffAtomic);
+    //              action, itr_ptr->m_Wrap.m_PrefetchStarted, itr_ptr->m_Wrap.m_HandoffAtomic);
 
     // must set this BEFORE call to compare_and_swap ... or have potential
     //  for an "extra" message coming out of prefetch
-    prefetch_state = itr_ptr->m_Iter->m_PrefetchStarted;
-    itr_ptr->m_Iter->m_PrefetchStarted =  prefetch_state && (eleveldb::MoveTask::PREFETCH_STOP != action );
+    prefetch_state = itr_ptr->m_Wrap.m_PrefetchStarted;
+    itr_ptr->m_Wrap.m_PrefetchStarted =  prefetch_state && (eleveldb::MoveTask::PREFETCH_STOP != action );
 
     //
     // Three situations:
@@ -1012,14 +1015,14 @@ async_iterator_move(
         ret_term = enif_make_copy(env, itr_ptr->itr_ref);
 
         // force reply to be a message
-        itr_ptr->m_Iter->m_HandoffAtomic=1;
-        itr_ptr->m_Iter->m_PrefetchStarted=false;
+        itr_ptr->m_Wrap.m_HandoffAtomic=1;
+        itr_ptr->m_Wrap.m_PrefetchStarted=false;
     }   // if
 
     // case #2
     // before we launch a background job for "next iteration", see if there is a
     //  prefetch waiting for us
-    else if (leveldb::compare_and_swap(&itr_ptr->m_Iter->m_HandoffAtomic, 0, 1))
+    else if (leveldb::compare_and_swap(&itr_ptr->m_Wrap.m_HandoffAtomic, 0, 1))
     {
         // nope, no prefetch ... await a message to erlang queue
         //  NOTE:  "else" clause of MoveTask::DoWork() could be running simultaneously
@@ -1044,8 +1047,8 @@ async_iterator_move(
         //  (this is an absolute must since worker thread could change to false if
         //   hits end of key space and its execution overlaps this block's execution)
         int cas_temp((eleveldb::MoveTask::PREFETCH_STOP != action )  // needed for Solaris CAS
-                     && itr_ptr->m_Iter->Valid());
-        leveldb::compare_and_swap(&itr_ptr->m_Iter->m_PrefetchStarted,
+                     && itr_ptr->m_Wrap.Valid());
+        leveldb::compare_and_swap(&itr_ptr->m_Wrap.m_PrefetchStarted,
                                   prefetch_state,
                                   cas_temp);
     }   // else if
@@ -1056,34 +1059,34 @@ async_iterator_move(
         // why yes there is.  copy the key/value info into a return tuple before
         //  we launch the iterator for "next" again
         //  NOTE:  worker thread is inactive at this time
-        if(!itr_ptr->m_Iter->Valid())
+        if(!itr_ptr->m_Wrap.Valid())
             ret_term=enif_make_tuple2(env, ATOM_ERROR, ATOM_INVALID_ITERATOR);
 
-        else if (itr_ptr->m_Iter->m_KeysOnly)
-            ret_term=enif_make_tuple2(env, ATOM_OK, slice_to_binary(env, itr_ptr->m_Iter->key()));
+        else if (itr_ptr->keys_only)
+            ret_term=enif_make_tuple2(env, ATOM_OK, slice_to_binary(env, itr_ptr->m_Wrap.key()));
         else
             ret_term=enif_make_tuple3(env, ATOM_OK,
-                                      slice_to_binary(env, itr_ptr->m_Iter->key()),
-                                      slice_to_binary(env, itr_ptr->m_Iter->value()));
+                                      slice_to_binary(env, itr_ptr->m_Wrap.key()),
+                                      slice_to_binary(env, itr_ptr->m_Wrap.value()));
 
 
         // reset for next race
-        itr_ptr->m_Iter->m_HandoffAtomic=0;
+        itr_ptr->m_Wrap.m_HandoffAtomic=0;
 
         // old MoveItem could still be active on its thread, cannot
         //  reuse ... but the current Iterator is good
         itr_ptr->ReleaseReuseMove();
 
         if (eleveldb::MoveTask::PREFETCH_STOP != action
-            && itr_ptr->m_Iter->Valid())
+            && itr_ptr->m_Wrap.Valid())
         {
             submit_new_request=true;
         }   // if
         else
         {
             submit_new_request=false;
-            itr_ptr->m_Iter->m_HandoffAtomic=0;
-            itr_ptr->m_Iter->m_PrefetchStarted=false;
+            itr_ptr->m_Wrap.m_HandoffAtomic=0;
+            itr_ptr->m_Wrap.m_PrefetchStarted=false;
         }   // else
 
 
@@ -1096,7 +1099,7 @@ async_iterator_move(
         eleveldb::MoveTask * move_item;
 
         move_item = new eleveldb::MoveTask(env, caller_ref,
-                                           itr_ptr->m_Iter.get(), action);
+                                           itr_ptr, action);
 
         // prevent deletes during worker loop
         move_item->RefInc();
@@ -1159,7 +1162,7 @@ async_close(
         && db_ptr->ClaimCloseFromCThread())
     {
         eleveldb::WorkTask *work_item = new eleveldb::CloseTask(env, caller_ref,
-                                                                db_ptr.get());
+                                                                db_ptr);
         return submit_to_thread_queue(work_item, env, caller_ref);
 
     }   // if
@@ -1184,7 +1187,7 @@ async_iterator_close(
 
     ReferencePtr<ItrObject> itr_ptr;
 
-    itr_ptr.assign(ItrObject::RetrieveItrObject(env, itr_ref));
+    ItrObject::RetrieveItrObject(env, itr_ref, false, itr_ptr);
 
     if(NULL==itr_ptr.get() || 0!=itr_ptr->GetCloseRequested())
     {
@@ -1192,12 +1195,15 @@ async_iterator_close(
        return enif_make_badarg(env);
     }
 
+    // Nov 2, 2016:  Hack against AAE using iterator on two threads
+    leveldb::MutexLock lock(&itr_ptr->m_CloseMutex);
+
     // verify that Erlang has not called ItrObjectResourceCleanup AND
     //  that a database close has not already started death proceedings
     if (itr_ptr->ClaimCloseFromCThread())
     {
         eleveldb::WorkTask *work_item = new eleveldb::ItrCloseTask(env, caller_ref,
-                                                                   itr_ptr.get());
+                                                                   itr_ptr);
         return submit_to_thread_queue(work_item, env, caller_ref);
     }   // if
     // this close/cleanup call is way late ... bad programmer!
@@ -1337,7 +1343,7 @@ streaming_start(ErlNifEnv * env,
 
     RangeScanTask* work_item = 0;
     try {
-        work_item = new RangeScanTask(env, reply_ref, db_ptr.get(),
+        work_item = new RangeScanTask(env, reply_ref, db_ptr,
                                  start_key, end_key_ptr, opts, sync_handle->sync_obj_);
     } catch(std::runtime_error& err) {
         ERL_NIF_TERM msg_str  = enif_make_string(env, err.what(), ERL_NIF_LATIN1);
