@@ -43,7 +43,7 @@
 #include "leveldb/perf_count.h"
 #define LEVELDB_PLATFORM_POSIX
 #include "util/hot_threads.h"
-#include "leveldb_os/expiry_os.h"
+#include "util/expiry_os.h"
 
 #ifndef INCL_WORKITEMS_H
     #include "workitems.h"
