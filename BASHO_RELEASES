@@ -1,5 +1,11 @@
+github.com tag 2.0.33 - November 21, 2016
+-----------------------------------------
+mv-bucket-expiry:  - partial branch to enable X-Riak-Meta-Expiry-Base-Seconds
+                     property within enterprise edition
+
 github.com tag 2.0.32 - November 8, 2016
 ----------------------------------------
+ - version shipped with Riak 2.2
 ** additional race condition hardening when faced with two threads on same iterator
 **  (one iterating async_iterator_move() and one closing async_iterator_close())
  - wrap async_iterator_move operations with locked CloseMutex
@@ -8,7 +14,6 @@ github.com tag 2.0.32 - November 8, 2016
 
 github.com tag 2.0.31 - November 1, 2016
 ----------------------------------------
- - version shipped with Riak 2.2
  - includes leveldb 2.0.31 (mv-no-md-expiry & mv-tuning8)
 mv-ref-hardening:   - series of thread hardening changes
                       related to AAE use of iterators. Biggest

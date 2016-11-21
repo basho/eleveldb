@@ -43,7 +43,7 @@
 #include "leveldb/perf_count.h"
 #define LEVELDB_PLATFORM_POSIX
 #include "util/hot_threads.h"
-#include "leveldb_os/expiry_os.h"
+#include "util/expiry_os.h"
 
 #ifndef INCL_WORKITEMS_H
     #include "workitems.h"
@@ -488,7 +488,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (option[1] == eleveldb::ATOM_TRUE)
             {
                 if (NULL==opts.expiry_module.get())
-                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                    opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule());
                 ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = true;
             }   // if
             else
@@ -503,7 +503,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (enif_get_ulong(env, option[1], &minutes))
             {
                 if (NULL==opts.expiry_module.get())
-                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                    opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule());
                 ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_minutes = minutes;
             }   // if
         }   // else if
@@ -512,7 +512,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (option[1] == eleveldb::ATOM_TRUE)
             {
                 if (NULL==opts.expiry_module.get())
-                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                    opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule());
                 ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = true;
             }   // if
             else
