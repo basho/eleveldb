@@ -48,7 +48,7 @@
 #include "leveldb/perf_count.h"
 #define LEVELDB_PLATFORM_POSIX
 #include "util/hot_threads.h"
-#include "leveldb_os/expiry_os.h"
+#include "util/expiry_os.h"
 
 #ifndef INCL_WORKITEMS_H
     #include "workitems.h"
@@ -530,7 +530,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         // expiry_enabled = true is detected, or a non-default value
         // of other parameters is given).
         //
-        // The corectness of the above behavior is predicated on this
+        // The correctness of the above behavior is predicated on this
         // code's view of the default parameters always being in sync
         // with the leveldb::ExpiryModuleOS constructor.  For example,
         // if that code were to change the default value of
@@ -542,7 +542,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
         else if (option[0] == eleveldb::ATOM_EXPIRY_ENABLED)
         {
             if (NULL==opts.expiry_module.get())
-                opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule());
             ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = (option[1] == eleveldb::ATOM_TRUE);
         }   // else if
         else if (option[0] == eleveldb::ATOM_EXPIRY_MINUTES)
@@ -551,14 +551,14 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (enif_get_ulong(env, option[1], &minutes))
             {
                 if (NULL==opts.expiry_module.get())
-                    opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                    opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule());
                 ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_minutes = minutes;
             }   // if
         }   // else if
         else if (option[0] == eleveldb::ATOM_WHOLE_FILE_EXPIRY)
         {
             if (NULL==opts.expiry_module.get())
-                opts.expiry_module.assign(new leveldb::ExpiryModuleOS);
+                opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule());
             ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = (option[1] == eleveldb::ATOM_TRUE);
         }   // else if
 

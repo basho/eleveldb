@@ -196,18 +196,18 @@ WriteTask::WriteTask(ErlNifEnv* _owner_env, ERL_NIF_TERM _caller_ref,
       batch(_batch),
       options(_options)
 {}
-    
+
 WriteTask::~WriteTask()
 {
     delete batch;
     delete options;
 }
-    
-work_result 
+
+work_result
 WriteTask::DoWork()
 {
     leveldb::Status status = m_DbPtr->m_Db->Write(*options, batch);
-    
+
     return (status.ok() ? work_result(ATOM_OK) : work_result(local_env(), ATOM_ERROR_DB_WRITE, status));
 }
 
@@ -224,22 +224,22 @@ GetTask::GetTask(ErlNifEnv *_caller_env,
       options(_options)
 {
     ErlNifBinary key;
-    
+
     enif_inspect_binary(_caller_env, _key_term, &key);
     m_Key.assign((const char *)key.data, key.size);
 }
 
 GetTask::~GetTask() {}
 
-work_result 
+work_result
 GetTask::DoWork()
 {
     ERL_NIF_TERM value_bin;
     BinaryValue value(local_env(), value_bin);
     leveldb::Slice key_slice(m_Key);
-    
+
     leveldb::Status status = m_DbPtr->m_Db->Get(options, key_slice, &value);
-    
+
     if(!status.ok()){
         if ( status.IsNotFound() )
             return work_result(ATOM_NOT_FOUND);
@@ -265,7 +265,7 @@ IterTask::IterTask(ErlNifEnv *_caller_env,
 
 IterTask::~IterTask() {}
 
-work_result 
+work_result
 IterTask::DoWork()
 {
     ItrObject * itr_ptr=0;
@@ -507,23 +507,23 @@ CloseTask::~CloseTask()
 {
 }
 
-work_result 
+work_result
 CloseTask::DoWork()
 {
     DbObject * db_ptr;
-    
+
     // get db pointer then clear reference count to it
     db_ptr=m_DbPtr.get();
     m_DbPtr.assign(NULL);
-    
+
     if (NULL!=db_ptr)
     {
         // set closing flag, this is blocking
         db_ptr->InitiateCloseRequest();
-        
+
         // db_ptr no longer valid
         db_ptr=NULL;
-        
+
         return(work_result(ATOM_OK));
     }   // if
     else
@@ -546,30 +546,28 @@ ItrCloseTask::~ItrCloseTask()
 {
 }
 
-work_result 
+work_result
 ItrCloseTask::DoWork()
 {
     ItrObject * itr_ptr;
-    
+
     // get iterator pointer then clear reference count to it
     itr_ptr=m_ItrPtr.get();
     m_ItrPtr.assign(NULL);
-    
+
     if (NULL!=itr_ptr)
     {
         // set closing flag, this is blocking
         itr_ptr->InitiateCloseRequest();
-        
+
         // itr_ptr no longer valid
         itr_ptr=NULL;
-        
+
         return(work_result(ATOM_OK));
-//            return(work_result());  // no message
     }   // if
     else
     {
         return work_result(local_env(), ATOM_ERROR, ATOM_BADARG);
-//            return(work_result());  // no message
     }   // else
 }
 
