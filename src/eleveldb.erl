@@ -2,7 +2,7 @@
 %%
 %%  eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 %%
-%% Copyright (c) 2010-2012 Basho Technologies, Inc. All Rights Reserved.
+%% Copyright (c) 2010-2016 Basho Technologies, Inc. All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -43,6 +43,9 @@
          iterator_move/2,
          iterator_close/1]).
 
+-export([callback_router/0,
+         property_cache/2]).
+
 -export_type([db_ref/0,
               itr_ref/0]).
 
@@ -80,7 +83,8 @@ init() ->
                  Dir ->
                      filename:join(Dir, "eleveldb")
              end,
-    erlang:load_nif(SoName, application:get_all_env(eleveldb)).
+    Callback=spawn(eleveldb, callback_router, []),
+    erlang:load_nif(SoName, {Callback, application:get_all_env(eleveldb)}).
 
 -type compression_algorithm() :: snappy | lz4 | false.
 -type open_options() :: [{create_if_missing, boolean()} |
@@ -335,6 +339,22 @@ validate_options(Type, Opts) ->
                             validate_type(KType, V)
                     end, Opts).
 
+-spec callback_router() -> ok.
+callback_router() ->
+    io:format(user, "Router started.\n", []),
+    receive
+        {get_bucket,Name} ->
+            Props=riak_core_bucket:get_bucket(Name),
+            io:format(user, "get_bucket ~p\n",[Props]),
+            callback_router();
+        callback_shutdown ->
+            io:format(user, "Router shutting down.\n", []),
+            ok
+    end.
+
+-spec property_cache(string(), string()) -> ok.
+property_cache(_Bucket, _Properties) ->
+    erlang:nif_error({error, not_loaded}).
 
 
 %% ===================================================================
