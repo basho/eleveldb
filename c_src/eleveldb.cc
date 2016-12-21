@@ -141,6 +141,7 @@ ERL_NIF_TERM ATOM_CACHE_OBJECT_WARMING;
 ERL_NIF_TERM ATOM_EXPIRY_ENABLED;
 ERL_NIF_TERM ATOM_EXPIRY_MINUTES;
 ERL_NIF_TERM ATOM_WHOLE_FILE_EXPIRY;
+ERL_NIF_TERM ATOM_CALLBACK_SHUTDOWN;
 }   // namespace eleveldb
 
 
@@ -224,13 +225,14 @@ class eleveldb_priv_data
 {
 public:
     EleveldbOptions m_Opts;
+    ErlNifPid m_CallbackPid;
     leveldb::HotThreadPool thread_pool;
 
-    explicit eleveldb_priv_data(EleveldbOptions & Options)
-    : m_Opts(Options),
-      thread_pool(Options.m_EleveldbThreads, "Eleveldb",
-                  leveldb::ePerfElevelDirect, leveldb::ePerfElevelQueued,
-                  leveldb::ePerfElevelDequeued, leveldb::ePerfElevelWeighted)
+    explicit eleveldb_priv_data(ErlNifPid CallbackPid, EleveldbOptions & Options)
+        : m_Opts(Options), m_CallbackPid(CallbackPid),
+          thread_pool(Options.m_EleveldbThreads, "Eleveldb",
+                      leveldb::ePerfElevelDirect, leveldb::ePerfElevelQueued,
+                      leveldb::ePerfElevelDequeued, leveldb::ePerfElevelWeighted)
         {}
 
 private:
@@ -1279,6 +1281,11 @@ eleveldb_is_empty(
 static void on_unload(ErlNifEnv *env, void *priv_data)
 {
     eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(priv_data);
+
+    ErlNifEnv *msg_env = enif_alloc_env();
+    enif_send(0, &p->m_CallbackPid, msg_env, eleveldb::ATOM_CALLBACK_SHUTDOWN);
+    enif_free_env(msg_env);
+
     delete p;
 
     leveldb::Env::Shutdown();
@@ -1364,21 +1371,40 @@ try
     ATOM(eleveldb::ATOM_EXPIRY_ENABLED, "expiry_enabled");
     ATOM(eleveldb::ATOM_EXPIRY_MINUTES, "expiry_minutes");
     ATOM(eleveldb::ATOM_WHOLE_FILE_EXPIRY, "whole_file_expiry");
+    ATOM(eleveldb::ATOM_CALLBACK_SHUTDOWN, "callback_shutdown");
 #undef ATOM
+
+    ERL_NIF_TERM option_list;
+    ErlNifPid callback_pid;
+    bool good_params(false);
+
+    if (enif_is_tuple(env, load_info))
+    {
+        int arity(0);
+        const ERL_NIF_TERM * array(NULL);
+
+        if (enif_get_tuple(env, load_info, &arity, &array) && 2==arity)
+        {
+            if (enif_is_pid(env, array[0]) && enif_is_list(env, array[1]))
+            {
+                good_params=(enif_get_local_pid(env, array[0], &callback_pid));
+                option_list=array[1];
+            }   // if
+        }   // if
+    }   // if
 
 
     // read options that apply to global eleveldb environment
-    if(enif_is_list(env, load_info))
+    if(good_params)
     {
         EleveldbOptions load_options;
 
-        fold(env, load_info, parse_init_option, load_options);
+        fold(env, option_list, parse_init_option, load_options);
 
         /* Spin up the thread pool, set up all private data: */
-        eleveldb_priv_data *priv = new eleveldb_priv_data(load_options);
+        eleveldb_priv_data *priv = new eleveldb_priv_data(callback_pid, load_options);
 
         *priv_data = priv;
-
     }   // if
 
     else
