@@ -37,6 +37,7 @@
 #include "leveldb/db.h"
 #include "leveldb/comparator.h"
 #include "leveldb/env.h"
+#include "leveldb/expiry.h"
 #include "leveldb/write_batch.h"
 #include "leveldb/cache.h"
 #include "leveldb/filter_policy.h"
@@ -47,6 +48,10 @@
 
 #ifndef INCL_WORKITEMS_H
     #include "workitems.h"
+#endif
+
+#ifndef INCL_ROUTER_H
+    #include "router.h"
 #endif
 
 #ifndef ATOMS_H
@@ -73,13 +78,16 @@ static ErlNifFunc nif_funcs[] =
     {"async_iterator", 3, eleveldb::async_iterator},
     {"async_iterator", 4, eleveldb::async_iterator},
 
-    {"async_iterator_move", 3, eleveldb::async_iterator_move}
+    {"async_iterator_move", 3, eleveldb::async_iterator_move},
+
+    {"property_cache", 2, eleveldb::property_cache}
 };
 
 
 namespace eleveldb {
 
 // Atoms (initialized in on_load)
+//   This is mirror of externs in atoms.h
 ERL_NIF_TERM ATOM_TRUE;
 ERL_NIF_TERM ATOM_FALSE;
 ERL_NIF_TERM ATOM_OK;
@@ -142,8 +150,11 @@ ERL_NIF_TERM ATOM_EXPIRY_ENABLED;
 ERL_NIF_TERM ATOM_EXPIRY_MINUTES;
 ERL_NIF_TERM ATOM_WHOLE_FILE_EXPIRY;
 ERL_NIF_TERM ATOM_CALLBACK_SHUTDOWN;
-}   // namespace eleveldb
 
+ERL_NIF_TERM ATOM_GET_BUCKET_PROPERTIES;
+
+ErlNifPid gCallbackRouterPid={0};
+}   // namespace eleveldb
 
 using std::nothrow;
 
@@ -175,6 +186,7 @@ static ERL_NIF_TERM slice_to_binary(ErlNifEnv* env, leveldb::Slice s)
     memcpy(value, s.data(), s.size());
     return result;
 }
+
 
 /** struct for grabbing eleveldb environment options via fold
  *   ... then loading said options into eleveldb_priv_data
@@ -233,7 +245,7 @@ public:
           thread_pool(Options.m_EleveldbThreads, "Eleveldb",
                       leveldb::ePerfElevelDirect, leveldb::ePerfElevelQueued,
                       leveldb::ePerfElevelDequeued, leveldb::ePerfElevelWeighted)
-        {}
+        {eleveldb::gCallbackRouterPid=CallbackPid;}
 
 private:
     eleveldb_priv_data();                                      // no default constructor
@@ -490,7 +502,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (option[1] == eleveldb::ATOM_TRUE)
             {
                 if (NULL==opts.expiry_module.get())
-                    opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule());
+                    opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule(&eleveldb::leveldb_callback));
                 ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = true;
             }   // if
             else
@@ -505,7 +517,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (enif_get_ulong(env, option[1], &minutes))
             {
                 if (NULL==opts.expiry_module.get())
-                    opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule());
+                    opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule(&eleveldb::leveldb_callback));
                 ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_minutes = minutes;
             }   // if
         }   // else if
@@ -514,7 +526,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             if (option[1] == eleveldb::ATOM_TRUE)
             {
                 if (NULL==opts.expiry_module.get())
-                    opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule());
+                    opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule(&eleveldb::leveldb_callback));
                 ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = true;
             }   // if
             else
@@ -1157,6 +1169,7 @@ async_destroy(
 
 }   // async_destroy
 
+
 } // namespace eleveldb
 
 
@@ -1280,11 +1293,13 @@ eleveldb_is_empty(
 
 static void on_unload(ErlNifEnv *env, void *priv_data)
 {
+    // gCallbackRouterPid and m_CallbackPid are same, pick one ... cleanup both
     eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(priv_data);
 
     ErlNifEnv *msg_env = enif_alloc_env();
     enif_send(0, &p->m_CallbackPid, msg_env, eleveldb::ATOM_CALLBACK_SHUTDOWN);
     enif_free_env(msg_env);
+    memset(&eleveldb::gCallbackRouterPid,0,sizeof(eleveldb::gCallbackRouterPid));
 
     delete p;
 
@@ -1372,6 +1387,7 @@ try
     ATOM(eleveldb::ATOM_EXPIRY_MINUTES, "expiry_minutes");
     ATOM(eleveldb::ATOM_WHOLE_FILE_EXPIRY, "whole_file_expiry");
     ATOM(eleveldb::ATOM_CALLBACK_SHUTDOWN, "callback_shutdown");
+    ATOM(eleveldb::ATOM_GET_BUCKET_PROPERTIES, "get_bucket_properties");
 #undef ATOM
 
     ERL_NIF_TERM option_list;

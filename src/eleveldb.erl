@@ -343,17 +343,25 @@ validate_options(Type, Opts) ->
 callback_router() ->
     io:format(user, "Router started.\n", []),
     receive
-        {get_bucket,Name} ->
+        {get_bucket_properties,Name, Key} ->
             Props=riak_core_bucket:get_bucket(Name),
             io:format(user, "get_bucket ~p\n",[Props]),
+            property_cache(Key, Props),
             callback_router();
+
+        {get_bucket_properties,Type,Name,Key} ->
+            Props=riak_core_bucket:get_bucket(Type,Name),
+            io:format(user, "get_bucket ~p\n",[Props]),
+            property_cache(Key, Props),
+            callback_router();
+
         callback_shutdown ->
             io:format(user, "Router shutting down.\n", []),
             ok
     end.
 
 -spec property_cache(string(), string()) -> ok.
-property_cache(_Bucket, _Properties) ->
+property_cache(_BucketKey, _Properties) ->
     erlang:nif_error({error, not_loaded}).
 
 
