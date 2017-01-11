@@ -25,6 +25,8 @@
     #include "router.h"
 #endif
 
+#include "leveldb/env.h"   // for Log()
+#include "leveldb_ee/prop_cache.h"  // hmm, not in OS builds
 #include "util/expiry_os.h"
 
 namespace eleveldb {
@@ -98,7 +100,8 @@ leveldb_callback(
 
 
 /**
- *
+ * Convert Riak Erlang properties into ExpiryModule object.
+ *  Insert object into cache.
  */
 ERL_NIF_TERM
 property_cache(
@@ -109,8 +112,14 @@ property_cache(
     // ignore if bad params
     if (argc==2 && enif_is_binary(env, argv[0]) && enif_is_list(env, argv[1]))
     {
-//        const ERL_NIF_TERM& composite_bucket  = argv[0];
+        leveldb::ExpiryPropPtr_t cache;
+
+        const ERL_NIF_TERM& composite_bucket  = argv[0];
         const ERL_NIF_TERM& properties        = argv[1];
+        ErlNifBinary key_bin;
+
+        enif_inspect_binary(env, composite_bucket, &key_bin);
+        leveldb::Slice key_slice((const char *)key_bin.data, key_bin.size);
 
         // reduce property list to struct we care about
         //  (use options fold thingie?)
@@ -121,11 +130,12 @@ property_cache(
         fold(env, properties, parse_expiry_properties, *opt);
 
         // send insert command to prop_cache ... insert should broadcast to Wait()
-
+        if (!cache.Insert(key_slice, opt))
+            leveldb::Log(NULL, "eleveldb::property_cache cache.Insert failed");
     }   // if
     else
     {
-//        ... leveldb log to syslog;
+        leveldb::Log(NULL, "eleveldb::property_cache called with bad object (argc %d)", argc);
     }   // else
 
     return ATOM_OK;
