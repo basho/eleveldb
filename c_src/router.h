@@ -37,7 +37,7 @@ bool leveldb_callback(leveldb::EleveldbRouterActions_t, int , const void **);
 
 ERL_NIF_TERM property_cache(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 
-extern ErlNifPid gCallbackRouterPid;
+extern ERL_NIF_TERM gCallbackRouterPid;
 
 } // namespace eleveldb
 
