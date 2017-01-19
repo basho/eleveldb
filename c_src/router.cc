@@ -26,8 +26,8 @@
 #endif
 
 #include "leveldb/env.h"   // for Log()
-#include "leveldb_ee/prop_cache.h"  // hmm, not in OS builds
 #include "util/expiry_os.h"
+#include "util/prop_cache.h"  // hmm, not in OS builds
 
 namespace eleveldb {
 
