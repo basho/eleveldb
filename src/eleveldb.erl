@@ -2,7 +2,7 @@
 %%
 %%  eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 %%
-%% Copyright (c) 2010-2016 Basho Technologies, Inc. All Rights Reserved.
+%% Copyright (c) 2010-2017 Basho Technologies, Inc. All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -341,23 +341,17 @@ validate_options(Type, Opts) ->
 
 -spec callback_router() -> ok.
 callback_router() ->
-    io:format(user, "Router started.\n", []),
     receive
         {get_bucket_properties,Name, Key} ->
             Props=riak_core_bucket:get_bucket(Name),
-            io:format(user, "get_bucket ~p\n",[Props]),
-            property_cache(Key, Props),
-            callback_router();
-
-        {get_bucket_properties,Type,Name,Key} ->
-            Props=riak_core_bucket:get_bucket(Type,Name),
-            io:format(user, "get_bucket ~p\n",[Props]),
             property_cache(Key, Props),
             callback_router();
 
         callback_shutdown ->
-            io:format(user, "Router shutting down.\n", []),
-            ok
+            ok;
+
+       _ ->
+           callback_router()
     end.
 
 -spec property_cache(string(), string()) -> ok.

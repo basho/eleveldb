@@ -153,7 +153,7 @@ ERL_NIF_TERM ATOM_CALLBACK_SHUTDOWN;
 
 ERL_NIF_TERM ATOM_GET_BUCKET_PROPERTIES;
 
-ErlNifPid gCallbackRouterPid={0};
+ERL_NIF_TERM gCallbackRouterPid={0};
 }   // namespace eleveldb
 
 using std::nothrow;
@@ -237,10 +237,10 @@ class eleveldb_priv_data
 {
 public:
     EleveldbOptions m_Opts;
-    ErlNifPid m_CallbackPid;
+    ERL_NIF_TERM m_CallbackPid;
     leveldb::HotThreadPool thread_pool;
 
-    explicit eleveldb_priv_data(ErlNifPid CallbackPid, EleveldbOptions & Options)
+    explicit eleveldb_priv_data(ERL_NIF_TERM & CallbackPid, EleveldbOptions & Options)
         : m_Opts(Options), m_CallbackPid(CallbackPid),
           thread_pool(Options.m_EleveldbThreads, "Eleveldb",
                       leveldb::ePerfElevelDirect, leveldb::ePerfElevelQueued,
@@ -1296,7 +1296,9 @@ static void on_unload(ErlNifEnv *env, void *priv_data)
     eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(priv_data);
 
     ErlNifEnv *msg_env = enif_alloc_env();
-    enif_send(0, &p->m_CallbackPid, msg_env, eleveldb::ATOM_CALLBACK_SHUTDOWN);
+    ErlNifPid pid_ptr;
+    enif_get_local_pid(msg_env, p->m_CallbackPid, &pid_ptr);
+    enif_send(0, &pid_ptr, msg_env, eleveldb::ATOM_CALLBACK_SHUTDOWN);
     enif_free_env(msg_env);
     memset(&eleveldb::gCallbackRouterPid,0,sizeof(eleveldb::gCallbackRouterPid));
 
@@ -1390,20 +1392,21 @@ try
 #undef ATOM
 
     ERL_NIF_TERM option_list;
-    ErlNifPid callback_pid;
+    ERL_NIF_TERM callback_pid={0};
     bool good_params(false);
 
     if (enif_is_tuple(env, load_info))
     {
-        int arity(0);
-        const ERL_NIF_TERM * array(NULL);
+        int arity;
+        const ERL_NIF_TERM * list;
 
-        if (enif_get_tuple(env, load_info, &arity, &array) && 2==arity)
+        if (enif_get_tuple(env, load_info, &arity, &list) && 2==arity)
         {
-            if (enif_is_pid(env, array[0]) && enif_is_list(env, array[1]))
+            if (enif_is_pid(env, list[0]) && enif_is_list(env, list[1]))
             {
-                good_params=(enif_get_local_pid(env, array[0], &callback_pid));
-                option_list=array[1];
+                good_params=true;
+                callback_pid=list[0];
+                option_list=list[1];
             }   // if
         }   // if
     }   // if

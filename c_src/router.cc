@@ -42,6 +42,7 @@ leveldb_callback(
     const void ** Params)
 {
     bool ret_flag(false);
+    ErlNifPid pid_ptr;
 
     switch(Action)
     {
@@ -78,11 +79,14 @@ leveldb_callback(
                     // build type binary
                     temp_ptr=enif_make_new_binary(msg_env,strlen((const char *)Params[0]),&type_term);
                     memcpy(temp_ptr, Params[0], strlen((const char *)Params[0]));
-                    tuple_term=enif_make_tuple4(msg_env, ATOM_GET_BUCKET_PROPERTIES,
-                                                type_term, bucket_term, key_term);
+                    tuple_term=enif_make_tuple2(msg_env, type_term, bucket_term);
+                    tuple_term=enif_make_tuple3(msg_env, ATOM_GET_BUCKET_PROPERTIES,
+                                                tuple_term, key_term);
                 }   // else
 
-                ret_val=enif_send(NULL, &gCallbackRouterPid, msg_env, tuple_term);
+                ret_val=enif_get_local_pid(msg_env, gCallbackRouterPid, &pid_ptr);
+                if (0!=ret_val)
+                    ret_val=enif_send(NULL, &pid_ptr, msg_env, tuple_term);
 
                 ret_flag=(0!=ret_val);
                 enif_free_env(msg_env);
