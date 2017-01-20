@@ -150,8 +150,8 @@ ERL_NIF_TERM ATOM_EXPIRY_ENABLED;
 ERL_NIF_TERM ATOM_EXPIRY_MINUTES;
 ERL_NIF_TERM ATOM_WHOLE_FILE_EXPIRY;
 ERL_NIF_TERM ATOM_CALLBACK_SHUTDOWN;
-
 ERL_NIF_TERM ATOM_GET_BUCKET_PROPERTIES;
+ERL_NIF_TERM ATOM_UNLIMITED;
 
 ERL_NIF_TERM gCallbackRouterPid={0};
 }   // namespace eleveldb
@@ -520,6 +520,14 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                     opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule(&eleveldb::leveldb_callback));
                 ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_minutes = minutes;
             }   // if
+            else if (option[1] == eleveldb::ATOM_UNLIMITED)
+            {
+                if (NULL==opts.expiry_module.get())
+                    opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule(&eleveldb::leveldb_callback));
+                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_minutes
+                    = leveldb::ExpiryModule::kExpiryUnlimited;
+            }   // else if
+
         }   // else if
         else if (option[0] == eleveldb::ATOM_WHOLE_FILE_EXPIRY)
         {
@@ -1389,6 +1397,7 @@ try
     ATOM(eleveldb::ATOM_WHOLE_FILE_EXPIRY, "whole_file_expiry");
     ATOM(eleveldb::ATOM_CALLBACK_SHUTDOWN, "callback_shutdown");
     ATOM(eleveldb::ATOM_GET_BUCKET_PROPERTIES, "get_bucket_properties");
+    ATOM(eleveldb::ATOM_UNLIMITED, "unlimited");
 #undef ATOM
 
     ERL_NIF_TERM option_list;

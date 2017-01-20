@@ -278,14 +278,14 @@
   hidden
 ]}.
 
-{translation, "eleveldb.expiry_minutes",
- fun(Conf) ->
-  case cuttlefish:conf_get("leveldb.expiration.retention_time", Conf) of
-    unlimited -> 0;
-    I -> I
-  end
- end
-}.
+%%{translation, "eleveldb.expiry_minutes",
+%% fun(Conf) ->
+%%  case cuttlefish:conf_get("leveldb.expiration.retention_time", Conf) of
+%%    unlimited -> 0;
+%%    I -> I
+%%  end
+%% end
+%%}.
 
 
 %% @doc Expire entire .sst table file.  Authorizes leveldb to
