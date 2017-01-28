@@ -1,8 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%%  eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
-%%
-%% Copyright (c) 2010 Basho Technologies, Inc. All Rights Reserved.
+%% Copyright (c) 2013-2017 Basho Technologies, Inc.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -20,148 +18,140 @@
 %%
 %% -------------------------------------------------------------------
 
-%% Test various scenarios that properly and improperly close LevelDB DB/iterator
-%% handles and ensure everything cleans up properly.
-
+%% Test various scenarios that properly and improperly close LevelDB
+%% DB/iterator handles and ensure everything cleans up properly.
 -module(cleanup).
 
--compile(export_all).
-
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
--define(COMMON_INSTANCE_DIR, "/tmp/eleveldb.cleanup.test").
+-define(local_test(TestFunc),
+    fun(TestRoot) ->
+        Title = erlang:atom_to_list(TestFunc),
+        TestDir = filename:join(TestRoot, TestFunc),
+        {Title, fun() -> TestFunc(TestDir) end}
+    end
+).
+
+cleanup_test_() ->
+    {foreach,
+        fun eleveldb:create_test_dir/0,
+        fun eleveldb:delete_test_dir/1,
+        [
+            ?local_test(test_open_twice),
+            ?local_test(test_open_close),
+            ?local_test(test_open_exit),
+            ?local_test(test_iterator),
+            ?local_test(test_iterator_db_close),
+            ?local_test(test_iterator_exit)
+        ]
+    }.
 
 %% Purposely reopen an already opened database to test failure assumption
-assumption_test() ->
-    DB = open(),
-    try
-        io:format(user, "assumption_test: top\n", []),
-        ok = failed_open(),
-        io:format(user, "assumption_test: bottom\n", []),
-        ok
-    after
-        eleveldb:close(DB),
-        timer:sleep(500)
-    end.
+test_open_twice(TestDir) ->
+    DB = eleveldb:assert_open(TestDir),
+    ?assertMatch({error, {db_open, _}},
+        eleveldb:open(TestDir, [{create_if_missing, true}])),
+    eleveldb:assert_close(DB).
 
 %% Open/close
-open_close_test() ->
-    DB = open(),
-    eleveldb:close(DB),
-    check().
+test_open_close(TestDir) ->
+    check_open_close(TestDir),
+    check_open_close(TestDir).
 
 %% Open w/o close
-open_exit_test() ->
-    spawn_wait(fun() ->
-                       _DB = open()
-               end),
-    timer:sleep(500),
-    check().
+test_open_exit(TestDir) ->
+    spawn_wait(fun() -> eleveldb:assert_open(TestDir) end),
+    check_open_close(TestDir).
 
 %% Iterator open/close
-iterator_test() ->
-    DB = open(),
-    try
-        write(100, DB),
-        {ok, Itr} = eleveldb:iterator(DB, []),
-        iterate(Itr),
-        eleveldb:iterator_close(Itr),
-        eleveldb:close(DB),
-        check(),
-        ok
-    after
-        catch eleveldb:close(DB),
-        timer:sleep(500)
-    end.
+test_iterator(TestDir) ->
+    DB = eleveldb:assert_open(TestDir),
+    ?assertEqual(ok, write(100, DB)),
+    ItrRet = eleveldb:iterator(DB, []),
+    ?assertMatch({ok, _}, ItrRet),
+    {_, Itr} = ItrRet,
+    ?assertEqual(ok, iterate(Itr)),
+    ?assertEqual(ok, eleveldb:iterator_close(Itr)),
+    eleveldb:assert_close(DB),
+    check_open_close(TestDir).
 
 %% Close DB while iterator running
 %% Expected: reopen should fail while iterator reference alive
 %%           however, iterator should fail after DB is closed
 %%           once iterator process exits, open should succeed
-iterator_db_close_test() ->
-    DB = open(),
-    try
-        write(100, DB),
-        Parent = self(),
-        spawn_monitor(fun() ->
-                              {ok, Itr} = eleveldb:iterator(DB, []),
-                              Parent ! continue,
-                              try
-                                  iterate(Itr, 10)
-                              catch
-                                  error:badarg ->
-                                      ok
-                              end,
-                              try
-                                  eleveldb:iterator_close(Itr)
-                              catch
-                                  error:badarg ->
-                                      ok
-                              end
-                      end),
-        receive continue -> ok end,
-        eleveldb:close(DB),
-        %%failed_open(),
-        wait_down(),
-        erlang:garbage_collect(),
-        timer:sleep(500),
-        check(),
-        ok
-    after
-        catch eleveldb:close(DB),
-        timer:sleep(500)
-    end.
+test_iterator_db_close(TestDir) ->
+    DB = eleveldb:assert_open(TestDir),
+    ?assertEqual(ok, write(100, DB)),
+    Parent = self(),
+    {Pid, Mon} = Proc = erlang:spawn_monitor(
+        fun() ->
+            {ok, Itr} = eleveldb:iterator(DB, []),
+            Parent ! continue,
+            try
+                iterate(Itr, 10)
+            catch
+                error:badarg ->
+                    ok
+            end,
+            try
+                eleveldb:iterator_close(Itr)
+            catch
+                error:badarg ->
+                    ok
+            end
+        end),
+    ?assertEqual(ok, receive
+        continue ->
+            ok;
+        {'DOWN', Mon, process, Pid, Info} ->
+            Info
+    end),
+    eleveldb:assert_close(DB),
+    ?assertEqual(ok, wait_down(Proc)),
+    check_open_close(TestDir).
 
 %% Iterate open, iterator process exit w/o close
-iterator_exit_test() ->
-    DB = open(),
-    try
-        write(100, DB),
-        spawn_wait(fun() ->
-                           {ok, Itr} = eleveldb:iterator(DB, []),
-                           iterate(Itr)
-                   end),
-        eleveldb:close(DB),
-        check(),
-        ok
-    after
-        catch eleveldb:close(DB),
-        timer:sleep(500)
-    end.
+test_iterator_exit(TestDir) ->
+    DB = eleveldb:assert_open(TestDir),
+    ?assertEqual(ok, write(100, DB)),
+    spawn_wait(fun() ->
+        {ok, Itr} = eleveldb:iterator(DB, []),
+        iterate(Itr)
+    end),
+    eleveldb:assert_close(DB),
+    check_open_close(TestDir).
 
 spawn_wait(F) ->
-    spawn_monitor(F),
-    wait_down().
+    wait_down(erlang:spawn_monitor(F)).
 
-wait_down() ->
-    receive {'DOWN', _, process, _, _} ->
+wait_down({Pid, Mon}) when erlang:is_pid(Pid) andalso erlang:is_reference(Mon) ->
+    receive
+        {'DOWN', Mon, process, Pid, _} ->
+            ok
+    end;
+wait_down(Mon) when erlang:is_reference(Mon) ->
+    receive
+        {'DOWN', Mon, process, _, _} ->
+            ok
+    end;
+wait_down(Pid) when erlang:is_pid(Pid) ->
+    receive
+        {'DOWN', _, process, Pid, _} ->
             ok
     end.
 
-check() ->
-    timer:sleep(500),
-    DB = open(),
-    eleveldb:close(DB),
-    timer:sleep(500),
-    ok.
-
-open() ->
-    {ok, Ref} = eleveldb:open(?COMMON_INSTANCE_DIR,
-                              [{create_if_missing, true}]),
-    Ref.
-
-failed_open() ->
-    {error, {db_open, _}} = eleveldb:open(?COMMON_INSTANCE_DIR,
-                                          [{create_if_missing, true}]),
-    ok.
+check_open_close(TestDir) ->
+    eleveldb:assert_close(eleveldb:assert_open(TestDir)).
 
 write(N, DB) ->
     write(0, N, DB).
 write(Same, Same, _DB) ->
     ok;
 write(N, End, DB) ->
-    eleveldb:put(DB, <<N:64/integer>>, <<N:64/integer>>, []),
-    write(N+1, End, DB).
+    KV = <<N:64/integer>>,
+    ?assertEqual(ok, eleveldb:put(DB, KV, KV, [])),
+    write((N + 1), End, DB).
 
 iterate(Itr) ->
     iterate(Itr, 0).
@@ -174,5 +164,6 @@ do_iterate({ok, K, _V}, {Itr, Expected, Delay}) ->
     <<N:64/integer>> = K,
     ?assertEqual(Expected, N),
     (Delay == 0) orelse timer:sleep(Delay),
-    do_iterate(eleveldb:iterator_move(Itr, next),
-               {Itr, Expected + 1, Delay}).
+    do_iterate(eleveldb:iterator_move(Itr, next), {Itr, (Expected + 1), Delay}).
+
+-endif. % TEST
