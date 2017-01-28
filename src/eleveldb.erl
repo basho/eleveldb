@@ -484,12 +484,18 @@ eleveldb_test_() ->
             ?local_test(test_open),
             ?local_test(test_close),
             ?local_test(test_destroy),
-            ?local_test(test_open_many),
             ?local_test(test_fold),
             ?local_test(test_fold_keys),
             ?local_test(test_fold_from_key),
             ?local_test(test_close_fold),
-            ?local_test(test_compression)
+            ?local_test(test_compression),
+            fun(TestRoot) ->
+                TestFunc = test_open_many,
+                TestDir = filename:join(TestRoot, TestFunc),
+                Count = (erlang:system_info(schedulers) * 4 + 1),
+                Title = lists:flatten(io_lib:format("~s(~b)", [TestFunc, Count])),
+                {Title, fun() -> test_open_many(TestDir, Count) end}
+            end
         ]
     }.
 
@@ -508,8 +514,7 @@ test_open(TestDir) ->
     ?assertEqual(not_found, ?MODULE:get(Ref, <<"def">>, [])),
     assert_close(Ref).
 
-test_open_many(TestDir) ->
-    HowMany = 33,
+test_open_many(TestDir, HowMany) ->
     Insts   = lists:seq(1, HowMany),
     KNonce  = erlang:make_ref(),
     VNonce  = erlang:self(),
