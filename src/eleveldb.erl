@@ -488,13 +488,25 @@ eleveldb_test_() ->
             ?local_test(test_fold_keys),
             ?local_test(test_fold_from_key),
             ?local_test(test_close_fold),
-            ?local_test(test_compression),
+            % On weak machines the following can take a while, so we tweak
+            % them a bit to avoid timeouts. On anything resembling a competent
+            % computer, these should complete in a small fraction of a second,
+            % well under the default 5 second timeout, but on lightweight VMs
+            % used for validation, that can be extended by orders of magnitude.
+            % Anything that can't run a test that should complete comfortably
+            % in a tenth of a second within 150 times that doesn't deserve to
+            % be called a computer.
             fun(TestRoot) ->
-                TestFunc = test_open_many,
-                TestDir = filename:join(TestRoot, TestFunc),
+                TestName = "test_compression",
+                TestDir = filename:join(TestRoot, TestName),
+                {TestName, {timeout, 15, fun() -> test_compression(TestDir) end}}
+            end,
+            fun(TestRoot) ->
+                TestName = "test_open_many",
+                TestDir = filename:join(TestRoot, TestName),
                 Count = (erlang:system_info(schedulers) * 4 + 1),
-                Title = lists:flatten(io_lib:format("~s(~b)", [TestFunc, Count])),
-                {Title, fun() -> test_open_many(TestDir, Count) end}
+                Title = lists:flatten(io_lib:format("~s(~b)", [TestName, Count])),
+                {Title, {timeout, 15, fun() -> test_open_many(TestDir, Count) end}}
             end
         ]
     }.
