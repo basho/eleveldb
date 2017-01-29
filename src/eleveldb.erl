@@ -53,6 +53,7 @@
     assert_close/1,
     assert_open/1,
     assert_open/2,
+    assert_open_small/1,
     create_test_dir/0,
     delete_test_dir/1,
     terminal_format/2
@@ -60,9 +61,13 @@
 -ifdef(EQC).
 -include_lib("eqc/include/eqc.hrl").
 -define(QC_OUT(P), eqc:on_output(fun terminal_format/2, P)).
--endif.
+-endif. % EQC
 -include_lib("eunit/include/eunit.hrl").
--endif.
+
+%% Maximum number of distinct database instances to create in any test.
+%% This is driven by filesystem size constraints on builders.
+-define(MAX_TEST_OPEN, 49).
+-endif. % TEST
 
 %% This cannot be a separate function. Code must be inline to trigger
 %% Erlang compiler's use of optimized selective receive.
@@ -439,6 +444,14 @@ assert_open(DbPath, OpenOpts) ->
     {_, DbRef} = OpenRet,
     DbRef.
 
+-spec assert_open_small(DbPath :: string()) -> db_ref() | no_return().
+%
+% Opens Path inside an ?assert... macro, using a limited storage footprint
+% and creating the database directory if needed.
+%
+assert_open_small(DbPath) ->
+    assert_open(DbPath, [{create_if_missing, true}, {limited_developer_mem, true}]).
+
 -spec create_test_dir() -> string() | no_return().
 %
 % Creates a new, empty, uniquely-named directory for testing and returns
@@ -468,13 +481,15 @@ terminal_format(Fmt, Args) ->
 %% EUnit Tests
 %% ===================================================================
 
--define(local_test(TestFunc),
+-define(local_test(Timeout, TestFunc),
     fun(TestRoot) ->
         Title = erlang:atom_to_list(TestFunc),
         TestDir = filename:join(TestRoot, TestFunc),
-        {Title, fun() -> TestFunc(TestDir) end}
+        {Title, {timeout, Timeout, fun() -> TestFunc(TestDir) end}}
     end
 ).
+-define(local_test(TestFunc), ?local_test(10, TestFunc)).
+-define(max_test_open(Calc),  erlang:min(?MAX_TEST_OPEN, Calc)).
 
 eleveldb_test_() ->
     {foreach,
@@ -491,22 +506,15 @@ eleveldb_test_() ->
             % On weak machines the following can take a while, so we tweak
             % them a bit to avoid timeouts. On anything resembling a competent
             % computer, these should complete in a small fraction of a second,
-            % well under the default 5 second timeout, but on lightweight VMs
-            % used for validation, that can be extended by orders of magnitude.
-            % Anything that can't run a test that should complete comfortably
-            % in a tenth of a second within 150 times that doesn't deserve to
-            % be called a computer.
-            fun(TestRoot) ->
-                TestName = "test_compression",
-                TestDir = filename:join(TestRoot, TestName),
-                {TestName, {timeout, 15, fun() -> test_compression(TestDir) end}}
-            end,
+            % but on some lightweight VMs used for validation, that can be
+            % extended by orders of magnitude.
+            ?local_test(15, test_compression),
             fun(TestRoot) ->
                 TestName = "test_open_many",
                 TestDir = filename:join(TestRoot, TestName),
-                Count = (erlang:system_info(schedulers) * 4 + 1),
+                Count = ?max_test_open(erlang:system_info(schedulers) * 4 + 1),
                 Title = lists:flatten(io_lib:format("~s(~b)", [TestName, Count])),
-                {Title, {timeout, 15, fun() -> test_open_many(TestDir, Count) end}}
+                {Title, {timeout, 30, fun() -> test_open_many(TestDir, Count) end}}
             end
         ]
     }.
@@ -530,11 +538,15 @@ test_open_many(TestDir, HowMany) ->
     Insts   = lists:seq(1, HowMany),
     KNonce  = erlang:make_ref(),
     VNonce  = erlang:self(),
-    WorkSet = [{
-        assert_open(lists:flatten(io_lib:format("~s.~b", [TestDir, N]))),
-        erlang:integer_to_binary(erlang:phash2([os:timestamp(), KNonce, N])),
-        erlang:integer_to_binary(erlang:phash2([os:timestamp(), VNonce, N]))}
-        || N <- Insts],
+    WorkSet = [
+        begin
+            D = lists:flatten(io_lib:format("~s.~b", [TestDir, N])),
+            T = os:timestamp(),
+            K = erlang:phash2([T, N, KNonce], 1 bsl 32),
+            V = erlang:phash2([N, T, VNonce], 1 bsl 32),
+            {assert_open_small(D),
+                <<K:32/unsigned>>, <<V:32/unsigned, 0:64, K:32/unsigned>>}
+        end || N <- Insts],
     lists:foreach(
         fun({Ref, Key, Val}) ->
             ?assertEqual(ok, ?MODULE:put(Ref, Key, Val, []))
@@ -632,8 +644,8 @@ test_close_fold(TestDir) ->
 %
 
 parallel_test_() ->
-    ParaCnt = (erlang:system_info(schedulers) * 2 + 1),
-    LoadCnt = 199,
+    ParaCnt = ?max_test_open(erlang:system_info(schedulers) * 2 + 1),
+    LoadCnt = 99,
     TestSeq = lists:seq(1, ParaCnt),
     {foreach,
         fun create_test_dir/0,
@@ -649,18 +661,21 @@ parallel_test_() ->
     }.
 
 run_load(TestDir, IntSeq) ->
-    Nonce   = [os:timestamp(), erlang:self()],
-    KVIn    = [{
-        erlang:integer_to_binary(erlang:phash2([erlang:make_ref(), N | Nonce])),
-        erlang:integer_to_binary(erlang:phash2([N, erlang:make_ref() | Nonce]))
-        } || N <- IntSeq],
-    {L, R}  = lists:split(erlang:hd(IntSeq), KVIn),
-    KVOut   = R ++ L,
-    Ref     = assert_open(TestDir),
+    KNonce  = [os:timestamp(), erlang:self()],
+    Ref     = assert_open_small(TestDir),
+    VNonce  = [erlang:make_ref(), os:timestamp()],
+    KVIn    = [
+        begin
+            K = erlang:phash2([N | KNonce], 1 bsl 32),
+            V = erlang:phash2([N | VNonce], 1 bsl 32),
+            {<<K:32/unsigned>>, <<V:32/unsigned, 0:64, K:32/unsigned>>}
+        end || N <- IntSeq],
     lists:foreach(
         fun({Key, Val}) ->
             ?assertEqual(ok, ?MODULE:put(Ref, Key, Val, []))
         end, KVIn),
+    {L, R}  = lists:split(erlang:hd(IntSeq), KVIn),
+    KVOut   = R ++ L,
     lists:foreach(
         fun({Key, Val}) ->
             ?assertEqual({ok, Val}, ?MODULE:get(Ref, Key, []))

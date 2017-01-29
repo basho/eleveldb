@@ -40,7 +40,7 @@ cacheleak_test_() ->
             Bytes = compressible_bytes(?VAL_SIZE),
             Blobs = [{<<I:128/unsigned>>, Bytes} || I <- lists:seq(1, ?KV_PAIRS)],
             eleveldb:terminal_format("RSS limit: ~b\n", [?MAX_RSS]),
-            cacheleak_loop(?TEST_LOOPS, Blobs, ?MAX_RSS, TestDir)
+            cacheleak_loop(0, Blobs, ?MAX_RSS, TestDir)
         end}}.
 
 %% It's very important for this test that the data is compressible. Otherwise,
@@ -48,16 +48,13 @@ cacheleak_test_() ->
 compressible_bytes(Count) ->
     erlang:list_to_binary(lists:duplicate(Count, 0)).
 
-cacheleak_loop(0, _Blobs, _MaxFinalRSS, _TestDir) ->
-    ok;
-cacheleak_loop(Count, Blobs, MaxFinalRSS, TestDir) ->
+cacheleak_loop(Count, Blobs, MaxFinalRSS, TestDir) when Count < ?TEST_LOOPS ->
     %% We spawn a process to open a LevelDB instance and do a series of
     %% reads/writes to fill up the cache. When the process exits, the LevelDB
     %% ref will get GC'd and we can re-evaluate the memory footprint of the
     %% process to make sure everything got cleaned up as expected.
     F = fun() ->
-        Ref = eleveldb:assert_open(TestDir,
-            [{create_if_missing, true}, {limited_developer_mem, true}]),
+        Ref = eleveldb:assert_open_small(TestDir),
         lists:foreach(
             fun({Key, Val}) ->
                 ?assertEqual(ok, eleveldb:put(Ref, Key, Val, []))
@@ -70,16 +67,19 @@ cacheleak_loop(Count, Blobs, MaxFinalRSS, TestDir) ->
             end, Blobs),
         eleveldb:assert_close(Ref),
         erlang:garbage_collect(),
-        eleveldb:terminal_format("RSS1: ~p\n", [rssmem()])
+        eleveldb:terminal_format("RSS ~2b: ~p\n", [Count, rssmem()])
     end,
-    {_Pid, Mref} = spawn_monitor(F),
+    {_Pid, Mon} = erlang:spawn_monitor(F),
     receive
-        {'DOWN', Mref, process, _, _} ->
+        {'DOWN', Mon, process, _, _} ->
             ok
     end,
     RSS = rssmem(),
     ?assert(MaxFinalRSS > RSS),
-    cacheleak_loop(Count - 1, Blobs, MaxFinalRSS, TestDir).
+    cacheleak_loop((Count + 1), Blobs, MaxFinalRSS, TestDir);
+
+cacheleak_loop(_Count, _Blobs, _MaxFinalRSS, _TestDir) ->
+    ok.
 
 rssmem() ->
     Cmd = io_lib:format("ps -o rss= -p ~s", [os:getpid()]),

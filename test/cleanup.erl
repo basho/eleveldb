@@ -25,13 +25,14 @@
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
--define(local_test(TestFunc),
+-define(local_test(Timeout, TestFunc),
     fun(TestRoot) ->
         Title = erlang:atom_to_list(TestFunc),
         TestDir = filename:join(TestRoot, TestFunc),
-        {Title, fun() -> TestFunc(TestDir) end}
+        {Title, {timeout, Timeout, fun() -> TestFunc(TestDir) end}}
     end
 ).
+-define(local_test(TestFunc), ?local_test(10, TestFunc)).
 
 cleanup_test_() ->
     {foreach,
@@ -42,8 +43,8 @@ cleanup_test_() ->
             ?local_test(test_open_close),
             ?local_test(test_open_exit),
             ?local_test(test_iterator),
-            ?local_test(test_iterator_db_close),
-            ?local_test(test_iterator_exit)
+            ?local_test(15, test_iterator_db_close),
+            ?local_test(15, test_iterator_exit)
         ]
     }.
 
