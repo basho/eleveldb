@@ -169,6 +169,10 @@ parse_expiry_properties(
             {
                 opts.expiry_minutes = minutes;
             }   // if
+            else if (option[1] == eleveldb::ATOM_UNLIMITED)
+            {
+                opts.expiry_minutes = leveldb::ExpiryModule::kExpiryUnlimited;
+            }   // else if
         }   // else if
         else if (option[0] == eleveldb::ATOM_WHOLE_FILE_EXPIRY)
         {
