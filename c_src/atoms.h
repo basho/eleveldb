@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2013 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2017 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -96,6 +96,7 @@ extern ERL_NIF_TERM ATOM_EXPIRY_MINUTES;
 extern ERL_NIF_TERM ATOM_WHOLE_FILE_EXPIRY;
 extern ERL_NIF_TERM ATOM_CALLBACK_SHUTDOWN;
 extern ERL_NIF_TERM ATOM_GET_BUCKET_PROPERTIES;
+extern ERL_NIF_TERM ATOM_UNLIMITED;
 
 }   // namespace eleveldb
 
