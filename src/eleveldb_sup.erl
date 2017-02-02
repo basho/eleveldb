@@ -30,10 +30,8 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, eleveldb_sup, []).
 
 init(_Args) ->
-    SupFlags = #{strategy => one_for_one,
-                 intensity => 2,
-                 period => 5},
-    ChildSpecs = [#{id => metadata,
-                    start => {eleveldb_metadata, start_link, []},
-                    shutdown => brutal_kill}],
+    SupFlags = {one_for_one, 2, 5},
+    ChildSpecs = [{metadata, {eleveldb_metadata, start_link, []},
+                   {permanent, brutal_kill, worker, [eleveldb_metadata]}}],
     {ok, {SupFlags, ChildSpecs}}.
+
