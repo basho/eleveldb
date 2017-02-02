@@ -32,6 +32,5 @@ start_link() ->
 init(_Args) ->
     SupFlags = {one_for_one, 2, 5},
     ChildSpecs = [{metadata, {eleveldb_metadata, start_link, []},
-                   {permanent, brutal_kill, worker, [eleveldb_metadata]}}],
+                   permanent, brutal_kill, worker, [eleveldb_metadata]}],
     {ok, {SupFlags, ChildSpecs}}.
-

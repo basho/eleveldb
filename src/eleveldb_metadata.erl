@@ -50,7 +50,7 @@ start_link() ->
                               [Fun, self(), sys:debug_options([])]),
 
     %% Inform leveldb where to send messages
-    eleveldb:property_cache(set_pid, Pid),
+    eleveldb:set_metadata_pid(Pid),
     {ok, Pid}.
 
 -spec callback_router(fun(), pid(), term()) -> ok.
