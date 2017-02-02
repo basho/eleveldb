@@ -43,7 +43,8 @@
          iterator_move/2,
          iterator_close/1]).
 
--export([property_cache/2]).
+-export([property_cache/2,
+         set_metadata_pid/1]).
 
 -export_type([db_ref/0,
               itr_ref/0]).
@@ -339,6 +340,10 @@ validate_options(Type, Opts) ->
 
 -spec property_cache(string(), string()) -> ok.
 property_cache(_BucketKey, _Properties) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec set_metadata_pid(pid()) -> ok.
+set_metadata_pid(_Pid) ->
     erlang:nif_error({error, not_loaded}).
 
 %% ===================================================================

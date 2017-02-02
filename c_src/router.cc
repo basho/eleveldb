@@ -34,7 +34,6 @@ namespace eleveldb {
 static ERL_NIF_TERM parse_expiry_properties(ErlNifEnv* env, ERL_NIF_TERM item,
                                             leveldb::ExpiryModuleOS& opts);
 
-
 bool
 leveldb_callback(
     leveldb::EleveldbRouterActions_t Action,
@@ -183,6 +182,27 @@ parse_expiry_properties(
     return eleveldb::ATOM_OK;
 
 }   // parse_expiry_properties
+
+
+ERL_NIF_TERM
+set_metadata_pid(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    // ignore if bad params
+    if (argc==1 && enif_is_pid(env, argv[0]))
+    {
+        gCallbackRouterPid=argv[0];
+    }   // if
+    else
+    {
+        leveldb::Log(NULL, "eleveldb::set_metadata_pid called with bad object (argc %d)", argc);
+    }   // else
+
+    return ATOM_OK;
+
+}   // set_metadata_pid
 
 } // namespace eleveldb
 
