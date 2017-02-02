@@ -43,8 +43,7 @@
          iterator_move/2,
          iterator_close/1]).
 
--export([callback_router/0,
-         property_cache/2]).
+-export([property_cache/2]).
 
 -export_type([db_ref/0,
               itr_ref/0]).
@@ -83,8 +82,7 @@ init() ->
                  Dir ->
                      filename:join(Dir, "eleveldb")
              end,
-    Callback=spawn(eleveldb, callback_router, []),
-    erlang:load_nif(SoName, {Callback, application:get_all_env(eleveldb)}).
+    erlang:load_nif(SoName, application:get_all_env(eleveldb)).
 
 -type compression_algorithm() :: snappy | lz4 | false.
 -type open_options() :: [{create_if_missing, boolean()} |
@@ -339,25 +337,9 @@ validate_options(Type, Opts) ->
                             validate_type(KType, V)
                     end, Opts).
 
--spec callback_router() -> ok.
-callback_router() ->
-    receive
-        {get_bucket_properties,Name, Key} ->
-            Props=riak_core_bucket:get_bucket(Name),
-            property_cache(Key, Props),
-            callback_router();
-
-        callback_shutdown ->
-            ok;
-
-       _ ->
-           callback_router()
-    end.
-
 -spec property_cache(string(), string()) -> ok.
 property_cache(_BucketKey, _Properties) ->
     erlang:nif_error({error, not_loaded}).
-
 
 %% ===================================================================
 %% Internal functions
