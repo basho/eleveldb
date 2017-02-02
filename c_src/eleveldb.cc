@@ -80,7 +80,8 @@ static ErlNifFunc nif_funcs[] =
 
     {"async_iterator_move", 3, eleveldb::async_iterator_move},
 
-    {"property_cache", 2, eleveldb::property_cache}
+    {"property_cache", 2, eleveldb::property_cache},
+    {"set_metadata_pid", 1, eleveldb::set_metadata_pid}
 };
 
 
