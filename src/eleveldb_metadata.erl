@@ -35,12 +35,17 @@
          system_get_state/1, system_replace_state/2,
          system_code_change/4]).
 
+
 -ifdef(TEST).
 -export([start/1]).
 
+%% Allow unit tests
 start(Fun) ->
     Pid = proc_lib:spawn(?MODULE, callback_router,
                          [Fun, self(), sys:debug_options([])]),
+
+    %% Inform leveldb where to send messages
+    eleveldb:set_metadata_pid(Pid),
     {ok, Pid}.
 -endif.
 
