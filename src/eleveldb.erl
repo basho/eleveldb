@@ -65,8 +65,12 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Maximum number of distinct database instances to create in any test.
-%% This is driven by filesystem size constraints on builders.
--define(MAX_TEST_OPEN, 49).
+%% The highest runtime limit used is the lower of this value or
+%%  ((num-schedulers x 4) + 1).
+%% This limit is driven by filesystem size constraints on builders - MvM's
+%% trials have shown this value to work on the majority of builders the
+%% majority of the time.
+-define(MAX_TEST_OPEN, 21).
 -endif. % TEST
 
 %% This cannot be a separate function. Code must be inline to trigger
@@ -420,24 +424,24 @@ validate_type(_, _)                                          -> false.
 %% ===================================================================
 
 -spec assert_close(DbRef :: db_ref()) -> ok | no_return().
-%
-% Closes DbRef inside an ?assert... macro.
-%
+%%
+%% Closes DbRef inside an ?assert... macro.
+%%
 assert_close(DbRef) ->
     ?assertEqual(ok, ?MODULE:close(DbRef)).
 
 -spec assert_open(DbPath :: string()) -> db_ref() | no_return().
-%
-% Opens Path inside an ?assert... macro, creating the database directory if needed.
-%
+%%
+%% Opens Path inside an ?assert... macro, creating the database directory if needed.
+%%
 assert_open(DbPath) ->
     assert_open(DbPath, [{create_if_missing, true}]).
 
 -spec assert_open(DbPath :: string(), OpenOpts :: open_options())
             -> db_ref() | no_return().
-%
-% Opens DbPath, with OpenOpts, inside an ?assert... macro.
-%
+%%
+%% Opens DbPath, with OpenOpts, inside an ?assert... macro.
+%%
 assert_open(DbPath, OpenOpts) ->
     OpenRet = ?MODULE:open(DbPath, OpenOpts),
     ?assertMatch({ok, _}, OpenRet),
@@ -445,35 +449,35 @@ assert_open(DbPath, OpenOpts) ->
     DbRef.
 
 -spec assert_open_small(DbPath :: string()) -> db_ref() | no_return().
-%
-% Opens Path inside an ?assert... macro, using a limited storage footprint
-% and creating the database directory if needed.
-%
+%%
+%% Opens Path inside an ?assert... macro, using a limited storage footprint
+%% and creating the database directory if needed.
+%%
 assert_open_small(DbPath) ->
     assert_open(DbPath, [{create_if_missing, true}, {limited_developer_mem, true}]).
 
 -spec create_test_dir() -> string() | no_return().
-%
-% Creates a new, empty, uniquely-named directory for testing and returns
-% its full path. This operation *should* never fail, but would raise an
-% ?assert...-ish exception if it did.
-%
+%%
+%% Creates a new, empty, uniquely-named directory for testing and returns
+%% its full path. This operation *should* never fail, but would raise an
+%% ?assert...-ish exception if it did.
+%%
 create_test_dir() ->
     string:strip(?cmd("mktemp -d /tmp/" ?MODULE_STRING ".XXXXXXX"), both, $\n).
 
 -spec delete_test_dir(Dir :: string()) -> ok | no_return().
-%
-% Deletes a test directory fully, whether or not it exists.
-% This operation *should* never fail, but would raise an ?assert...-ish
-% exception if it did.
-%
+%%
+%% Deletes a test directory fully, whether or not it exists.
+%% This operation *should* never fail, but would raise an ?assert...-ish
+%% exception if it did.
+%%
 delete_test_dir(Dir) ->
     ?assertCmd("rm -rf " ++ Dir).
 
 -spec terminal_format(Fmt :: io:format(), Args :: list()) -> ok.
-%
-% Writes directly to the terminal, bypassing EUnit hooks.
-%
+%%
+%% Writes directly to the terminal, bypassing EUnit hooks.
+%%
 terminal_format(Fmt, Args) ->
     io:format(user, Fmt, Args).
 
@@ -519,13 +523,13 @@ eleveldb_test_() ->
         ]
     }.
 
-% fold accumulator used in a few tests
+%% fold accumulator used in a few tests
 accumulate(Val, Acc) ->
     [Val | Acc].
 
-%
-% Individual tests
-%
+%%
+%% Individual tests
+%%
 
 test_open(TestDir) ->
     Ref = assert_open(TestDir),
@@ -639,9 +643,9 @@ test_close_fold(TestDir) ->
     ?assertError(badarg,
         ?MODULE:fold(Ref, fun(_,_) -> assert_close(Ref) end, undefined, [])).
 
-%
-% Parallel tests
-%
+%%
+%% Parallel tests
+%%
 
 parallel_test_() ->
     ParaCnt = ?max_test_open(erlang:system_info(schedulers) * 2 + 1),
