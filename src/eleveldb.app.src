@@ -22,6 +22,5 @@
          %%  "older" compression by default
          {compression, snappy}
 
-        ]},
-   {mod, {eleveldb_app, []}}
+        ]}
  ]}.

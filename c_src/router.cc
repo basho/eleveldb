@@ -68,8 +68,11 @@ leveldb_callback(
                 // bucket only
                 if (NULL==Params[0] || '\0'==*(const char *)Params[0])
                 {
-                    tuple_term=enif_make_tuple3(msg_env, ATOM_GET_BUCKET_PROPERTIES, bucket_term,
-                                                key_term);
+                    // make some arrays
+                    tuple_term=enif_make_tuple3(msg_env,
+                        ATOM_INVOKE,
+                        enif_make_list1(msg_env, bucket_term),
+                        enif_make_list1(msg_env, key_term));
                 }   // if
 
                 // bucket type and bucket
@@ -79,8 +82,12 @@ leveldb_callback(
                     temp_ptr=enif_make_new_binary(msg_env,strlen((const char *)Params[0]),&type_term);
                     memcpy(temp_ptr, Params[0], strlen((const char *)Params[0]));
                     tuple_term=enif_make_tuple2(msg_env, type_term, bucket_term);
-                    tuple_term=enif_make_tuple3(msg_env, ATOM_GET_BUCKET_PROPERTIES,
-                                                tuple_term, key_term);
+                    // Make some arrays
+
+                    tuple_term=enif_make_tuple3(msg_env,
+                        ATOM_INVOKE,
+                        enif_make_list1(msg_env, tuple_term),
+                        enif_make_list1(msg_env, key_term));
                 }   // else
 
                 ret_val=enif_get_local_pid(msg_env, gCallbackRouterPid, &pid_ptr);

@@ -151,7 +151,7 @@ ERL_NIF_TERM ATOM_EXPIRY_ENABLED;
 ERL_NIF_TERM ATOM_EXPIRY_MINUTES;
 ERL_NIF_TERM ATOM_WHOLE_FILE_EXPIRY;
 ERL_NIF_TERM ATOM_CALLBACK_SHUTDOWN;
-ERL_NIF_TERM ATOM_GET_BUCKET_PROPERTIES;
+ERL_NIF_TERM ATOM_INVOKE;
 ERL_NIF_TERM ATOM_UNLIMITED;
 
 ERL_NIF_TERM gCallbackRouterPid={0};
@@ -1395,7 +1395,7 @@ try
     ATOM(eleveldb::ATOM_EXPIRY_MINUTES, "expiry_minutes");
     ATOM(eleveldb::ATOM_WHOLE_FILE_EXPIRY, "whole_file_expiry");
     ATOM(eleveldb::ATOM_CALLBACK_SHUTDOWN, "callback_shutdown");
-    ATOM(eleveldb::ATOM_GET_BUCKET_PROPERTIES, "get_bucket_properties");
+    ATOM(eleveldb::ATOM_INVOKE, "invoke");
     ATOM(eleveldb::ATOM_UNLIMITED, "unlimited");
 #undef ATOM
 
