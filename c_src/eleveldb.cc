@@ -634,6 +634,21 @@ ERL_NIF_TERM send_reply(ErlNifEnv *env, ERL_NIF_TERM ref, ERL_NIF_TERM reply)
     return ATOM_OK;
 }
 
+// Boilerplate for submitting to the thread queue.
+// Takes ownership of the item. assumes allocated through new
+
+ERL_NIF_TERM
+submit_to_thread_queue(eleveldb::WorkTask *work_item, ErlNifEnv* env, ERL_NIF_TERM caller_ref){
+    eleveldb_priv_data& data = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
+    if(false == data.thread_pool.Submit(work_item))
+    {
+        delete work_item;
+        return send_reply(env, caller_ref,
+                          enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
+    }   // if
+    return eleveldb::ATOM_OK;
+}
+
 ERL_NIF_TERM
 async_open(
     ErlNifEnv* env,
@@ -688,15 +703,7 @@ async_open(
 
     eleveldb::WorkTask *work_item = new eleveldb::OpenTask(env, caller_ref,
                                                               db_name, opts);
-
-    if(false == priv.thread_pool.Submit(work_item))
-    {
-        delete work_item;
-        return send_reply(env, caller_ref,
-                          enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
-    }
-
-    return eleveldb::ATOM_OK;
+    return submit_to_thread_queue(work_item, env, caller_ref);
 
 }   // async_open
 
@@ -727,8 +734,6 @@ async_write(
     if(NULL == db_ptr->m_Db)
         return send_reply(env, caller_ref, error_einval(env));
 
-    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
     // Construct a write batch:
     leveldb::WriteBatch* batch = new leveldb::WriteBatch;
 
@@ -750,16 +755,7 @@ async_write(
 
     eleveldb::WorkTask* work_item = new eleveldb::WriteTask(env, caller_ref,
                                                             db_ptr, batch, opts);
-
-    if(false == priv.thread_pool.Submit(work_item))
-    {
-        // work_item contains "batch" and the delete below gets both memory allocations
-        delete work_item;
-        return send_reply(env, caller_ref,
-                          enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
-    }   // if
-
-    return eleveldb::ATOM_OK;
+    return submit_to_thread_queue(work_item, env, caller_ref);
 }
 
 
@@ -793,17 +789,7 @@ async_get(
 
     eleveldb::WorkTask *work_item = new eleveldb::GetTask(env, caller_ref,
                                                           db_ptr, key_ref, opts);
-
-    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-    if(false == priv.thread_pool.Submit(work_item))
-    {
-        delete work_item;
-        return send_reply(env, caller_ref,
-                          enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
-    }   // if
-
-    return eleveldb::ATOM_OK;
+    return submit_to_thread_queue(work_item, env, caller_ref);
 
 }   // async_get
 
@@ -840,18 +826,7 @@ async_iterator(
 
     eleveldb::WorkTask *work_item = new eleveldb::IterTask(env, caller_ref,
                                                            db_ptr, keys_only, opts);
-
-    // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
-    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-    if(false == priv.thread_pool.Submit(work_item))
-    {
-        delete work_item;
-        return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
-    }   // if
-
-    return ATOM_OK;
-
+    return submit_to_thread_queue(work_item, env, caller_ref);
 }   // async_iterator
 
 
@@ -1072,15 +1047,8 @@ async_close(
     {
         eleveldb::WorkTask *work_item = new eleveldb::CloseTask(env, caller_ref,
                                                                 db_ptr);
+        return submit_to_thread_queue(work_item, env, caller_ref);
 
-        // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
-        eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-        if(false == priv.thread_pool.Submit(work_item))
-        {
-            delete work_item;
-            return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
-        }   // if
     }   // if
     else if (!term_ok)
     {
@@ -1119,15 +1087,7 @@ async_iterator_close(
     {
         eleveldb::WorkTask *work_item = new eleveldb::ItrCloseTask(env, caller_ref,
                                                                    itr_ptr);
-
-        // Now-boilerplate setup (we'll consolidate this pattern soon, I hope):
-        eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
-        if(false == priv.thread_pool.Submit(work_item))
-        {
-            delete work_item;
-            return send_reply(env, caller_ref, enif_make_tuple2(env, ATOM_ERROR, caller_ref));
-        }   // if
+        return submit_to_thread_queue(work_item, env, caller_ref);
     }   // if
 
     // this close/cleanup call is way late ... bad programmer!
@@ -1157,23 +1117,12 @@ async_destroy(
 
     ERL_NIF_TERM caller_ref = argv[0];
 
-    eleveldb_priv_data& priv = *static_cast<eleveldb_priv_data *>(enif_priv_data(env));
-
     leveldb::Options *opts = new leveldb::Options;
     fold(env, argv[2], parse_open_option, *opts);
 
     eleveldb::WorkTask *work_item = new eleveldb::DestroyTask(env, caller_ref,
                                                               db_name, opts);
-
-    if(false == priv.thread_pool.Submit(work_item))
-    {
-        delete work_item;
-        return send_reply(env, caller_ref,
-                          enif_make_tuple2(env, eleveldb::ATOM_ERROR, caller_ref));
-    }
-
-    return eleveldb::ATOM_OK;
-
+    return submit_to_thread_queue(work_item, env, caller_ref);
 }   // async_destroy
 
 
