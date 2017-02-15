@@ -8,7 +8,7 @@ if [ `uname -s` = 'SunOS' -a "${POSIX_SHELL}" != "true" ]; then
 fi
 unset POSIX_SHELL # clear it so if we invoke other scripts, they run as ksh as well
 
-LEVELDB_VSN="2.0.33"
+LEVELDB_VSN="2.0.34"
 
 SNAPPY_VSN="1.0.4"
 
@@ -65,9 +65,11 @@ case "$1" in
         ;;
 
     *)
+        export MACOSX_DEPLOYMENT_TARGET=10.8
+
         if [ ! -d snappy-$SNAPPY_VSN ]; then
             tar -xzf snappy-$SNAPPY_VSN.tar.gz
-            (cd snappy-$SNAPPY_VSN && ./configure --prefix=$BASEDIR/system --libdir=$BASEDIR/system/lib --with-pic)
+            (cd snappy-$SNAPPY_VSN && ./configure --disable-shared --prefix=$BASEDIR/system --libdir=$BASEDIR/system/lib --with-pic)
         fi
 
         if [ ! -f system/lib/libsnappy.a ]; then
