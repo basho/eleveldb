@@ -154,7 +154,10 @@ ERL_NIF_TERM ATOM_CALLBACK_SHUTDOWN;
 ERL_NIF_TERM ATOM_INVOKE;
 ERL_NIF_TERM ATOM_UNLIMITED;
 
-ERL_NIF_TERM gCallbackRouterPid={0};
+
+// defining ServiceCallback here in eleveldb.cc to guarantee initialization timing
+ServiceCallback gBucketPropCallback;
+
 }   // namespace eleveldb
 
 using std::nothrow;
@@ -1300,19 +1303,16 @@ eleveldb_is_empty(
 
 static void on_unload(ErlNifEnv *env, void *priv_data)
 {
-    eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(priv_data);
-
-    ErlNifEnv *msg_env = enif_alloc_env();
-    ErlNifPid pid_ptr;
-    enif_get_local_pid(msg_env, eleveldb::gCallbackRouterPid, &pid_ptr);
-    enif_send(0, &pid_ptr, msg_env, eleveldb::ATOM_CALLBACK_SHUTDOWN);
-    enif_free_env(msg_env);
-    memset(&eleveldb::gCallbackRouterPid,0,sizeof(eleveldb::gCallbackRouterPid));
-
-    delete p;
+    // disable service request messages
+    eleveldb::gBucketPropCallback.Disable();
 
     leveldb::Env::Shutdown();
-}
+
+    eleveldb_priv_data *p = static_cast<eleveldb_priv_data *>(priv_data);
+    delete p;
+
+    return;
+}   // on_unload
 
 
 static int on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)

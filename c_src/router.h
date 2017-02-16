@@ -38,7 +38,23 @@ bool leveldb_callback(leveldb::EleveldbRouterActions_t, int , const void **);
 ERL_NIF_TERM property_cache(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 ERL_NIF_TERM set_metadata_pid(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 
-extern ERL_NIF_TERM gCallbackRouterPid;
+
+struct ServiceCallback
+{
+    bool m_PidSet;              // true if Riak service initialized pid
+    ERL_NIF_TERM m_CallbackPid; // destination for callback messages
+
+    ServiceCallback()
+    : m_PidSet(false), m_CallbackPid(0) {};
+
+    ~ServiceCallback() {m_PidSet=false;};
+
+    void SetPid(const ERL_NIF_TERM & Pid) {m_CallbackPid=Pid; m_PidSet=true;};
+    bool GetPid(ERL_NIF_TERM & Pid) {Pid=m_CallbackPid; return(m_PidSet);};
+    void Disable() {m_PidSet=false;};
+};
+
+extern ServiceCallback gBucketPropCallback;
 
 } // namespace eleveldb
 

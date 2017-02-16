@@ -48,8 +48,11 @@ leveldb_callback(
         // 0 - type string, 1 - bucket string, 2 - slice for key
         case leveldb::eGetBucketProperties:
         {
+            ERL_NIF_TERM callback_pid;
+
             // defensive test
-            if (3==ParamCount && NULL!=Params[1] && NULL!=Params[2])
+            if (3==ParamCount && NULL!=Params[1] && NULL!=Params[2]
+                && gBucketPropCallback.GetPid(callback_pid))
             {
                 ERL_NIF_TERM bucket_term, type_term, key_term, tuple_term;
                 ErlNifEnv *msg_env = enif_alloc_env();
@@ -90,7 +93,7 @@ leveldb_callback(
                         enif_make_list1(msg_env, key_term));
                 }   // else
 
-                ret_val=enif_get_local_pid(msg_env, gCallbackRouterPid, &pid_ptr);
+                ret_val=enif_get_local_pid(msg_env, callback_pid, &pid_ptr);
                 if (0!=ret_val)
                     ret_val=enif_send(NULL, &pid_ptr, msg_env, tuple_term);
 
@@ -200,7 +203,7 @@ set_metadata_pid(
     // ignore if bad params
     if (argc==1 && enif_is_pid(env, argv[0]))
     {
-        gCallbackRouterPid=argv[0];
+        gBucketPropCallback.SetPid(argv[0]);
     }   // if
     else
     {
