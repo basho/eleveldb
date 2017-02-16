@@ -69,6 +69,7 @@
         end).
 
 -define(COMPRESSION_ENUM, [snappy, lz4, false]).
+-define(EXPIRY_ENUM, [unlimited, integer]).
 
 -spec init() -> ok | {error, any()}.
 init() ->
@@ -319,7 +320,7 @@ option_types(open) ->
      {tiered_slow_prefix, any},
      {cache_object_warming, bool},
      {expiry_enabled, bool},
-     {expiry_minutes, integer},
+     {expiry_minutes, ?EXPIRY_ENUM},
      {whole_file_expiry, bool}];
 
 option_types(read) ->
@@ -393,14 +394,16 @@ fold_loop({ok, K, V}, Itr, Fun, Acc0) ->
     Acc = Fun({K, V}, Acc0),
     fold_loop(iterator_move(Itr, prefetch), Itr, Fun, Acc).
 
-validate_type({_Key, bool}, true)                            -> true;
-validate_type({_Key, bool}, false)                           -> true;
-validate_type({_Key, integer}, Value) when is_integer(Value) -> true;
-validate_type({_Key, any}, _Value)                           -> true;
-validate_type({_Key, ?COMPRESSION_ENUM}, snappy)             -> true;
-validate_type({_Key, ?COMPRESSION_ENUM}, lz4)                -> true;
-validate_type({_Key, ?COMPRESSION_ENUM}, false)              -> true;
-validate_type(_, _)                                          -> false.
+validate_type({_Key, bool}, true)                                  -> true;
+validate_type({_Key, bool}, false)                                 -> true;
+validate_type({_Key, integer}, Value) when is_integer(Value)       -> true;
+validate_type({_Key, any}, _Value)                                 -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, snappy)                   -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, lz4)                      -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, false)                    -> true;
+validate_type({_Key, ?EXPIRY_ENUM}, unlimited)                     -> true;
+validate_type({_Key, ?EXPIRY_ENUM}, Value) when is_integer(Value)  -> true;
+validate_type(_, _)                                                -> false.
 
 
 %% ===================================================================
