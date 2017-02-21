@@ -20,6 +20,7 @@
 //
 // -------------------------------------------------------------------
 
+#include <string.h>
 
 #ifndef INCL_ROUTER_H
     #include "router.h"
@@ -165,39 +166,59 @@ parse_expiry_properties(
     int arity;
     const ERL_NIF_TERM* option;
 
+
     if (enif_get_tuple(env, item, &arity, &option) && 2==arity)
     {
+        char buffer[65]={""};
+
+        // what if property set via json
+        if (enif_is_binary(env, option[1]))
+        {
+            ErlNifBinary bin;
+            if (0!=enif_inspect_binary(env, option[1], &bin))
+            {
+                strncpy(buffer,(char *)bin.data,(bin.size<65?bin.size:64));
+                buffer[bin.size<65?bin.size:64]='\0';
+            }   //if
+            else
+            {
+                *buffer='\0';
+            }   // else
+        }   // if
+
         if (option[0] == eleveldb::ATOM_EXPIRATION)
         {
             opts.expiry_enabled = (option[1] == eleveldb::ATOM_ENABLED
                                    || option[1] == eleveldb::ATOM_ON
-                                   || option[1] == eleveldb::ATOM_TRUE);
+                                   || option[1] == eleveldb::ATOM_TRUE
+                                   || 0==strcmp(buffer, "enabled")
+                                   || 0==strcmp(buffer, "on")
+                                   || 0==strcmp(buffer, "true"));
         }   // else if
         else if (option[0] == eleveldb::ATOM_DEFAULT_TIME_TO_LIVE)
         {
-            if (option[1] == eleveldb::ATOM_UNLIMITED)
+            if (option[1] == eleveldb::ATOM_UNLIMITED
+                || 0==strcmp(buffer, "unlimited"))
             {
                 opts.expiry_minutes = leveldb::ExpiryModule::kExpiryUnlimited;
             }   // else if
 
             // assume it is a cuttlefish duration string
-            else
+            else if ('\0' != *buffer)
             {
-                char buffer[65];
-                int size;
-
-                size=enif_get_string(env, option[1], buffer, 65, ERL_NIF_LATIN1);
-                if (0<size)
-                    opts.expiry_minutes = leveldb::CuttlefishDurationMinutes(buffer);
+                opts.expiry_minutes = leveldb::CuttlefishDurationMinutes(buffer);
             }   // else
         }   // else if
         else if (option[0] == eleveldb::ATOM_EXPIRATION_MODE)
         {
-            if (eleveldb::ATOM_WHOLE_FILE == option[1])
+            if (eleveldb::ATOM_WHOLE_FILE == option[1]
+                || 0==strcmp(buffer, "whole_file"))
                 opts.whole_file_expiry = true;
-            else if (eleveldb::ATOM_PER_ITEM == option[1])
+            else if (eleveldb::ATOM_PER_ITEM == option[1]
+                     || 0==strcmp(buffer,"per_item"))
                 opts.whole_file_expiry = false;
             // else do nothing ... use global setting
+
         }   // else if
     }   // if
 
