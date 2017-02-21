@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2011-2016 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2011-2017 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -147,10 +147,12 @@ ERL_NIF_TERM ATOM_TIERED_SLOW_LEVEL;
 ERL_NIF_TERM ATOM_TIERED_FAST_PREFIX;
 ERL_NIF_TERM ATOM_TIERED_SLOW_PREFIX;
 ERL_NIF_TERM ATOM_CACHE_OBJECT_WARMING;
-ERL_NIF_TERM ATOM_EXPIRY_ENABLED;
-ERL_NIF_TERM ATOM_EXPIRY_MINUTES;
-ERL_NIF_TERM ATOM_WHOLE_FILE_EXPIRY;
-ERL_NIF_TERM ATOM_CALLBACK_SHUTDOWN;
+ERL_NIF_TERM ATOM_EXPIRATION;
+ERL_NIF_TERM ATOM_DEFAULT_TIME_TO_LIVE;
+ERL_NIF_TERM ATOM_EXPIRATION_MODE;
+ERL_NIF_TERM ATOM_ENABLED;
+ERL_NIF_TERM ATOM_WHOLE_FILE;
+ERL_NIF_TERM ATOM_PER_ITEM;
 ERL_NIF_TERM ATOM_INVOKE;
 ERL_NIF_TERM ATOM_UNLIMITED;
 
@@ -500,9 +502,11 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                 opts.cache_object_warming = false;
         }
 
-        else if (option[0] == eleveldb::ATOM_EXPIRY_ENABLED)
+        else if (option[0] == eleveldb::ATOM_EXPIRATION)
         {
-            if (option[1] == eleveldb::ATOM_TRUE)
+            if (option[1] == eleveldb::ATOM_ENABLED
+                || option[1] == eleveldb::ATOM_ON
+                || option[1] == eleveldb::ATOM_TRUE)
             {
                 if (NULL==opts.expiry_module.get())
                     opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule(&eleveldb::leveldb_callback));
@@ -514,7 +518,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                     ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = false;
             }   // else
         }   // else if
-        else if (option[0] == eleveldb::ATOM_EXPIRY_MINUTES)
+        else if (option[0] == eleveldb::ATOM_DEFAULT_TIME_TO_LIVE)
         {
             unsigned long minutes(0);
             if (enif_get_ulong(env, option[1], &minutes))
@@ -532,21 +536,21 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             }   // else if
 
         }   // else if
-        else if (option[0] == eleveldb::ATOM_WHOLE_FILE_EXPIRY)
+        else if (option[0] == eleveldb::ATOM_EXPIRATION_MODE)
         {
-            if (option[1] == eleveldb::ATOM_TRUE)
+            if (option[1] == eleveldb::ATOM_WHOLE_FILE)
             {
                 if (NULL==opts.expiry_module.get())
                     opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule(&eleveldb::leveldb_callback));
                 ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = true;
             }   // if
-            else
+            else if (option[1] == eleveldb::ATOM_PER_ITEM)
             {
                 if (NULL!=opts.expiry_module.get())
                     ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = false;
-            }   // else
+            }   // else if
+            // else take default setting ... do nothing.
         }   // else if
-
     }
 
     return eleveldb::ATOM_OK;
@@ -1391,10 +1395,12 @@ try
     ATOM(eleveldb::ATOM_TIERED_FAST_PREFIX, "tiered_fast_prefix");
     ATOM(eleveldb::ATOM_TIERED_SLOW_PREFIX, "tiered_slow_prefix");
     ATOM(eleveldb::ATOM_CACHE_OBJECT_WARMING, "cache_object_warming");
-    ATOM(eleveldb::ATOM_EXPIRY_ENABLED, "expiry_enabled");
-    ATOM(eleveldb::ATOM_EXPIRY_MINUTES, "expiry_minutes");
-    ATOM(eleveldb::ATOM_WHOLE_FILE_EXPIRY, "whole_file_expiry");
-    ATOM(eleveldb::ATOM_CALLBACK_SHUTDOWN, "callback_shutdown");
+    ATOM(eleveldb::ATOM_EXPIRATION, "expiration");
+    ATOM(eleveldb::ATOM_DEFAULT_TIME_TO_LIVE, "default_time_to_live");
+    ATOM(eleveldb::ATOM_EXPIRATION_MODE, "expiration_mode");
+    ATOM(eleveldb::ATOM_ENABLED, "enabled");
+    ATOM(eleveldb::ATOM_WHOLE_FILE, "whole_file");
+    ATOM(eleveldb::ATOM_PER_ITEM, "per_item");
     ATOM(eleveldb::ATOM_INVOKE, "invoke");
     ATOM(eleveldb::ATOM_UNLIMITED, "unlimited");
 #undef ATOM
