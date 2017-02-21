@@ -2,7 +2,7 @@
 //
 // eleveldb: Erlang Wrapper for LevelDB (http://code.google.com/p/leveldb/)
 //
-// Copyright (c) 2016 Basho Technologies, Inc. All Rights Reserved.
+// Copyright (c) 2016-2017 Basho Technologies, Inc. All Rights Reserved.
 //
 // This file is provided to you under the Apache License,
 // Version 2.0 (the "License"); you may not use this file
@@ -167,25 +167,37 @@ parse_expiry_properties(
 
     if (enif_get_tuple(env, item, &arity, &option) && 2==arity)
     {
-        if (option[0] == eleveldb::ATOM_EXPIRY_ENABLED)
+        if (option[0] == eleveldb::ATOM_EXPIRATION)
         {
-            opts.expiry_enabled = (option[1] == eleveldb::ATOM_TRUE);
+            opts.expiry_enabled = (option[1] == eleveldb::ATOM_ENABLED
+                                   || option[1] == eleveldb::ATOM_ON
+                                   || option[1] == eleveldb::ATOM_TRUE);
         }   // else if
-        else if (option[0] == eleveldb::ATOM_EXPIRY_MINUTES)
+        else if (option[0] == eleveldb::ATOM_DEFAULT_TIME_TO_LIVE)
         {
-            unsigned long minutes(0);
-            if (enif_get_ulong(env, option[1], &minutes))
-            {
-                opts.expiry_minutes = minutes;
-            }   // if
-            else if (option[1] == eleveldb::ATOM_UNLIMITED)
+            if (option[1] == eleveldb::ATOM_UNLIMITED)
             {
                 opts.expiry_minutes = leveldb::ExpiryModule::kExpiryUnlimited;
             }   // else if
+
+            // assume it is a cuttlefish duration string
+            else
+            {
+                char buffer[65];
+                int size;
+
+                size=enif_get_string(env, option[1], buffer, 65, ERL_NIF_LATIN1);
+                if (0<size)
+                    opts.expiry_minutes = leveldb::CuttlefishDurationMinutes(buffer);
+            }   // else
         }   // else if
-        else if (option[0] == eleveldb::ATOM_WHOLE_FILE_EXPIRY)
+        else if (option[0] == eleveldb::ATOM_EXPIRATION_MODE)
         {
-            opts.whole_file_expiry = (option[1] == eleveldb::ATOM_TRUE);
+            if (eleveldb::ATOM_WHOLE_FILE == option[1])
+                opts.whole_file_expiry = true;
+            else if (eleveldb::ATOM_PER_ITEM == option[1])
+                opts.whole_file_expiry = false;
+            // else do nothing ... use global setting
         }   // else if
     }   // if
 
