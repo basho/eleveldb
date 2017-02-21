@@ -155,6 +155,10 @@ ERL_NIF_TERM ATOM_WHOLE_FILE;
 ERL_NIF_TERM ATOM_PER_ITEM;
 ERL_NIF_TERM ATOM_INVOKE;
 ERL_NIF_TERM ATOM_UNLIMITED;
+ERL_NIF_TERM ATOM_EXPIRY_ENABLED;
+ERL_NIF_TERM ATOM_EXPIRY_MINUTES;
+ERL_NIF_TERM ATOM_WHOLE_FILE_EXPIRY;
+
 
 
 // defining ServiceCallback here in eleveldb.cc to guarantee initialization timing
@@ -502,7 +506,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                 opts.cache_object_warming = false;
         }
 
-        else if (option[0] == eleveldb::ATOM_EXPIRATION)
+        else if (option[0] == eleveldb::ATOM_EXPIRY_ENABLED)
         {
             if (option[1] == eleveldb::ATOM_ENABLED
                 || option[1] == eleveldb::ATOM_ON
@@ -518,7 +522,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
                     ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = false;
             }   // else
         }   // else if
-        else if (option[0] == eleveldb::ATOM_DEFAULT_TIME_TO_LIVE)
+        else if (option[0] == eleveldb::ATOM_EXPIRY_MINUTES)
         {
             unsigned long minutes(0);
             if (enif_get_ulong(env, option[1], &minutes))
@@ -536,7 +540,7 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             }   // else if
 
         }   // else if
-        else if (option[0] == eleveldb::ATOM_EXPIRATION_MODE)
+        else if (option[0] == eleveldb::ATOM_WHOLE_FILE_EXPIRY)
         {
             if (option[1] == eleveldb::ATOM_WHOLE_FILE)
             {
@@ -1403,6 +1407,9 @@ try
     ATOM(eleveldb::ATOM_PER_ITEM, "per_item");
     ATOM(eleveldb::ATOM_INVOKE, "invoke");
     ATOM(eleveldb::ATOM_UNLIMITED, "unlimited");
+    ATOM(eleveldb::ATOM_EXPIRY_ENABLED, "expiry_enabled");
+    ATOM(eleveldb::ATOM_EXPIRY_MINUTES, "expiry_minutes");
+    ATOM(eleveldb::ATOM_WHOLE_FILE_EXPIRY, "whole_file_expiry");
 #undef ATOM
 
     ERL_NIF_TERM option_list;
