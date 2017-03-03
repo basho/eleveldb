@@ -37,6 +37,7 @@ bool leveldb_callback(leveldb::EleveldbRouterActions_t, int , const void **);
 
 ERL_NIF_TERM property_cache(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 ERL_NIF_TERM set_metadata_pid(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM remove_metadata_pid(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 
 
 struct ServiceCallback
