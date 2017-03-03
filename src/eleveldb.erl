@@ -344,11 +344,11 @@ validate_options(Type, Opts) ->
 property_cache(_BucketKey, _Properties) ->
     erlang:nif_error({error, not_loaded}).
 
--spec set_metadata_pid(pid()) -> ok.
+-spec set_metadata_pid(atom(),pid()) -> ok.
 set_metadata_pid(_Context, _Pid) ->
     erlang:nif_error({error, not_loaded}).
 
--spec remove_metadata_pid(pid()) -> ok.
+-spec remove_metadata_pid(atom(),pid()) -> ok.
 remove_metadata_pid(_Context, _Pid) ->
     erlang:nif_error({error, not_loaded}).
 

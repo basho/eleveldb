@@ -234,9 +234,20 @@ set_metadata_pid(
     const ERL_NIF_TERM argv[])
 {
     // ignore if bad params
-    if (argc==1 && enif_is_pid(env, argv[0]))
+    if (argc==2 && enif_is_pid(env, argv[1]))
     {
-        gBucketPropCallback.SetPid(argv[0]);
+        // would use switch(argv[0]) but ATOM_BUCKET_PROPS is actually a
+        //  variable, not a constant
+        if (argv[0]==ATOM_BUCKET_PROPS)
+        {
+            gBucketPropCallback.SetPid(argv[1]);
+        }   // if
+        else
+        {
+            leveldb::Log(NULL,
+                         "eleveldb::set_metadata_pid called with unknown atom (argc %d)",
+                         argc);
+        }   // else
     }   // if
     else
     {
@@ -255,12 +266,23 @@ remove_metadata_pid(
     const ERL_NIF_TERM argv[])
 {
     // ignore if bad params
-    if (argc==1 && enif_is_pid(env, argv[0]))
+    if (argc==2 && enif_is_pid(env, argv[1]))
     {
         ERL_NIF_TERM cur_pid;
 
-        if (gBucketPropCallback.GetPid(cur_pid) && argv[0]==cur_pid)
-            gBucketPropCallback.Disable();
+        // would use switch(argv[0]) but ATOM_BUCKET_PROPS is actually a
+        //  variable, not a constant
+        if (argv[0]==ATOM_BUCKET_PROPS)
+        {
+            if (gBucketPropCallback.GetPid(cur_pid) && argv[1]==cur_pid)
+                gBucketPropCallback.Disable();
+        }   // if
+        else
+        {
+            leveldb::Log(NULL,
+                         "eleveldb::remove_metadata_pid called with unknown atom (argc %d)",
+                         argc);
+        }   // else
     }   // if
     else
     {

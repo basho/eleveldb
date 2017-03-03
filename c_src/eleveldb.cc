@@ -81,8 +81,8 @@ static ErlNifFunc nif_funcs[] =
     {"async_iterator_move", 3, eleveldb::async_iterator_move},
 
     {"property_cache", 2, eleveldb::property_cache},
-    {"set_metadata_pid", 1, eleveldb::set_metadata_pid},
-    {"remove_metadata_pid", 1, eleveldb::remove_metadata_pid}
+    {"set_metadata_pid", 2, eleveldb::set_metadata_pid},
+    {"remove_metadata_pid", 2, eleveldb::remove_metadata_pid}
 };
 
 
@@ -159,7 +159,7 @@ ERL_NIF_TERM ATOM_UNLIMITED;
 ERL_NIF_TERM ATOM_EXPIRY_ENABLED;
 ERL_NIF_TERM ATOM_EXPIRY_MINUTES;
 ERL_NIF_TERM ATOM_WHOLE_FILE_EXPIRY;
-
+ERL_NIF_TERM ATOM_BUCKET_PROPS;
 
 
 // defining ServiceCallback here in eleveldb.cc to guarantee initialization timing
@@ -1411,6 +1411,7 @@ try
     ATOM(eleveldb::ATOM_EXPIRY_ENABLED, "expiry_enabled");
     ATOM(eleveldb::ATOM_EXPIRY_MINUTES, "expiry_minutes");
     ATOM(eleveldb::ATOM_WHOLE_FILE_EXPIRY, "whole_file_expiry");
+    ATOM(eleveldb::ATOM_BUCKET_PROPS, "bucket_props");
 #undef ATOM
 
     ERL_NIF_TERM option_list;
