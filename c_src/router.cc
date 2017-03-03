@@ -247,6 +247,30 @@ set_metadata_pid(
 
 }   // set_metadata_pid
 
+
+ERL_NIF_TERM
+remove_metadata_pid(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    // ignore if bad params
+    if (argc==1 && enif_is_pid(env, argv[0]))
+    {
+        ERL_NIF_TERM cur_pid;
+
+        if (gBucketPropCallback.GetPid(cur_pid) && argv[0]==cur_pid)
+            gBucketPropCallback.Disable();
+    }   // if
+    else
+    {
+        leveldb::Log(NULL, "eleveldb::remove_metadata_pid called with bad object (argc %d)", argc);
+    }   // else
+
+    return ATOM_OK;
+
+}   // set_metadata_pid
+
 } // namespace eleveldb
 
 
