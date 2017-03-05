@@ -188,7 +188,7 @@ parse_expiry_properties(
 
         if (option[0] == eleveldb::ATOM_EXPIRATION)
         {
-            opts.expiry_enabled = (option[1] == eleveldb::ATOM_ENABLED
+            opts.SetExpiryEnabled(option[1] == eleveldb::ATOM_ENABLED
                                    || option[1] == eleveldb::ATOM_ON
                                    || option[1] == eleveldb::ATOM_TRUE
                                    || 0==strcmp(buffer, "enabled")
@@ -200,23 +200,23 @@ parse_expiry_properties(
             if (option[1] == eleveldb::ATOM_UNLIMITED
                 || 0==strcmp(buffer, "unlimited"))
             {
-                opts.expiry_minutes = leveldb::ExpiryModule::kExpiryUnlimited;
+                opts.SetExpiryUnlimited(true);
             }   // else if
 
             // assume it is a cuttlefish duration string
             else if ('\0' != *buffer)
             {
-                opts.expiry_minutes = leveldb::CuttlefishDurationMinutes(buffer);
+                opts.SetExpiryMinutes(leveldb::CuttlefishDurationMinutes(buffer));
             }   // else
         }   // else if
         else if (option[0] == eleveldb::ATOM_EXPIRATION_MODE)
         {
             if (eleveldb::ATOM_WHOLE_FILE == option[1]
                 || 0==strcmp(buffer, "whole_file"))
-                opts.whole_file_expiry = true;
+                opts.SetWholeFileExpiryEnabled(true);
             else if (eleveldb::ATOM_PER_ITEM == option[1]
                      || 0==strcmp(buffer,"per_item"))
-                opts.whole_file_expiry = false;
+                opts.SetWholeFileExpiryEnabled(false);
             // else do nothing ... use global setting
 
         }   // else if

@@ -515,12 +515,12 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             {
                 if (NULL==opts.expiry_module.get())
                     opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule(&eleveldb::leveldb_callback));
-                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = true;
+                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->SetExpiryEnabled(true);
             }   // if
             else
             {
                 if (NULL!=opts.expiry_module.get())
-                    ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_enabled = false;
+                    ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->SetExpiryEnabled(false);
             }   // else
         }   // else if
         else if (option[0] == eleveldb::ATOM_EXPIRY_MINUTES)
@@ -530,14 +530,13 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             {
                 if (NULL==opts.expiry_module.get())
                     opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule(&eleveldb::leveldb_callback));
-                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_minutes = minutes;
+                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->SetExpiryMinutes(minutes);
             }   // if
             else if (option[1] == eleveldb::ATOM_UNLIMITED)
             {
                 if (NULL==opts.expiry_module.get())
                     opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule(&eleveldb::leveldb_callback));
-                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->expiry_minutes
-                    = leveldb::ExpiryModule::kExpiryUnlimited;
+                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->SetExpiryUnlimited(true);
             }   // else if
 
         }   // else if
@@ -547,12 +546,12 @@ ERL_NIF_TERM parse_open_option(ErlNifEnv* env, ERL_NIF_TERM item, leveldb::Optio
             {
                 if (NULL==opts.expiry_module.get())
                     opts.expiry_module.assign(leveldb::ExpiryModule::CreateExpiryModule(&eleveldb::leveldb_callback));
-                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = true;
+                ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->SetWholeFileExpiryEnabled(true);
             }   // if
             else if (option[1] == eleveldb::ATOM_PER_ITEM)
             {
                 if (NULL!=opts.expiry_module.get())
-                    ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->whole_file_expiry = false;
+                    ((leveldb::ExpiryModuleOS *)opts.expiry_module.get())->SetWholeFileExpiryEnabled(false);
             }   // else if
             // else take default setting ... do nothing.
         }   // else if
