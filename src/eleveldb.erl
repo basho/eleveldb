@@ -44,8 +44,10 @@
          iterator_close/1]).
 
 -export([property_cache/2,
+         property_cache_get/1,
          set_metadata_pid/2,
-         remove_metadata_pid/2]).
+         remove_metadata_pid/2,
+         get_metadata_pid/1]).
 
 -export_type([db_ref/0,
               itr_ref/0]).
@@ -344,6 +346,10 @@ validate_options(Type, Opts) ->
 property_cache(_BucketKey, _Properties) ->
     erlang:nif_error({error, not_loaded}).
 
+-spec property_cache_get(string()) -> badarg | einval | [{atom(), any()}].
+property_cache_get(_BucketKey) ->
+    erlang:nif_error({error, not_loaded}).
+
 -spec set_metadata_pid(atom(),pid()) -> ok.
 set_metadata_pid(_Context, _Pid) ->
     erlang:nif_error({error, not_loaded}).
@@ -351,6 +357,11 @@ set_metadata_pid(_Context, _Pid) ->
 -spec remove_metadata_pid(atom(),pid()) -> ok.
 remove_metadata_pid(_Context, _Pid) ->
     erlang:nif_error({error, not_loaded}).
+
+-spec get_metadata_pid(atom()) -> badarg | einval | pid().
+get_metadata_pid(_Context) ->
+    erlang:nif_error({error, not_loaded}).
+
 
 %% ===================================================================
 %% Internal functions
