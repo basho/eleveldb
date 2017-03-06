@@ -227,6 +227,70 @@ parse_expiry_properties(
 }   // parse_expiry_properties
 
 
+/**
+ * This routine retrieves data from the property cache
+ *  and formats into a list of property pairs.  This routine
+ *  is intended for unit tests, not production.
+ */
+ERL_NIF_TERM
+property_cache_get(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    ERL_NIF_TERM ret_term(ATOM_BADARG);
+
+    // ignore if bad params
+    if (argc==1 && enif_is_binary(env, argv[0]))
+    {
+        leveldb::ExpiryPropPtr_t cache;
+
+        const ERL_NIF_TERM& composite_bucket  = argv[0];
+        ErlNifBinary key_bin;
+
+        enif_inspect_binary(env, composite_bucket, &key_bin);
+        leveldb::Slice key_slice((const char *)key_bin.data, key_bin.size);
+
+        if (cache.Lookup(key_slice))
+        {
+            ERL_NIF_TERM enabled_tuple, minutes_tuple, whole_file_tuple;
+
+            // enabled
+            if (cache->IsExpiryEnabled())
+                enabled_tuple=enif_make_tuple2(env, ATOM_EXPIRY_ENABLED, ATOM_ENABLED);
+            else
+                enabled_tuple=enif_make_tuple2(env, ATOM_EXPIRY_ENABLED, ATOM_OFF);
+
+            // minutes
+            if (cache->IsExpiryUnlimited())
+                minutes_tuple=enif_make_tuple2(env, ATOM_EXPIRY_MINUTES, ATOM_UNLIMITED);
+            else
+            {
+                ERL_NIF_TERM minutes;
+                minutes=enif_make_int(env, cache->GetExpiryMinutes());
+                minutes_tuple=enif_make_tuple2(env, ATOM_EXPIRY_MINUTES, minutes);
+            }   // else
+
+            // whole file
+            if (cache->IsWholeFileExpiryEnabled())
+                whole_file_tuple=enif_make_tuple2(env, ATOM_EXPIRATION_MODE, ATOM_WHOLE_FILE);
+            else
+                whole_file_tuple=enif_make_tuple2(env, ATOM_EXPIRATION_MODE, ATOM_PER_ITEM);
+
+            ret_term=enif_make_list3(env, enabled_tuple, minutes_tuple, whole_file_tuple);
+        }   //if
+        else
+        {
+            ret_term=ATOM_EINVAL;
+        }   // else
+    }   // if
+
+    return(ret_term);
+
+}   // property_cache_get
+
+
+
 ERL_NIF_TERM
 set_metadata_pid(
     ErlNifEnv* env,
@@ -291,7 +355,49 @@ remove_metadata_pid(
 
     return ATOM_OK;
 
-}   // set_metadata_pid
+}   // remove_metadata_pid
+
+
+/**
+ * get_metadata_pid is used by unit tests to verify
+ *  actions of set_metadata_pid and remove_metadata_pid.
+ *  No production code is known to use this.
+ */
+ERL_NIF_TERM
+get_metadata_pid(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    ERL_NIF_TERM ret_term(ATOM_BADARG);
+
+    // ignore if bad params
+    if (argc==1)
+    {
+        ERL_NIF_TERM cur_pid;
+
+        // would use switch(argv[0]) but ATOM_BUCKET_PROPS is actually a
+        //  variable, not a constant
+        if (argv[0]==ATOM_BUCKET_PROPS)
+        {
+            if (gBucketPropCallback.GetPid(cur_pid))
+                ret_term=cur_pid;
+            else
+                ret_term=ATOM_EINVAL;
+        }   // if
+        else
+        {
+            ret_term=ATOM_BADARG;
+        }   // else
+    }   // if
+    else
+    {
+        ret_term=ATOM_BADARG;
+    }   // else
+
+    return ret_term;
+
+}   // get_metadata_pid
 
 } // namespace eleveldb
 
