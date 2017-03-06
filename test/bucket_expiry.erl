@@ -34,7 +34,8 @@ iterator_test_() ->
        fun cleanup/1,
        fun(Ref) ->
        [
-        set_remove_pid(Ref)
+        set_remove_pid(Ref),
+        set_verify_prop(Ref)
        ]
        end}]
     }.
@@ -73,7 +74,60 @@ set_remove_pid(_Ref) ->
             ?assertEqual(einval, eleveldb:get_metadata_pid(bucket_props))
     end.
 
-set_verify_prop(_Ref)
-{
-}
+set_verify_prop(_Ref) ->
+    %% riak_core_bucket:get_bucket(<<"default">>).
+
+    %% WARNING:  binary strings used for unit test ARE not representative
+    %%           of binary strings passed from leveldb
+
+    fun() ->
+            %% test 1: simulated default properties, using atoms
+            ok=eleveldb:property_cache(<<"default">>, [{name,<<"default">>},
+                                                       {allow_mult,false},
+                                                       {basic_quorum,false},
+                                                       {big_vclock,50},
+                                                       {chash_keyfun,{riak_core_util,chash_std_keyfun}},
+                                                       {default_time_to_live, <<"2345m">>},
+                                                       {dvv_enabled,false},
+                                                       {dw,quorum},
+                                                       {expiration, true},
+                                                       {expiration_mode, whole_file},
+                                                       {last_write_wins,false},
+                                                       {linkfun,{modfun,riak_kv_wm_link_walker,mapreduce_linkfun}},
+                                                       {n_val,3},
+                                                       {notfound_ok,true},
+                                                       {old_vclock,86400},
+                                                       {postcommit,[]},
+                                                       {pr,0},
+                                                       {precommit,[]},
+                                                       {pw,0},
+                                                       {r,quorum},
+                                                       {rw,quorum},
+                                                       {small_vclock,50},
+                                                       {w,quorum},
+                                                       {write_once,false},
+                                                       {young_vclock,20}]),
+              ?assertEqual([{expiry_enabled, enabled}, {expiry_minutes, 2345}, {expiration_mode, whole_file}],
+               eleveldb:property_cache_get(<<"default">>)),
+
+            %% test 2:  only relevant properties, using JSON strings
+            ok=eleveldb:property_cache(<<"test2">>, [{default_time_to_live, <<"2h5m">>},
+                                                       {expiration, <<"true">>},
+                                                       {expiration_mode, <<"whole_file">>}]),
+              ?assertEqual([{expiry_enabled, enabled}, {expiry_minutes, 125}, {expiration_mode, whole_file}],
+               eleveldb:property_cache_get(<<"test2">>)),
+
+            %% test 3:  different JSON strings, different property order
+            ok=eleveldb:property_cache(<<"test3">>, [{expiration, <<"on">>},
+                                                       {expiration_mode, per_item},
+                                                       {default_time_to_live, <<"30d">>}]),
+              ?assertEqual([{expiry_enabled, enabled}, {expiry_minutes, 43200}, {expiration_mode, per_item}],
+               eleveldb:property_cache_get(<<"test3">>)),
+
+
+               %% test 4:  be sure test 2 is still live
+              ?assertEqual([{expiry_enabled, enabled}, {expiry_minutes, 125}, {expiration_mode, whole_file}],
+               eleveldb:property_cache_get(<<"test2">>))
+    end.
+
 -endif.
