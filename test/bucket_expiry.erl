@@ -90,6 +90,11 @@ set_remove_pid(_Ref) ->
             ?assertEqual(einval, eleveldb:get_metadata_pid(bucket_props))
     end.
 
+
+%%
+%% Currently this test ALWAYS FAILS in open source build.  This is
+%%  due to the fact that property cache is not available in open source.
+%%
 set_verify_prop(_Ref) ->
     %% riak_core_bucket:get_bucket(<<"default">>).
 
