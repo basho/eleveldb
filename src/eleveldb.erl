@@ -350,11 +350,11 @@ property_cache(_BucketKey, _Properties) ->
 property_cache_get(_BucketKey) ->
     erlang:nif_error({error, not_loaded}).
 
--spec set_metadata_pid(atom(),pid()) -> ok.
+-spec set_metadata_pid(atom(),pid()) -> ok | {error, any()}.
 set_metadata_pid(_Context, _Pid) ->
     erlang:nif_error({error, not_loaded}).
 
--spec remove_metadata_pid(atom(),pid()) -> ok.
+-spec remove_metadata_pid(atom(),pid()) -> ok | {error, any()}.
 remove_metadata_pid(_Context, _Pid) ->
     erlang:nif_error({error, not_loaded}).
 

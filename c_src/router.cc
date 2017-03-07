@@ -35,6 +35,28 @@ namespace eleveldb {
 static ERL_NIF_TERM parse_expiry_properties(ErlNifEnv* env, ERL_NIF_TERM item,
                                             leveldb::ExpiryModuleOS& opts);
 
+// based upon error_tuple in c_src/eleveldb.cc
+static ERL_NIF_TERM
+error_tuple_message(
+    ErlNifEnv* Env,
+    ERL_NIF_TERM Error,
+    const char * Message)
+{
+    ERL_NIF_TERM err_term, msg_term;
+
+    if (NULL==Message || '\0'==*Message)
+        Message="(empty message)";
+
+    msg_term = enif_make_string(Env, Message, ERL_NIF_LATIN1);
+
+    err_term = enif_make_tuple2(Env, eleveldb::ATOM_ERROR,
+                                enif_make_tuple2(Env, Error, msg_term));
+    return(err_term);
+
+}   // error_tuple_message
+
+
+
 bool
 leveldb_callback(
     leveldb::EleveldbRouterActions_t Action,
@@ -123,6 +145,8 @@ property_cache(
     int argc,
     const ERL_NIF_TERM argv[])
 {
+    ERL_NIF_TERM ret_term(ATOM_BADARG);
+
     // ignore if bad params
     if (argc==2 && enif_is_binary(env, argv[0]) && enif_is_list(env, argv[1]))
     {
@@ -144,15 +168,19 @@ property_cache(
         fold(env, properties, parse_expiry_properties, *opt);
 
         // send insert command to prop_cache ... insert should broadcast to Wait()
-        if (!cache.Insert(key_slice, opt))
-            leveldb::Log(NULL, "eleveldb::property_cache cache.Insert failed");
+        if (cache.Insert(key_slice, opt))
+            ret_term=ATOM_OK;
+        else
+            ret_term=error_tuple_message(env, ATOM_EINVAL,
+                                         "eleveldb::property_cache cache.Insert failed");
     }   // if
     else
     {
-        leveldb::Log(NULL, "eleveldb::property_cache called with bad object (argc %d)", argc);
+        ret_term=error_tuple_message(env, ATOM_BADARG,
+                                     "eleveldb::property_cache called with bad arg count or arg types");
     }   // else
 
-    return ATOM_OK;
+    return(ret_term);
 
 }   // property_cache
 
@@ -297,6 +325,8 @@ set_metadata_pid(
     int argc,
     const ERL_NIF_TERM argv[])
 {
+    ERL_NIF_TERM ret_term;
+
     // ignore if bad params
     if (argc==2 && enif_is_pid(env, argv[1]))
     {
@@ -305,20 +335,21 @@ set_metadata_pid(
         if (argv[0]==ATOM_BUCKET_PROPS)
         {
             gBucketPropCallback.SetPid(argv[1]);
+            ret_term=ATOM_OK;
         }   // if
         else
         {
-            leveldb::Log(NULL,
-                         "eleveldb::set_metadata_pid called with unknown atom (argc %d)",
-                         argc);
+            ret_term=error_tuple_message(env, ATOM_BADARG,
+                                         "eleveldb::set_metadata_pid called with unknown atom");
         }   // else
     }   // if
     else
     {
-        leveldb::Log(NULL, "eleveldb::set_metadata_pid called with bad object (argc %d)", argc);
+        ret_term=error_tuple_message(env, ATOM_BADARG,
+                                     "eleveldb::set_metadata_pid called with bad arg count or pid");
     }   // else
 
-    return ATOM_OK;
+    return(ret_term);
 
 }   // set_metadata_pid
 
@@ -329,6 +360,8 @@ remove_metadata_pid(
     int argc,
     const ERL_NIF_TERM argv[])
 {
+    ERL_NIF_TERM ret_term(ATOM_BADARG);
+
     // ignore if bad params
     if (argc==2 && enif_is_pid(env, argv[1]))
     {
@@ -340,20 +373,21 @@ remove_metadata_pid(
         {
             if (gBucketPropCallback.GetPid(cur_pid) && argv[1]==cur_pid)
                 gBucketPropCallback.Disable();
+            ret_term=ATOM_OK;
         }   // if
         else
         {
-            leveldb::Log(NULL,
-                         "eleveldb::remove_metadata_pid called with unknown atom (argc %d)",
-                         argc);
+            ret_term=error_tuple_message(env, ATOM_BADARG,
+                                         "eleveldb::remove_metadata_pid called with unknown atom");
         }   // else
     }   // if
     else
     {
-        leveldb::Log(NULL, "eleveldb::remove_metadata_pid called with bad object (argc %d)", argc);
+        ret_term=error_tuple_message(env, ATOM_BADARG,
+                                     "eleveldb::remove_metadata_pid called with bad arg count or pid");
     }   // else
 
-    return ATOM_OK;
+    return ret_term;
 
 }   // remove_metadata_pid
 

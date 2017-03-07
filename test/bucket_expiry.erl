@@ -57,6 +57,14 @@ set_remove_pid(_Ref) ->
             ?assertEqual( einval, eleveldb:get_metadata_pid(bucket_props)),
             ?assertEqual( badarg, eleveldb:get_metadata_pid(no_arg)),
 
+            % wrong property name atom
+            Reply1 = eleveldb:set_metadata_pid(mystery_props, list_to_pid("<0.2.0>")),
+            ?assertMatch({error, {badarg, _}}, Reply1),
+
+            % wrong second parameter
+            Reply2 = eleveldb:set_metadata_pid(bucket_props, 42),
+            ?assertMatch({error, {badarg, _}}, Reply2),
+
             % simple set
             ok = eleveldb:set_metadata_pid(bucket_props, list_to_pid("<0.2.0>")),
             ?assertEqual(list_to_pid("<0.2.0>"), eleveldb:get_metadata_pid(bucket_props)),
@@ -64,6 +72,14 @@ set_remove_pid(_Ref) ->
             % update existing
             ok = eleveldb:set_metadata_pid(bucket_props, list_to_pid("<0.231.0>")),
             ?assertEqual(list_to_pid("<0.231.0>"), eleveldb:get_metadata_pid(bucket_props)),
+
+            % remove: wrong property name atom
+            Reply3 = eleveldb:remove_metadata_pid(mystery_props, list_to_pid("<0.2.0>")),
+            ?assertMatch({error, {badarg, _}}, Reply3),
+
+            % remove: wrong second parameter
+            Reply4 = eleveldb:remove_metadata_pid(bucket_props, 42),
+            ?assertMatch({error, {badarg, _}}, Reply4),
 
             % remove old (should do nothing)
             ok = eleveldb:remove_metadata_pid(bucket_props, list_to_pid("<0.2.0>")),
