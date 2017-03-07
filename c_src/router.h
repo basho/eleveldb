@@ -29,6 +29,8 @@
 
 // options.h brings in expiry.h
 #include "leveldb/options.h"
+#include "port/port.h"
+#include "util/mutexlock.h"
 
 namespace eleveldb {
 
@@ -44,17 +46,21 @@ ERL_NIF_TERM get_metadata_pid(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[
 
 struct ServiceCallback
 {
-    bool m_PidSet;              // true if Riak service initialized pid
-    ERL_NIF_TERM m_CallbackPid; // destination for callback messages
+    leveldb::port::Spin m_RaceLock; // protection against Erlang vs eleveldb thread races
+    bool m_PidSet;                  // true if Riak service initialized pid
+    ERL_NIF_TERM m_CallbackPid;     // destination for callback messages
 
     ServiceCallback()
     : m_PidSet(false), m_CallbackPid(0) {};
 
     ~ServiceCallback() {m_PidSet=false;};
 
-    void SetPid(const ERL_NIF_TERM & Pid) {m_CallbackPid=Pid; m_PidSet=true;};
-    bool GetPid(ERL_NIF_TERM & Pid) {Pid=m_CallbackPid; return(m_PidSet);};
-    void Disable() {m_PidSet=false;};
+    void SetPid(const ERL_NIF_TERM & Pid)
+        {leveldb::SpinLock l(&m_RaceLock); m_CallbackPid=Pid; m_PidSet=true;};
+    bool GetPid(ERL_NIF_TERM & Pid)
+        {leveldb::SpinLock l(&m_RaceLock); Pid=m_CallbackPid; return(m_PidSet);};
+    void Disable()
+        {leveldb::SpinLock l(&m_RaceLock); m_PidSet=false;};
 };
 
 extern ServiceCallback gBucketPropCallback;
