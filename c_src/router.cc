@@ -318,6 +318,22 @@ property_cache_get(
 }   // property_cache_get
 
 
+/**
+ * NEVER USE THIS IN PRODUCTION
+ *  this is to support integration testing
+ */
+ERL_NIF_TERM
+property_cache_flush(
+    ErlNifEnv* env,
+    int argc,
+    const ERL_NIF_TERM argv[])
+{
+    leveldb::PropertyCache::Flush();
+
+    return(ATOM_OK);
+
+}   // property_cache_flush
+
 
 ERL_NIF_TERM
 set_metadata_pid(

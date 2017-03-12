@@ -45,6 +45,7 @@
 
 -export([property_cache/2,
          property_cache_get/1,
+         property_cache_flush/0,
          set_metadata_pid/2,
          remove_metadata_pid/2,
          get_metadata_pid/1]).
@@ -348,6 +349,12 @@ property_cache(_BucketKey, _Properties) ->
 
 -spec property_cache_get(string()) -> badarg | einval | [{atom(), any()}].
 property_cache_get(_BucketKey) ->
+    erlang:nif_error({error, not_loaded}).
+
+%% do NOT use property_cache_flush in production ...
+%%   it's a segfault waiting to happen
+-spec property_cache_flush() -> ok.
+property_cache_flush() ->
     erlang:nif_error({error, not_loaded}).
 
 -spec set_metadata_pid(atom(),pid()) -> ok | {error, any()}.

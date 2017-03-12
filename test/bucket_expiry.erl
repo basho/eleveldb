@@ -148,7 +148,12 @@ set_verify_prop(_Ref) ->
 
                %% test 4:  be sure test 2 is still live
               ?assertEqual([{expiry_enabled, enabled}, {expiry_minutes, 125}, {expiration_mode, whole_file}],
-               eleveldb:property_cache_get(<<"test2">>))
+                           eleveldb:property_cache_get(<<"test2">>)),
+
+            %% test 5: does flush work?
+            ok=eleveldb:property_cache_flush(),
+            ?assertEqual(einval, eleveldb:property_cache_get(<<"test2">>))
+
     end.
 
 -endif.

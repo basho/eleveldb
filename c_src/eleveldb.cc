@@ -82,6 +82,7 @@ static ErlNifFunc nif_funcs[] =
 
     {"property_cache", 2, eleveldb::property_cache},
     {"property_cache_get", 1, eleveldb::property_cache_get},
+    {"property_cache_flush", 0, eleveldb::property_cache_flush},
     {"set_metadata_pid", 2, eleveldb::set_metadata_pid},
     {"remove_metadata_pid", 2, eleveldb::remove_metadata_pid},
     {"get_metadata_pid", 1, eleveldb::get_metadata_pid}
