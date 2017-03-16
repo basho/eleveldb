@@ -39,7 +39,7 @@ basic_schema_test() ->
     cuttlefish_unit:assert_not_configured(Config, "eleveldb.tiered_fast_prefix"),
     cuttlefish_unit:assert_not_configured(Config, "eleveldb.tiered_slow_prefix"),
     cuttlefish_unit:assert_config(Config, "eleveldb.expiry_enabled", false),
-    cuttlefish_unit:assert_config(Config, "eleveldb.expiry_minutes", 0),
+    cuttlefish_unit:assert_config(Config, "eleveldb.expiry_minutes", unlimited),
     cuttlefish_unit:assert_config(Config, "eleveldb.whole_file_expiry", true),
 
     %% Make sure no multi_backend
@@ -205,7 +205,7 @@ expiry_minutes_schema_test() ->
         ["../priv/eleveldb.schema"], Case2, context(), predefined_schema()),
 
     cuttlefish_unit:assert_config(Config2, "eleveldb.expiry_enabled", true),
-    cuttlefish_unit:assert_config(Config2, "eleveldb.expiry_minutes", 0),
+    cuttlefish_unit:assert_config(Config2, "eleveldb.expiry_minutes", unlimited),
     cuttlefish_unit:assert_config(Config2, "eleveldb.whole_file_expiry", false),
 
     ok.
@@ -241,7 +241,7 @@ multi_backend_test() ->
     cuttlefish_unit:assert_config(DefaultBackend, "fadvise_willneed", false),
     cuttlefish_unit:assert_config(DefaultBackend, "delete_threshold", 1000),
     cuttlefish_unit:assert_config(DefaultBackend, "expiry_enabled", false),
-    cuttlefish_unit:assert_config(DefaultBackend, "expiry_minutes", 0),
+    cuttlefish_unit:assert_config(DefaultBackend, "expiry_minutes", unlimited),
     cuttlefish_unit:assert_config(DefaultBackend, "whole_file_expiry", true),
     ok.
 
