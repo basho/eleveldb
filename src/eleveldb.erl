@@ -121,6 +121,7 @@ init() ->
                          {tiered_slow_level, pos_integer()} |
                          {tiered_fast_prefix, string()} |
                          {tiered_slow_prefix, string()} |
+                         {antidote, boolean()} |
                          {cache_object_warming, boolean()} |
                          {expiry_enabled, boolean()} |
                          {expiry_minutes, pos_integer()} |
