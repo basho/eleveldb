@@ -43,21 +43,20 @@
          iterator_move/2,
          iterator_close/1]).
 
+-export([property_cache/2,
+         property_cache_get/1,
+         property_cache_flush/0,
+         set_metadata_pid/2,
+         remove_metadata_pid/2,
+         get_metadata_pid/1]).
+
 -export_type([db_ref/0,
               itr_ref/0]).
 
 -on_load(init/0).
 
 -ifdef(TEST).
--export([
-    assert_close/1,
-    assert_open/1,
-    assert_open/2,
-    assert_open_small/1,
-    create_test_dir/0,
-    delete_test_dir/1,
-    terminal_format/2
-]).
+-compile(export_all).
 -ifdef(EQC).
 -include_lib("eqc/include/eqc.hrl").
 -define(QC_OUT(P), eqc:on_output(fun terminal_format/2, P)).
@@ -81,6 +80,7 @@
         end).
 
 -define(COMPRESSION_ENUM, [snappy, lz4, false]).
+-define(EXPIRY_ENUM, [unlimited, integer]).
 
 -spec init() -> ok | {error, any()}.
 init() ->
@@ -331,7 +331,7 @@ option_types(open) ->
      {tiered_slow_prefix, any},
      {cache_object_warming, bool},
      {expiry_enabled, bool},
-     {expiry_minutes, integer},
+     {expiry_minutes, ?EXPIRY_ENUM},
      {whole_file_expiry, bool}];
 
 option_types(read) ->
@@ -350,6 +350,31 @@ validate_options(Type, Opts) ->
                             validate_type(KType, V)
                     end, Opts).
 
+-spec property_cache(string(), string()) -> ok.
+property_cache(_BucketKey, _Properties) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec property_cache_get(string()) -> badarg | einval | [{atom(), any()}].
+property_cache_get(_BucketKey) ->
+    erlang:nif_error({error, not_loaded}).
+
+%% do NOT use property_cache_flush in production ...
+%%   it's a segfault waiting to happen
+-spec property_cache_flush() -> ok.
+property_cache_flush() ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec set_metadata_pid(atom(),pid()) -> ok | {error, any()}.
+set_metadata_pid(_Context, _Pid) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec remove_metadata_pid(atom(),pid()) -> ok | {error, any()}.
+remove_metadata_pid(_Context, _Pid) ->
+    erlang:nif_error({error, not_loaded}).
+
+-spec get_metadata_pid(atom()) -> badarg | einval | pid().
+get_metadata_pid(_Context) ->
+    erlang:nif_error({error, not_loaded}).
 
 
 %% ===================================================================
@@ -404,14 +429,16 @@ fold_loop({ok, K, V}, Itr, Fun, Acc0) ->
     Acc = Fun({K, V}, Acc0),
     fold_loop(iterator_move(Itr, prefetch), Itr, Fun, Acc).
 
-validate_type({_Key, bool}, true)                            -> true;
-validate_type({_Key, bool}, false)                           -> true;
-validate_type({_Key, integer}, Value) when is_integer(Value) -> true;
-validate_type({_Key, any}, _Value)                           -> true;
-validate_type({_Key, ?COMPRESSION_ENUM}, snappy)             -> true;
-validate_type({_Key, ?COMPRESSION_ENUM}, lz4)                -> true;
-validate_type({_Key, ?COMPRESSION_ENUM}, false)              -> true;
-validate_type(_, _)                                          -> false.
+validate_type({_Key, bool}, true)                                  -> true;
+validate_type({_Key, bool}, false)                                 -> true;
+validate_type({_Key, integer}, Value) when is_integer(Value)       -> true;
+validate_type({_Key, any}, _Value)                                 -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, snappy)                   -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, lz4)                      -> true;
+validate_type({_Key, ?COMPRESSION_ENUM}, false)                    -> true;
+validate_type({_Key, ?EXPIRY_ENUM}, unlimited)                     -> true;
+validate_type({_Key, ?EXPIRY_ENUM}, Value) when is_integer(Value)  -> true;
+validate_type(_, _)                                                -> false.
 
 
 %% ===================================================================
