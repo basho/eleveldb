@@ -511,7 +511,6 @@ ItrObject::ItrObjectResourceCleanup(
     if (leveldb::compare_and_swap(&erl_ptr->m_ItrPtr, itr_ptr, (ItrObject *)NULL)
         && NULL!=itr_ptr)
     {
-        leveldb::gPerfCounters->Inc(leveldb::ePerfDebug3);
         itr_ptr->InitiateCloseRequest();
     }   // if
 
