@@ -706,7 +706,7 @@ async_open(
     // 4. fail safe when no guidance given
     if (0==priv.m_Opts.m_TotalMem && 0==priv.m_Opts.m_TotalMemPercent)
     {
-        if (8*1024*1024*1024L < gCurrentTotalMemory)
+        if (8*1024*1024*1024LL < gCurrentTotalMemory)
             use_memory=(gCurrentTotalMemory * 80)/100;  // integer percent
         else
             use_memory=(gCurrentTotalMemory * 25)/100;  // integer percent
