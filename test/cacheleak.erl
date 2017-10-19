@@ -66,7 +66,7 @@ cacheleak_loop(Count, Blobs, MaxFinalRSS, TestDir) when Count < ?TEST_LOOPS ->
                 ?assertEqual({ok, Val}, eleveldb:get(Ref, Key, []))
             end, Blobs),
         eleveldb:assert_close(Ref),
-        GCCed = erlang:garbage_collect(),
+        erlang:garbage_collect(),
         eleveldb:terminal_format("RSS ~2b: ~p\n", [Count, rssmem()])
     end,
     {_Pid, Mon} = erlang:spawn_monitor(F),
