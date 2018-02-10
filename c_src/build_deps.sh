@@ -14,13 +14,10 @@ SNAPPY_VSN="1.0.4"
 
 set -e
 
-if [ `basename $PWD` != "c_src" ]; then
-    # originally "pushd c_src" of bash
-    # but no need to use directory stack push here
-    cd c_src
-fi
+DIRNAME=`dirname $0`
 
-BASEDIR="$PWD"
+BASEDIR=`readlink -f $DIRNAME`
+cd $BASEDIR
 
 # detecting gmake and if exists use it
 # if not use make
