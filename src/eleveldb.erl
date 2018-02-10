@@ -59,6 +59,7 @@
     terminal_format/2
 ]).
 -ifdef(EQC).
+-export([prop_put_delete/0, prop_put_delete_always/0]).
 -include_lib("eqc/include/eqc.hrl").
 -define(QC_OUT(P), eqc:on_output(fun terminal_format/2, P)).
 -endif. % EQC
@@ -692,9 +693,6 @@ run_load(TestDir, IntSeq) ->
 
 -ifdef(EQC).
 
-qc(P) ->
-    ?assert(eqc:quickcheck(?QC_OUT(P))).
-
 keys() ->
     eqc_gen:non_empty(list(eqc_gen:non_empty(binary()))).
 
@@ -723,7 +721,8 @@ apply_kv_ops([{delete, K, _} | Rest], Ref, Acc0) ->
     ?assertEqual(ok, ?MODULE:delete(Ref, K, [])),
     apply_kv_ops(Rest, Ref, orddict:store(K, deleted, Acc0)).
 
-prop_put_delete(TestDir) ->
+prop_put_delete() ->
+    TestDir = create_test_dir(),
     ?LET({Keys, Values}, {keys(), values()},
         ?FORALL(Ops, eqc_gen:non_empty(list(ops(Keys, Values))),
             begin
@@ -747,40 +746,9 @@ prop_put_delete(TestDir) ->
                 true
             end)).
 
-prop_put_delete_test_() ->
-    Timeout1 = 10,
-    Timeout2 = 15,
-    {foreach,
-        fun create_test_dir/0,
-        fun delete_test_dir/1,
-        [
-            fun(TestRoot) ->
-                TestDir = filename:join(TestRoot, "putdelete.qc"),
-                InnerTO = Timeout1,
-                OuterTO = (InnerTO * 3),
-                Title   = "Without ?ALWAYS()",
-                TestFun = fun() ->
-                    qc(eqc:testing_time(InnerTO, prop_put_delete(TestDir)))
-                end,
-                {timeout, OuterTO, {Title, TestFun}}
-            end,
-            fun(TestRoot) ->
-                TestDir = filename:join(TestRoot, "putdelete.qc"),
-                InnerTO = Timeout2,
-                OuterTO = (InnerTO * 10),
-                AwCount = (InnerTO * 9),
-                %% We use the ?ALWAYS(AwCount, ...) wrapper as a regression test.
-                %% It's not clear how this is effectively different than the first
-                %% fixture, but I'm leaving it here in case I'm missing something.
-                Title   = lists:flatten(io_lib:format("With ?ALWAYS(~b)", [AwCount])),
-                TestFun = fun() ->
-                    qc(eqc:testing_time(InnerTO,
-                        ?ALWAYS(AwCount, prop_put_delete(TestDir))))
-                end,
-                {timeout, OuterTO, {Title, TestFun}}
-            end
-        ]
-    }.
+prop_put_delete_always() ->
+    AwCount= 15*9,
+    ?ALWAYS(AwCount, prop_put_delete()).
 
 -endif. % EQC
 

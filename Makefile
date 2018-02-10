@@ -1,20 +1,22 @@
-REBAR ?= ./rebar
+.PHONY: compile rel cover test dialyzer
+REBAR=./rebar3
 
-all: compile
-
-get-deps:
-	./c_src/build_deps.sh get-deps
-
-deps:
-	${REBAR} get-deps
-
-rm-deps:
-	./c_src/build_deps.sh rm-deps
-
-compile: deps
-	${REBAR} compile
+compile:
+	$(REBAR) compile
 
 clean:
-	${REBAR} clean
+	$(REBAR) clean
 
-include tools.mk
+cover: test
+	$(REBAR) cover
+
+test: compile
+	$(REBAR) as test do eunit
+
+dialyzer:
+	$(REBAR) dialyzer
+
+xref:
+	$(REBAR) xref
+
+check: test dialyzer xref
