@@ -2,6 +2,17 @@
 
 [![Build Status](https://secure.travis-ci.org/basho/eleveldb.png?branch=master)](http://travis-ci.org/basho/eleveldb)
 
+# Build pre-requisites
+
+Snappy compression libary 
+
+| OS            | Command                         |
+| ------------- | -------------                   |
+| Debian        | `apt-get install libsnappy-dev` |
+| RHEL          | `yum install snappy-devel`      |
+| Alpine        | `apk add snappy-dev`            |
+| Iluminos      | `pkgin install snappy`          |
+
 # Iterating Records
 
 ## High-level Iterator Interface
