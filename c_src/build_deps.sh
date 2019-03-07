@@ -64,7 +64,9 @@ case "$1" in
 
     *)
         export MACOSX_DEPLOYMENT_TARGET=10.8
-
+        export CFLAGS="$CFLAGS -I $BASEDIR/system/include -stdlib=libc++"
+        export CXXFLAGS="$CXXFLAGS -I $BASEDIR/system/include -stdlib=libc++"
+        
         if [ ! -d snappy-$SNAPPY_VSN ]; then
             tar -xzf snappy-$SNAPPY_VSN.tar.gz
             (cd snappy-$SNAPPY_VSN && ./configure --disable-shared --prefix=$BASEDIR/system --libdir=$BASEDIR/system/lib --with-pic)
@@ -74,8 +76,7 @@ case "$1" in
             (cd snappy-$SNAPPY_VSN && $MAKE && $MAKE install)
         fi
 
-        export CFLAGS="$CFLAGS -I $BASEDIR/system/include"
-        export CXXFLAGS="$CXXFLAGS -I $BASEDIR/system/include"
+        
         export LDFLAGS="$LDFLAGS -L$BASEDIR/system/lib"
         export LD_LIBRARY_PATH="$BASEDIR/system/lib:$LD_LIBRARY_PATH"
         export LEVELDB_VSN="$LEVELDB_VSN"
@@ -83,9 +84,7 @@ case "$1" in
         if [ ! -d leveldb ]; then
             git clone https://github.com/basho/leveldb
             (cd leveldb && git checkout $LEVELDB_VSN)
-            if [ $BASHO_EE = "1" ]; then
-                (cd leveldb && git submodule update --init)
-            fi
+            (cd leveldb && git submodule update --init)
         fi
 
         # hack issue where high level make is running -j 4
