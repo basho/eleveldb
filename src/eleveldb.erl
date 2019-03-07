@@ -43,6 +43,10 @@
          iterator_move/2,
          iterator_close/1]).
 
+%% do_fold exported so that the process of snapshotting the database can be 
+%% separated from the process of running the fold
+-export([do_fold/4]).
+
 -export_type([db_ref/0,
               itr_ref/0]).
 
