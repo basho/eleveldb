@@ -68,7 +68,7 @@ case "$1" in
         export CFLAGS="$CFLAGS -I $BASEDIR/system/include"
         export CXXFLAGS="$CXXFLAGS -I $BASEDIR/system/include"
         # On GCC, we pick libc's memcmp over GCC's memcmp via -fno-builtin-memcmp
-        if [ "$TARGET_OS" == "Darwin" ]; then
+        if [ "$TARGET_OS" = "Darwin" ]; then
             export MACOSX_DEPLOYMENT_TARGET=10.8
             export CFLAGS="$CFLAGS -stdlib=libc++"
             export CXXFLAGS="$CXXFLAGS -stdlib=libc++"
