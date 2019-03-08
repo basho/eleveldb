@@ -63,9 +63,16 @@ case "$1" in
         ;;
 
     *)
-        export MACOSX_DEPLOYMENT_TARGET=10.8
-        export CFLAGS="$CFLAGS -I $BASEDIR/system/include -stdlib=libc++"
-        export CXXFLAGS="$CXXFLAGS -I $BASEDIR/system/include -stdlib=libc++"
+        TARGET_OS=`uname -s`
+
+        export CFLAGS="$CFLAGS -I $BASEDIR/system/include"
+        export CXXFLAGS="$CXXFLAGS -I $BASEDIR/system/include"
+        # On GCC, we pick libc's memcmp over GCC's memcmp via -fno-builtin-memcmp
+        if [ "$TARGET_OS" == "Darwin" ]; then
+            export MACOSX_DEPLOYMENT_TARGET=10.8
+            export CFLAGS="$CFLAGS -stdlib=libc++"
+            export CXXFLAGS="$CXXFLAGS -stdlib=libc++"
+        fi
         
         if [ ! -d snappy-$SNAPPY_VSN ]; then
             tar -xzf snappy-$SNAPPY_VSN.tar.gz
