@@ -8,7 +8,7 @@ if [ `uname -s` = 'SunOS' -a "${POSIX_SHELL}" != "true" ]; then
 fi
 unset POSIX_SHELL # clear it so if we invoke other scripts, they run as ksh as well
 
-LEVELDB_VSN="2.0.34"
+LEVELDB_VSN="2.0.35"
 
 SNAPPY_VSN="1.0.4"
 
@@ -56,17 +56,24 @@ case "$1" in
 
     get-deps)
         if [ ! -d leveldb ]; then
-            git clone git://github.com/basho/leveldb
+            git clone https://github.com/basho/leveldb
             (cd leveldb && git checkout $LEVELDB_VSN)
-            if [ "$BASHO_EE" = "1" ]; then
-                (cd leveldb && git submodule update --init)
-            fi
+            (cd leveldb && git submodule update --init)
         fi
         ;;
 
     *)
-        export MACOSX_DEPLOYMENT_TARGET=10.8
+        TARGET_OS=`uname -s`
 
+        export CFLAGS="$CFLAGS -I $BASEDIR/system/include"
+        export CXXFLAGS="$CXXFLAGS -I $BASEDIR/system/include"
+        # On GCC, we pick libc's memcmp over GCC's memcmp via -fno-builtin-memcmp
+        if [ "$TARGET_OS" = "Darwin" ]; then
+            export MACOSX_DEPLOYMENT_TARGET=10.8
+            export CFLAGS="$CFLAGS -stdlib=libc++"
+            export CXXFLAGS="$CXXFLAGS -stdlib=libc++"
+        fi
+        
         if [ ! -d snappy-$SNAPPY_VSN ]; then
             tar -xzf snappy-$SNAPPY_VSN.tar.gz
             (cd snappy-$SNAPPY_VSN && ./configure --disable-shared --prefix=$BASEDIR/system --libdir=$BASEDIR/system/lib --with-pic)
@@ -76,18 +83,15 @@ case "$1" in
             (cd snappy-$SNAPPY_VSN && $MAKE && $MAKE install)
         fi
 
-        export CFLAGS="$CFLAGS -I $BASEDIR/system/include"
-        export CXXFLAGS="$CXXFLAGS -I $BASEDIR/system/include"
+        
         export LDFLAGS="$LDFLAGS -L$BASEDIR/system/lib"
         export LD_LIBRARY_PATH="$BASEDIR/system/lib:$LD_LIBRARY_PATH"
         export LEVELDB_VSN="$LEVELDB_VSN"
 
         if [ ! -d leveldb ]; then
-            git clone git://github.com/basho/leveldb
+            git clone https://github.com/basho/leveldb
             (cd leveldb && git checkout $LEVELDB_VSN)
-            if [ $BASHO_EE = "1" ]; then
-                (cd leveldb && git submodule update --init)
-            fi
+            (cd leveldb && git submodule update --init)
         fi
 
         # hack issue where high level make is running -j 4
