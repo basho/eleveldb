@@ -50,6 +50,10 @@
 -export_type([db_ref/0,
               itr_ref/0]).
 
+%% do_fold exported so that the process of snapshotting the database can be 
+%% separated from the process of running the fold
+-export([do_fold/4]).
+
 -on_load(init/0).
 
 -ifdef(TEST).
