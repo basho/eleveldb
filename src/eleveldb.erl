@@ -132,14 +132,14 @@ init() ->
                          {whole_file_expiry, boolean()}
                         ].
 
--type read_option() :: {verify_checksums, boolean()} |
-                       {fill_cache, boolean()} |
-                       {iterator_refresh, boolean()}.
+-type read_options() :: [{verify_checksums, boolean()} |
+                        {fill_cache, boolean()} |
+                        {iterator_refresh, boolean()}].
 
--type read_options() :: [read_option()].
-
--type fold_option()  :: {first_key, Key::binary()}.
--type fold_options() :: [fold_option() | read_options()].
+-type fold_options() :: [{verify_checksums, boolean()} |
+                        {fill_cache, boolean()} |
+                        {iterator_refresh, boolean()} |
+                        {first_key, Key::binary()}].
 
 -type write_options() :: [{sync, boolean()}].
 
