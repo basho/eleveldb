@@ -205,11 +205,11 @@ async_put(Ref, Context, Key, Value, Opts) ->
 async_write(_CallerRef, _Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
--spec async_iterator(reference(), db_ref(), read_options()) -> ok.
+-spec async_iterator(reference(), db_ref(), fold_options()) -> ok.
 async_iterator(_CallerRef, _Ref, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
--spec async_iterator(reference(), db_ref(), read_options(), keys_only) -> ok.
+-spec async_iterator(reference(), db_ref(), fold_options(), keys_only) -> ok.
 async_iterator(_CallerRef, _Ref, _Opts, keys_only) ->
     erlang:nif_error({error, not_loaded}).
 
