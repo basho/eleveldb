@@ -213,13 +213,17 @@ async_iterator(_CallerRef, _Ref, _Opts) ->
 async_iterator(_CallerRef, _Ref, _Opts, keys_only) ->
     erlang:nif_error({error, not_loaded}).
 
--spec iterator(db_ref(), read_options()) -> {ok, itr_ref()}.
+-spec iterator(db_ref(), fold_options()) -> {ok, itr_ref()}.
+%% Note that only read_options may influence the iterator, if the first_key
+%% is to be set, it must be done through explicitly calling iterator_move 
 iterator(Ref, Opts) ->
     CallerRef = make_ref(),
     async_iterator(CallerRef, Ref, Opts),
     ?WAIT_FOR_REPLY(CallerRef).
 
--spec iterator(db_ref(), read_options(), keys_only) -> {ok, itr_ref()}.
+-spec iterator(db_ref(), fold_options(), keys_only) -> {ok, itr_ref()}.
+%% Note that only read_options may influence the iterator, if the first_key
+%% is to be set, it must be done through explicitly calling iterator_move
 iterator(Ref, Opts, keys_only) ->
     CallerRef = make_ref(),
     async_iterator(CallerRef, Ref, Opts, keys_only),
@@ -270,7 +274,7 @@ fold(Ref, Fun, Acc0, Opts) ->
 
 %% Fold over the keys in the database
 %% will throw an exception if the database is closed while the fold runs
--spec fold_keys(db_ref(), fold_keys_fun(), any(), read_options()) -> any().
+-spec fold_keys(db_ref(), fold_keys_fun(), any(), fold_options()) -> any().
 fold_keys(Ref, Fun, Acc0, Opts) ->
     {ok, Itr} = iterator(Ref, Opts, keys_only),
     do_fold(Itr, Fun, Acc0, Opts).
