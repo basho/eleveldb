@@ -139,7 +139,7 @@ init() ->
 -type read_options() :: [read_option()].
 
 -type fold_option()  :: {first_key, Key::binary()}.
--type fold_options() :: [read_option() | fold_option()].
+-type fold_options() :: [fold_option() | read_options()].
 
 -type write_options() :: [{sync, boolean()}].
 
