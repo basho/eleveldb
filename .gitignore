@@ -12,3 +12,4 @@ c_src/system
 .local_dialyzer_plt
 .rebar
 _build
+.DS_Store
