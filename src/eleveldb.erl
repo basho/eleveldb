@@ -26,6 +26,7 @@
          get/3,
          put/4,
          async_put/5,
+         async_put2/5,
          delete/3,
          write/3,
          fold/4,
@@ -187,16 +188,44 @@ delete(Ref, Key, Opts) -> write(Ref, [{delete, Key}], Opts).
 -spec write(db_ref(), write_actions(), write_options()) -> ok | {error, any()}.
 write(Ref, Updates, Opts) ->
     CallerRef = make_ref(),
-    async_write(CallerRef, Ref, Updates, Opts),
-    ?WAIT_FOR_REPLY(CallerRef).
+    case async_write(CallerRef, Ref, Updates, Opts) of
+        CallerRef ->
+            ?WAIT_FOR_REPLY(CallerRef);
+        Anything -> Anything
+    end.
 
+%% Legacy interface.
+%%
+%% `async_write/4' formerly always returned `ok' and sent a message to
+%% the caller.
+%%
+%% Now `async_write' returns the context if a message will be sent; if
+%% it returns `ok' then we must generate that message ourselves for
+%% code that does not know about the new `async_put2/5' interface.
 -spec async_put(db_ref(), reference(), binary(), binary(), write_options()) -> ok.
 async_put(Ref, Context, Key, Value, Opts) ->
     Updates = [{put, Key, Value}],
-    async_write(Context, Ref, Updates, Opts),
-    ok.
+    case async_write(Context, Ref, Updates, Opts) of
+        Context ->
+            ok;
+        ok ->
+            self() ! {Context, ok},
+            ok
+    end.
 
--spec async_write(reference(), db_ref(), write_actions(), write_options()) -> ok.
+%% New (as of November 2016) interface to `async_write/4'.
+%%
+%% `async_write/4' intelligently decides whether to write the data
+%% immediately. If it does so, it returns `ok'. If it will write
+%% asynchronously, it returns the context so that the caller can wait
+%% for a message indicating completion or error.
+-spec async_put2(db_ref(), reference(), binary(), binary(), write_options()) -> ok.
+async_put2(Ref, Context, Key, Value, Opts) ->
+    Updates = [{put, Key, Value}],
+    async_write(Context, Ref, Updates, Opts).
+
+-spec async_write(term(), db_ref(), write_actions(), write_options()) ->
+                         ok | {error, any()} | term().
 async_write(_CallerRef, _Ref, _Updates, _Opts) ->
     erlang:nif_error({error, not_loaded}).
 
