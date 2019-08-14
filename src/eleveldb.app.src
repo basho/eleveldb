@@ -1,6 +1,6 @@
 {application, eleveldb,
  [
-  {description, ""},
+  {description, "the eleveldb application"},
   {vsn, git},
   {registered, []},
   {applications, [
