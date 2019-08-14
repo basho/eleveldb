@@ -1,4 +1,4 @@
-REBAR ?= ./rebar
+REBAR ?= rebar3
 
 compile-no-deps:
 	${REBAR} compile skip_deps=true

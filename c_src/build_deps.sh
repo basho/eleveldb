@@ -8,7 +8,7 @@ if [ `uname -s` = 'SunOS' -a "${POSIX_SHELL}" != "true" ]; then
 fi
 unset POSIX_SHELL # clear it so if we invoke other scripts, they run as ksh as well
 
-LEVELDB_VSN="2.0.34"
+LEVELDB_VSN="develop"
 
 set -e
 
@@ -84,8 +84,9 @@ case "$1" in
         export MAKEFLAGS=
 
         (cd leveldb && $MAKE -j 3 all)
-        (cd leveldb && $MAKE -j 3 tools)
-        (cp leveldb/perf_dump leveldb/sst_rewrite leveldb/sst_scan leveldb/leveldb_repair ../priv)
+        #disable tools building for now
+        #(cd leveldb && $MAKE -j 3 tools)
+        ##(cp leveldb/perf_dump leveldb/sst_rewrite leveldb/sst_scan leveldb/leveldb_repair ../priv)
 
         ;;
 esac

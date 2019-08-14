@@ -1,0 +1,26 @@
+FROM alpine
+
+RUN apk update 
+
+RUN apk add snappy-dev build-base 
+
+
+RUN apk add erlang-asn1 erlang-common-test erlang-compiler erlang-crypto erlang-erl-interface erlang-erts erlang-et erlang-eunit erlang-hipe erlang-inets erlang-kernel erlang-os-mon erlang-parsetools erlang-public-key erlang-reltool erlang-runtime-tools erlang-sasl erlang-stdlib erlang-syntax-tools erlang-tools  erlang-ssl
+
+
+RUN apk add git erlang-dev 
+
+RUN apk add util-linux
+
+
+## build will fail when using busybox version of 'expr' as per https://gitlab.alpinelinux.org/alpine/aports/issues/8121
+
+RUN apk add coreutils
+
+RUN apk --no-cache add --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing rebar3
+
+WORKDIR /opt/app
+
+COPY . ./
+
+RUN DEBUG=1 rebar3 compile

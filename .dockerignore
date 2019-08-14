@@ -12,3 +12,4 @@ c_src/system
 .rebar
 _build
 be_test
+Dockerfile*
