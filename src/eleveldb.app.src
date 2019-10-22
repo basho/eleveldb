@@ -1,6 +1,6 @@
 {application, eleveldb,
  [
-  {description, ""},
+  {description, "Erlang wrapper to Basho-modified leveldb store"},
   {vsn, git},
   {registered, []},
   {applications, [
