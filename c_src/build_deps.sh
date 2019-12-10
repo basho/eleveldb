@@ -73,7 +73,7 @@ case "$1" in
         fi
 
         if [ ! -f system/lib/libsnappy.a ]; then
-            (cd snappy-$SNAPPY_VSN && $MAKE && $MAKE install)
+            (cd snappy-$SNAPPY_VSN && $MAKE -stdlib=libc++ && $MAKE -stdlib=libc++ install)
         fi
 
         export CFLAGS="$CFLAGS -I $BASEDIR/system/include"
