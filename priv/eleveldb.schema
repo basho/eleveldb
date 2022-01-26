@@ -30,7 +30,7 @@
 ]}.
 
 %% @doc Whether LevelDB will flush after every write. Note: If you are
-%% familiar with fsync, this is analagous to calling fsync after every
+%% familiar with fsync, this is analogous to calling fsync after every
 %% write.
 {mapping, "leveldb.sync_on_write", "eleveldb.sync", [
   {default, off},
