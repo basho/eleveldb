@@ -1,6 +1,6 @@
 # `eleveldb` - Erlang bindings to LevelDB datastore 
 
-[![Build Status](https://secure.travis-ci.org/basho/eleveldb.png?branch=master)](http://travis-ci.org/basho/eleveldb)
+[![Erlang CI Actions Status](https://github.com/basho/eleveldb/workflows/Erlang%20CI/badge.svg)](https://github.com/basho/eleveldb/actions)
 
 This repository follows the Basho standard for branch management 
 as of November 28, 2013.  The standard is found here:
