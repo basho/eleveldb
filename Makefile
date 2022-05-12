@@ -16,7 +16,8 @@ cover: test
 	$(REBAR) cover
 
 test: compile
-	$(REBAR) as test do eunit
+	#$(REBAR) as test do eunit
+	$(MAKE) -C c_src test
 
 dialyzer:
 	$(REBAR) dialyzer
