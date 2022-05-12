@@ -47,4 +47,4 @@ clean:
 	rm -rf system snappy-$(SNAPPY_VSN)/build
 
 test: compile
-	$(MAKE) CXXFLAGS="$(CXXFLAGS) -Wno-narrowing" LDFLAGS="$(LDFLAGS) -lsnappy" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb test
+	$(MAKE) CXXFLAGS="$(CXXFLAGS) -Wno-narrowing" LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb test
