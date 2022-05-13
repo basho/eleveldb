@@ -1,4 +1,4 @@
-LEVELDB_VSN ?= "2.0.37"
+LEVELDB_VSN ?= "2.0.38rc1"
 SNAPPY_VSN ?= "1.1.9"
 BASEDIR = $(shell pwd)
 
