@@ -13,3 +13,4 @@ c_src/system
 .rebar
 _build
 .DS_Store
+rebar.lock
