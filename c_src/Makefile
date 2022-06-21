@@ -1,4 +1,4 @@
-LEVELDB_VSN ?= "2.0.38rc3"
+LEVELDB_VSN ?= "2.0.38"
 SNAPPY_VSN ?= "1.1.9"
 BASEDIR = $(shell pwd)
 
@@ -12,7 +12,7 @@ get-deps:
 	    wget -O snappy-$(SNAPPY_VSN).tar.gz https://github.com/google/snappy/archive/refs/tags/$(SNAPPY_VSN).tar.gz; \
 	fi
 	if [ ! -d leveldb ]; then \
-	    git clone https://github.com/TI-Tokyo/leveldb && \
+	    git clone https://github.com/basho/leveldb && \
 	    (cd leveldb && git checkout $(LEVELDB_VSN)) && \
 	    (cd leveldb && git submodule update --init); \
 	fi
