@@ -2,14 +2,11 @@
 
 [![Erlang CI Actions Status](https://github.com/basho/eleveldb/workflows/Erlang%20CI/badge.svg)](https://github.com/basho/eleveldb/actions)
 
-This repository follows the Basho standard for branch management 
-as of November 28, 2013.  The standard is found here:
+This project provides erlang bindings to a LevelDB datastore heavily optimised for [Riak workloads](https://github.com/basho/riak).  See the [Basho leveldb wiki](https://github.com/basho/leveldb/wiki) for a breakdown of the optimisations.
 
-https://github.com/basho/riak/wiki/Basho-repository-management
+No further work on optimising the underlying store is currently being undertaken, only minimal fixes necessary for platform compatability.  
 
-In summary, the "develop" branch contains the most recently reviewed
-engineering work.  The "master" branch contains the most recently
-released work, i.e. distributed as part of a Riak release.
+As an alternative, elrang bindings to RocksDB can be found as part of the [BarrellDB](https://gitlab.com/barrel-db/erlang-rocksdb) project.  For Riak-like workloads, especially with large objects, the pure-Erlang [Leveled store](https://github.com/martinsumner/leveled) is also available. 
 
 # Iterating Records
 
