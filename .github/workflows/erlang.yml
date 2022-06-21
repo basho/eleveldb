@@ -17,9 +17,9 @@ jobs:
       fail-fast: false
       matrix:
         otp:
-          - "24.2.1.0"
-          - "23.3.4.11"
-          - "22.3.4.24"
+          - "24.3.4"
+          - "23.3.4.14"
+          - "22.3.4.26"
 
     container:
       image: erlang:${{ matrix.otp }}
@@ -27,8 +27,6 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Compile
-        run: ./rebar3 compile
-      - name: Run xref and dialyzer
-        run: ./rebar3 do xref, dialyzer
-      - name: Run eunit
-        run: ./rebar3 eunit
+        run: apt-get update && apt-get install -y cmake && make
+      - name: Run tests
+        run: apt-get update && apt-get install -y cmake libc6-dev && make check
