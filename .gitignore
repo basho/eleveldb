@@ -14,3 +14,4 @@ c_src/system
 _build
 .DS_Store
 rebar.lock
+snappy-*.tar.gz

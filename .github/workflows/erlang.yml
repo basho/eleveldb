@@ -19,8 +19,6 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Compile
-        run: ./rebar3 compile
-      - name: Run xref and dialyzer
-        run: ./rebar3 do xref, dialyzer
-      - name: Run eunit
-        run: ./rebar3 do eunit
+        run: apt-get update && apt-get install -y cmake && make
+      - name: Run tests
+        run: apt-get update && apt-get install -y cmake libc6-dev && make check
