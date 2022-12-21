@@ -17,16 +17,23 @@ jobs:
       fail-fast: false
       matrix:
         otp:
-          - "24.3.4"
-          - "23.3.4.14"
-          - "22.3.4.26"
+          - "25.1"
+          - "24.3"
+          - "22.3"
 
     container:
       image: erlang:${{ matrix.otp }}
 
     steps:
+      - uses: lukka/get-cmake@latest
       - uses: actions/checkout@v2
       - name: Compile
         run: apt-get update && apt-get install -y cmake && make
       - name: Run tests
         run: apt-get update && apt-get install -y cmake libc6-dev && make check
+      - name: rebar3 compile 
+        run: ./rebar3 compile
+      - name: Run xref and dialyzer
+        run: ./rebar3 do xref, dialyzer
+      - name: Run eunit
+        run: ./rebar3 as gha do eunit
