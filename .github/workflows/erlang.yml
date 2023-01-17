@@ -24,7 +24,6 @@ jobs:
       image: erlang:${{ matrix.otp }}
 
     steps:
-      - uses: lukka/get-cmake@latest
       - uses: actions/checkout@v2
       - name: Compile
         run: apt-get update && apt-get install -y cmake && make
