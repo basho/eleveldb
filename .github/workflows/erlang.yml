@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [ develop ]
 
-
 jobs:
 
   build:
@@ -17,15 +16,14 @@ jobs:
       fail-fast: false
       matrix:
         otp:
-          - "25.1"
-          - "24.3"
-          - "22.3"
+          - "25"
+          - "24"
+          - "22"
 
     container:
       image: erlang:${{ matrix.otp }}
 
     steps:
-      - uses: lukka/get-cmake@latest
       - uses: actions/checkout@v2
       - name: Compile
         run: apt-get update && apt-get install -y cmake && make

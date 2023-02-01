@@ -8,6 +8,8 @@ CFLAGS := $(CFLAGS) -I $(BASEDIR)/system/include -I. -I $(BASEDIR)/leveldb/inclu
 CXXFLAGS := $(CXXFLAGS) -I $(BASEDIR)/system/include -I. -I $(BASEDIR)/leveldb/include -fPIC
 
 get-deps:
+	git config --global --add safe.directory /__w/eleveldb/eleveldb
+	echo "ubuntu-latest image with otp-22, are you happy now?"
 	if [ ! -r snappy-$(SNAPPY_VSN).tar.gz ]; then \
 	    wget -O snappy-$(SNAPPY_VSN).tar.gz https://github.com/google/snappy/archive/refs/tags/$(SNAPPY_VSN).tar.gz; \
 	fi
@@ -21,8 +23,8 @@ compile: get-deps snappy ldb
 	cp leveldb/perf_dump leveldb/sst_rewrite leveldb/sst_scan leveldb/leveldb_repair ../priv
 
 ldb:
-	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb all
-	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb tools
+	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb all
+	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb tools
 
 snappy: system/lib/libsnappy.a
 
@@ -31,7 +33,7 @@ system/lib/libsnappy.a:
 	(cd snappy-$(SNAPPY_VSN) && \
 	 git submodule update --init && \
 	 if [ -r autogen.sh ]; then \
-	   ./autogen.sh && ./configure --prefix=$(BASEDIR)/system && make && make install; \
+	   ./autogen.sh && ./configure --prefix=$(BASEDIR)/system && $(MAKE) && $(MAKE) install; \
 	 else \
 	   mkdir build && cd build && \
 	   mkdir -p $(BASEDIR)/system && \
@@ -39,7 +41,7 @@ system/lib/libsnappy.a:
 	         -D CMAKE_INSTALL_PREFIX=$(BASEDIR)/system \
 	     ..; \
 	  fi && \
-	  make && make install)
+	  $(MAKE) && $(MAKE) install)
 	mv system/lib64 system/lib || true
 
 clean:
