@@ -26,9 +26,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Compile
-        run: apt-get update && apt-get install -y cmake libsnappy-dev && make
+        run: apt-get update && apt-get install -y libsnappy-dev && make
       - name: Run tests
-        run: apt-get update && apt-get install -y cmake libsnappy-dev libc6-dev && make check
+        run: apt-get update && apt-get install -y libsnappy-dev libc6-dev && make check
       - name: rebar3 compile
         run: ./rebar3 compile
       - name: Run xref and dialyzer
