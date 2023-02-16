@@ -10,9 +10,8 @@ get-deps:
 	git config --global --add safe.directory /__w/eleveldb/eleveldb
 	echo "ubuntu-latest image with otp-22, are you happy now?"
 	if [ ! -d leveldb ]; then \
-	    git clone https://github.com/basho/leveldb && \
-	    (cd leveldb && git checkout $(LEVELDB_VSN)) && \
-	    (cd leveldb && git submodule update --init); \
+	    git clone --depth=1 --branch=$(LEVELDB_VSN) https://github.com/basho/leveldb && \
+	    (cd leveldb && git submodule update --depth 1 --init); \
 	fi
 
 compile: get-deps ldb
