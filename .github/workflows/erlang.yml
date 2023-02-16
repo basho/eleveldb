@@ -29,7 +29,7 @@ jobs:
         run: apt-get update && apt-get install -y cmake && make
       - name: Run tests
         run: apt-get update && apt-get install -y cmake libc6-dev && make check
-      - name: rebar3 compile 
+      - name: rebar3 compile
         run: ./rebar3 compile
       - name: Run xref and dialyzer
         run: ./rebar3 do xref, dialyzer
