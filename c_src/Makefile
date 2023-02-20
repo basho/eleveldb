@@ -1,7 +1,7 @@
 LEVELDB_VSN ?= "2.0.38"
 BASEDIR = $(shell pwd)
 
-CFLAGS += -I $(BASEDIR)/leveldb/include -fPIC -Wnarrowing
+CFLAGS += -I $(BASEDIR)/leveldb/include -fPIC
 CXXFLAGS += -I $(BASEDIR)/leveldb/include -fPIC -Wnarrowing
 
 ifeq ($(shell uname -s), Darwin)
@@ -17,6 +17,9 @@ ifeq ($(shell uname -s), Darwin)
 	SNAPPY_DIR ?= /usr/local/opt/snappy
 
   LDFLAGS += -L${SNAPPY_DIR}/lib
+
+	# Resolves C++11 narrowing error on Mac OS
+	CXXFLAGS += -Wno-c++11-narrowing
 endif
 
 get-deps:
@@ -39,4 +42,4 @@ clean:
 	$(MAKE) -C leveldb clean
 
 test: compile
-	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread -Wnarrowing" -C leveldb test
+	$(MAKE) PLATFORM_CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" -C leveldb test
