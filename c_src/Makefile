@@ -2,7 +2,6 @@ LEVELDB_VSN ?= "2.0.38"
 BASEDIR = $(shell pwd)
 
 LDFLAGS := $(LDFLAGS) -L$(BASEDIR)/system/lib
-LD_LIBRARY_PATH=$(BASEDIR)/system/lib:$(LD_LIBRARY_PATH)
 CFLAGS += -I $(BASEDIR)/leveldb/include -fPIC
 CXXFLAGS += -I $(BASEDIR)/leveldb/include -fPIC
 TEST_CXXFLAGS := $(CXXFLAGS) -Wno-narrowing
