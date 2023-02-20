@@ -1,8 +1,11 @@
 LEVELDB_VSN ?= "2.0.38"
 BASEDIR = $(shell pwd)
 
+LDFLAGS := $(LDFLAGS) -L$(BASEDIR)/system/lib
+LD_LIBRARY_PATH=$(BASEDIR)/system/lib:$(LD_LIBRARY_PATH)
 CFLAGS += -I $(BASEDIR)/leveldb/include -fPIC
-CXXFLAGS += -I $(BASEDIR)/leveldb/include -fPIC -Wno-narrowing
+CXXFLAGS += -I $(BASEDIR)/leveldb/include -fPIC
+TEST_CXXFLAGS := $(CXXFLAGS) -Wno-narrowing
 
 ifeq ($(shell uname -s), Darwin)
 
@@ -19,7 +22,7 @@ ifeq ($(shell uname -s), Darwin)
   LDFLAGS += -L${SNAPPY_DIR}/lib
 
 	# Resolves C++11 narrowing error on Mac OS
-	CXXFLAGS += -Wno-c++11-narrowing
+	TEST_CXXFLAGS += -Wno-c++11-narrowing
 endif
 
 get-deps:
@@ -35,11 +38,11 @@ compile: get-deps ldb
 
 ldb:
 	@echo "Building LevelDB..."
-	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" -C leveldb all
-	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" -C leveldb tools
+	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb all
+	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb tools
 
 clean:
 	$(MAKE) -C leveldb clean
 
 test: compile
-	$(MAKE) PLATFORM_CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" -C leveldb test
+	$(MAKE) PLATFORM_CXXFLAGS="$(TEST_CXXFLAGS)" LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb test
