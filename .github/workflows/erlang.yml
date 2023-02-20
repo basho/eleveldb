@@ -23,14 +23,14 @@ jobs:
         # OTP lower than 23 does not run on ubuntu-latest (22.04), see
         # https://github.com/erlef/setup-beam#compatibility-between-operating-system-and-erlangotp
         exclude:
-          - otp_version: 22
+          - otp: 22
             os: ubuntu-latest
-          - otp_version: 23
+          - otp: 23
             os: ubuntu-latest
         include:
-          - otp_version: 22
+          - otp: 22
             os: ubuntu-20.04
-          - otp_version: 23
+          - otp: 23
             os: ubuntu-20.04
 
     steps:
