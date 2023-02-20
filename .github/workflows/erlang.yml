@@ -46,6 +46,7 @@ jobs:
         run: |
           export majorversion="$(cut -d '.' -f 1 <<< "${{ matrix.otp }}")"
           brew install coreutils erlang@$majorversion snappy
+          echo "/usr/local/opt/erlang@$majorversion/bin" >> $GITHUB_PATH
       - name: Install Erlang/OTP
         # setup beam doesn't provide MacOS packages
         # we use Homebrew to instal them
