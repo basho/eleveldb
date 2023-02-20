@@ -2,33 +2,61 @@ name: Erlang CI
 
 on:
   push:
-    branches: [ develop ]
+    branches: [develop]
   pull_request:
-    branches: [ develop ]
+    branches: [develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-
   build:
-
-    runs-on: ubuntu-latest
+    name: Test on ${{ matrix.os }} with OTP ${{ matrix.otp }}
+    runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
-        otp:
-          - "25"
-          - "24"
-          - "22"
-
-    container:
-      image: erlang:${{ matrix.otp }}
+        otp: [22, 23, 24, 25]
+        os: [ubuntu-latest, macos-latest]
+        # OTP lower than 23 does not run on ubuntu-latest (22.04), see
+        # https://github.com/erlef/setup-beam#compatibility-between-operating-system-and-erlangotp
+        exclude:
+          - otp_version: 22
+            os: ubuntu-latest
+          - otp_version: 23
+            os: ubuntu-latest
+        include:
+          - otp_version: 22
+            os: ubuntu-20.04
+          - otp_version: 23
+            os: ubuntu-20.04
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Install dependencies (Linux)
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install libsnappy-dev libc6-dev
+      - name: Install Dependencies (OSX)
+        if: ${{ startsWith(matrix.os, 'macos') }}
+        run: |
+          export majorversion="$(cut -d '.' -f 1 <<< "${{ matrix.otp }}")"
+          brew install coreutils erlang@$majorversion snappy
+      - name: Install Erlang/OTP
+        # setup beam doesn't provide MacOS packages
+        # we use Homebrew to instal them
+        if: ${{ !startsWith(matrix.os , 'macos') }}
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
       - name: Compile
-        run: apt-get update && apt-get install -y libsnappy-dev && make
+        run: make
       - name: Run tests
-        run: apt-get update && apt-get install -y libsnappy-dev libc6-dev && make check
+        run: make check
       - name: rebar3 compile
         run: ./rebar3 compile
       - name: Run xref and dialyzer

@@ -1,10 +1,24 @@
 LEVELDB_VSN ?= "2.0.38"
 BASEDIR = $(shell pwd)
 
-LDFLAGS := $(LDFLAGS) -L$(BASEDIR)/system/lib
-LD_LIBRARY_PATH := $(BASEDIR)/system/lib:$(LD_LIBRARY_PATH)
-CFLAGS := $(CFLAGS) -I $(BASEDIR)/system/include -I. -I $(BASEDIR)/leveldb/include -fPIC
-CXXFLAGS := $(CXXFLAGS) -I $(BASEDIR)/system/include -I. -I $(BASEDIR)/leveldb/include -fPIC
+LDFLAGS := $(LDFLAGS)
+LD_LIBRARY_PATH := $(LD_LIBRARY_PATH)
+CFLAGS := $(CFLAGS) -I $(BASEDIR)/leveldb/include -fPIC
+CXXFLAGS := $(CXXFLAGS) -I $(BASEDIR)/leveldb/include -fPIC
+
+ifeq ($(shell uname -s), Darwin)
+	# OSX with homebrew
+  HAS_BREW := $(shell command -v brew;)
+
+	ifdef HAS_BREW
+		SNAPPY_DIR ?= $(shell brew --prefix snappy)
+	endif
+
+	# Default dir (Mac ports)
+	SNAPPY_DIR ?= /usr/local/opt/snappy
+
+  LDFLAGS += -L${SNAPPY_DIR}/lib
+endif
 
 get-deps:
 	git config --global --add safe.directory /__w/eleveldb/eleveldb
@@ -18,12 +32,12 @@ compile: get-deps ldb
 	cp leveldb/perf_dump leveldb/sst_rewrite leveldb/sst_scan leveldb/leveldb_repair ../priv
 
 ldb:
+	@echo "Building LevelDB..."
 	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb all
 	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb tools
 
 clean:
 	$(MAKE) -C leveldb clean
-	rm -rf system
 
 test: compile
-	$(MAKE) CXXFLAGS="$(CXXFLAGS) -Wno-narrowing" LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb test
+	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb test
