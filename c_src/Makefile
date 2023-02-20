@@ -2,7 +2,7 @@ LEVELDB_VSN ?= "2.0.38"
 BASEDIR = $(shell pwd)
 
 CFLAGS += -I $(BASEDIR)/leveldb/include -fPIC
-CXXFLAGS += -I $(BASEDIR)/leveldb/include -fPIC -Wnarrowing
+CXXFLAGS += -I $(BASEDIR)/leveldb/include -fPIC -Wno-narrowing
 
 ifeq ($(shell uname -s), Darwin)
 
