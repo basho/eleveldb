@@ -1,12 +1,11 @@
 LEVELDB_VSN ?= "2.0.38"
 BASEDIR = $(shell pwd)
 
-LDFLAGS := $(LDFLAGS)
-LD_LIBRARY_PATH := $(LD_LIBRARY_PATH)
-CFLAGS := $(CFLAGS) -I $(BASEDIR)/leveldb/include -fPIC
-CXXFLAGS := $(CXXFLAGS) -I $(BASEDIR)/leveldb/include -fPIC
+CFLAGS += -I $(BASEDIR)/leveldb/include -fPIC
+CXXFLAGS += -I $(BASEDIR)/leveldb/include -fPIC
 
 ifeq ($(shell uname -s), Darwin)
+
 	# OSX with homebrew
   HAS_BREW := $(shell command -v brew;)
 
@@ -33,11 +32,11 @@ compile: get-deps ldb
 
 ldb:
 	@echo "Building LevelDB..."
-	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb all
-	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb tools
+	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" -C leveldb all
+	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" -C leveldb tools
 
 clean:
 	$(MAKE) -C leveldb clean
 
 test: compile
-	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb test
+	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" -C leveldb test
