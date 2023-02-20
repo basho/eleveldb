@@ -39,4 +39,4 @@ clean:
 	$(MAKE) -C leveldb clean
 
 test: compile
-	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" -C leveldb test
+	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread -Wnarrowing" -C leveldb test
