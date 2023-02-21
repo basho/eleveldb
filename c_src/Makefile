@@ -54,4 +54,4 @@ clean:
 	for tool in $(TOOLS); do rm -f $(TARGET_DIR)$$tool; done
 
 test: compile
-	$(MAKE) LDFLAGS="$(LDFLAGS)" CXXFLAGS="$(CXXFLAGS)" CFLAGS="$(CFLAGS)" -C leveldb test
+	$(MAKE) LDFLAGS="$(LDFLAGS)" CXXFLAGS="$(TEST_CXXFLAGS)" CFLAGS="$(CFLAGS)" -C leveldb test
