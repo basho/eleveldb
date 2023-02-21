@@ -10,7 +10,7 @@ TOOLS = \
 	sst_rewrite \
 	sst_scan
 
-LDFLAGS := $(LDFLAGS) -lpthread
+LDFLAGS := $(LDFLAGS) -lsnappy -lpthread
 CFLAGS := $(CFLAGS) -I. -I $(C_SRC_DIRC_SRC_DIR)/leveldb/include -fPIC
 CXXFLAGS := $(CXXFLAGS) -I. -I $(C_SRC_DIR)/leveldb/include -fPIC
 TEST_CXXFLAGS := $(CXXFLAGS) -Wno-narrowing
