@@ -1,9 +1,18 @@
 LEVELDB_VSN ?= "2.0.38"
-BASEDIR = $(shell pwd)
+C_SRC_DIR := $(shell pwd)
+PROJECT_DIR := $(abspath $(C_SRC_DIR)/..)
+TARGET_DIR := $(PROJECT_DIR)/priv/
 
-LDFLAGS := $(LDFLAGS) -L$(BASEDIR)/system/lib
-CFLAGS += -I $(BASEDIR)/leveldb/include -fPIC
-CXXFLAGS += -I $(BASEDIR)/leveldb/include -fPIC
+# LevelDB tools
+TOOLS = \
+	leveldb_repair \
+	perf_dump \
+	sst_rewrite \
+	sst_scan
+
+LDFLAGS := $(LDFLAGS) -lpthread
+CFLAGS := $(CFLAGS) -I. -I $(C_SRC_DIRC_SRC_DIR)/leveldb/include -fPIC
+CXXFLAGS := $(CXXFLAGS) -I. -I $(C_SRC_DIR)/leveldb/include -fPIC
 TEST_CXXFLAGS := $(CXXFLAGS) -Wno-narrowing
 
 ifeq ($(shell uname -s), Darwin)
@@ -33,15 +42,16 @@ get-deps:
 	fi
 
 compile: get-deps ldb
-	cp leveldb/perf_dump leveldb/sst_rewrite leveldb/sst_scan leveldb/leveldb_repair ../priv
+	for tool in $(TOOLS); do cp leveldb/$$tool $(TARGET_DIR); done
 
 ldb:
 	@echo "Building LevelDB..."
-	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb all
-	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb tools
+	$(MAKE) LDFLAGS="" -C leveldb all
+	$(MAKE) LDFLAGS="$(LDFLAGS)" -C leveldb tools
 
 clean:
 	$(MAKE) -C leveldb clean
+	for tool in $(TOOLS); do rm -f $(TARGET_DIR)$$tool; done
 
 test: compile
-	$(MAKE) PLATFORM_CXXFLAGS="$(TEST_CXXFLAGS)" LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb test
+	$(MAKE) LDFLAGS="$(LDFLAGS)" CXXFLAGS="$(CXXFLAGS)" CFLAGS="$(CFLAGS)" -C leveldb test
