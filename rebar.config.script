@@ -1,37 +1,42 @@
 %%-*- mode: erlang -*-
 
+AddPortEnv = fun(Config, Flags, NewValue) ->
+    {port_env, Vals} = lists:keyfind(port_env, 1, Config),
+    Fold = fun({Flag, Val}, Acc) ->
+        case lists:member(Flag, Flags) of
+            true ->
+                [{Flag, Val ++ NewValue} | Acc];
+            false ->
+                Acc
+        end
+    end,
+    NewVals = lists:foldl(Fold, [], Vals),
+    lists:keyreplace(port_env, 1, Config, {port_env, NewVals})
+end.
+
 %% Set the minimum Mac target to 10.8 for 10.9 or greater.  This runtime
 %% check is needed since rebar's system_architecture check looks only at
 %% the version of the OS used to build the Erlang runtime, not the version
 %% actually running.
 case os:type() of
-    {unix,darwin} ->
-        DefaultOpt = " -mmacosx-version-min=10.8 -stdlib=libc++",
-        Opt = case os:find_executable("brew") of
-            false ->
-                DefaultOpt;
-            _Brew ->
-                HomebrewPrefix = string:trim(os:cmd("brew --prefix")),
-                DefaultOpt ++ " -L" ++ HomebrewPrefix ++ "/lib"
-        end,
-        [Mjr|_] = string:tokens(os:cmd("/usr/bin/uname -r"), "."),
+    {unix, darwin} ->
+        NewerOsxOpts = " -mmacosx-version-min=10.8 -stdlib=libc++",
+        BrewLibsOpts =
+            case os:find_executable("brew") of
+                false ->
+                    "";
+                _Brew ->
+                    HomebrewPrefix = string:trim(os:cmd("brew --prefix")),
+                    " -L" ++ HomebrewPrefix ++ "/lib"
+            end,
+        [Mjr | _] = string:tokens(os:cmd("/usr/bin/uname -r"), "."),
         Major = list_to_integer(Mjr),
+        Flags = ["CFLAGS", "CXXFLAGS", "LDFLAGS"],
         if
             Major >= 13 ->
-                Flags = ["CFLAGS", "CXXFLAGS", "LDFLAGS"],
-                {port_env, Vals} = lists:keyfind(port_env, 1, CONFIG),
-                Fold = fun({Flag,Val}, Acc) ->
-                               case lists:member(Flag, Flags) of
-                                   true ->
-                                      [{Flag, Val++Opt}|Acc];
-                                   false ->
-                                       Acc
-                               end
-                       end,
-                NewVals = lists:foldl(Fold, [], Vals),
-                lists:keyreplace(port_env, 1, CONFIG, {port_env, NewVals});
+                AddPortEnv(CONFIG, Flags, NewerOsxOpts ++ BrewLibsOpts);
             true ->
-                CONFIG
+                AddPortEnv(CONFIG, Flags, BrewLibsOpts)
         end;
     _ ->
         CONFIG
