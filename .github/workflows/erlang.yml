@@ -36,11 +36,24 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+      - name: Cache rebar3
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/rebar3
+          key: ${{runner.os}}-rebar3-cache-${{matrix.otp}}-v2-${{ hashFiles(format('rebar.lock')) }}
       - name: Install dependencies (Linux)
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: |
           sudo apt-get -qq update
           sudo apt-get -qq install libsnappy-dev libc6-dev
+      - name: Configure Homebrew cache
+        if: ${{ startsWith(matrix.os, 'macos') }}
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/Library/Caches/Homebrew/
+            ~/Library/Caches/Homebrew/downloads/
+          key: brew-${{ runner.os }}-${{ matrix.otp  }}
       - name: Install Dependencies (OSX)
         if: ${{ startsWith(matrix.os, 'macos') }}
         run: |
