@@ -2,36 +2,74 @@ name: Erlang CI
 
 on:
   push:
-    branches: [ develop ]
+    branches: [develop]
   pull_request:
-    branches: [ develop ]
+    branches: [develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-
   build:
-
-    runs-on: ubuntu-latest
+    name: Test on ${{ matrix.os }} with OTP ${{ matrix.otp }}
+    runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
-        otp:
-          - "25"
-          - "24"
-          - "22"
-
-    container:
-      image: erlang:${{ matrix.otp }}
+        otp: [22, 23, 24, 25]
+        os: [ubuntu-latest, macos-latest]
+        # OTP lower than 23 does not run on ubuntu-latest (22.04), see
+        # https://github.com/erlef/setup-beam#compatibility-between-operating-system-and-erlangotp
+        exclude:
+          - otp: 22
+            os: ubuntu-latest
+          - otp: 23
+            os: ubuntu-latest
+        include:
+          - otp: 22
+            os: ubuntu-20.04
+          - otp: 23
+            os: ubuntu-20.04
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Cache rebar3
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/rebar3
+          key: ${{runner.os}}-rebar3-cache-${{matrix.otp}}-v2-${{ hashFiles(format('rebar.lock')) }}
+      - name: Install dependencies (Linux)
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install libsnappy-dev libc6-dev
+      - name: Configure Homebrew cache
+        if: ${{ startsWith(matrix.os, 'macos') }}
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/Library/Caches/Homebrew/
+            ~/Library/Caches/Homebrew/downloads/
+          key: brew-${{ runner.os }}-${{ matrix.otp  }}
+      - name: Install Dependencies (OSX)
+        if: ${{ startsWith(matrix.os, 'macos') }}
+        run: |
+          export majorversion="$(cut -d '.' -f 1 <<< "${{ matrix.otp }}")"
+          brew install coreutils erlang@$majorversion snappy
+          echo "/usr/local/opt/erlang@$majorversion/bin" >> $GITHUB_PATH
+      - name: Install Erlang/OTP
+        # setup beam doesn't provide MacOS packages
+        # we use Homebrew to instal them
+        if: ${{ !startsWith(matrix.os , 'macos') }}
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
       - name: Compile
-        run: apt-get update && apt-get install -y cmake && make
-      - name: Run tests
-        run: apt-get update && apt-get install -y cmake libc6-dev && make check
-      - name: rebar3 compile 
         run: ./rebar3 compile
       - name: Run xref and dialyzer
         run: ./rebar3 do xref, dialyzer
-      - name: Run eunit
+      - name: Run tests
         run: ./rebar3 as gha do eunit

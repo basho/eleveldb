@@ -1,52 +1,57 @@
 LEVELDB_VSN ?= "2.0.38"
-SNAPPY_VSN ?= "1.1.9"
-BASEDIR = $(shell pwd)
+C_SRC_DIR := $(shell pwd)
+PROJECT_DIR := $(abspath $(C_SRC_DIR)/..)
+TARGET_DIR := $(PROJECT_DIR)/priv/
 
-LDFLAGS := $(LDFLAGS) -L$(BASEDIR)/system/lib
-LD_LIBRARY_PATH := $(BASEDIR)/system/lib:$(LD_LIBRARY_PATH)
-CFLAGS := $(CFLAGS) -I $(BASEDIR)/system/include -I. -I $(BASEDIR)/leveldb/include -fPIC
-CXXFLAGS := $(CXXFLAGS) -I $(BASEDIR)/system/include -I. -I $(BASEDIR)/leveldb/include -fPIC
+# LevelDB tools
+TOOLS = \
+	leveldb_repair \
+	perf_dump \
+	sst_rewrite \
+	sst_scan
+
+LDFLAGS := $(LDFLAGS) -lsnappy -lpthread
+CFLAGS := $(CFLAGS) -I. -I $(C_SRC_DIRC_SRC_DIR)/leveldb/include -fPIC
+CXXFLAGS := $(CXXFLAGS) -I. -I $(C_SRC_DIR)/leveldb/include -fPIC
+TEST_CXXFLAGS := $(CXXFLAGS) -Wno-narrowing
+
+ifeq ($(shell uname -s), Darwin)
+
+	# OSX with homebrew
+  HAS_BREW := $(shell command -v brew;)
+
+	ifdef HAS_BREW
+		SNAPPY_DIR ?= $(shell brew --prefix snappy)
+	endif
+
+	# Default dir (Mac ports)
+	SNAPPY_DIR ?= /usr/local/opt/snappy
+
+  LDFLAGS += -L${SNAPPY_DIR}/lib
+
+	# Resolves C++11 narrowing error on Mac OS
+	TEST_CXXFLAGS += -Wno-c++11-narrowing
+endif
 
 get-deps:
 	git config --global --add safe.directory /__w/eleveldb/eleveldb
 	echo "ubuntu-latest image with otp-22, are you happy now?"
-	if [ ! -r snappy-$(SNAPPY_VSN).tar.gz ]; then \
-	    wget -O snappy-$(SNAPPY_VSN).tar.gz https://github.com/google/snappy/archive/refs/tags/$(SNAPPY_VSN).tar.gz; \
-	fi
 	if [ ! -d leveldb ]; then \
-	    git clone https://github.com/basho/leveldb && \
-	    (cd leveldb && git checkout $(LEVELDB_VSN)) && \
-	    (cd leveldb && git submodule update --init); \
+	    git clone --depth=1 --branch=$(LEVELDB_VSN) https://github.com/basho/leveldb && \
+	    (cd leveldb && git submodule update --depth 1 --init); \
 	fi
 
-compile: get-deps snappy ldb
-	cp leveldb/perf_dump leveldb/sst_rewrite leveldb/sst_scan leveldb/leveldb_repair ../priv
+compile: get-deps ldb
+	for tool in $(TOOLS); do cp leveldb/$$tool $(TARGET_DIR); done
 
 ldb:
-	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb all
-	$(MAKE) LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb tools
-
-snappy: system/lib/libsnappy.a
-
-system/lib/libsnappy.a:
-	tar -xzf snappy-$(SNAPPY_VSN).tar.gz && \
-	(cd snappy-$(SNAPPY_VSN) && \
-	 git submodule update --init && \
-	 if [ -r autogen.sh ]; then \
-	   ./autogen.sh && ./configure --prefix=$(BASEDIR)/system && $(MAKE) && $(MAKE) install; \
-	 else \
-	   mkdir build && cd build && \
-	   mkdir -p $(BASEDIR)/system && \
-	   cmake -D SNAPPY_BUILD_TESTS=0 -D SNAPPY_BUILD_BENCHMARKS=0 \
-	         -D CMAKE_INSTALL_PREFIX=$(BASEDIR)/system \
-	     ..; \
-	  fi && \
-	  $(MAKE) && $(MAKE) install)
-	mv system/lib64 system/lib || true
+	@echo "Building LevelDB..."
+	$(MAKE) LDFLAGS="" -C leveldb all
+	$(MAKE) LDFLAGS="$(LDFLAGS)" -C leveldb tools
 
 clean:
 	$(MAKE) -C leveldb clean
-	rm -rf system snappy-$(SNAPPY_VSN)/build
+	for tool in $(TOOLS); do rm -f $(TARGET_DIR)$$tool; done
 
 test: compile
-	$(MAKE) CXXFLAGS="$(CXXFLAGS) -Wno-narrowing" LDFLAGS="$(LDFLAGS) -lsnappy -lpthread" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" -C leveldb test
+	$(MAKE) LDFLAGS="$(LDFLAGS)" CXXFLAGS="$(TEST_CXXFLAGS)" CFLAGS="$(CFLAGS)" -C leveldb test
