@@ -1,4 +1,4 @@
-LEVELDB_VSN ?= "2.0.38"
+LEVELDB_SRC := $(REBAR_DEPS_DIR)/leveldb/c_src
 C_SRC_DIR := $(shell pwd)
 PROJECT_DIR := $(abspath $(C_SRC_DIR)/..)
 TARGET_DIR := $(PROJECT_DIR)/priv/
@@ -11,8 +11,8 @@ TOOLS = \
 	sst_scan
 
 LDFLAGS := $(LDFLAGS) -lsnappy -lpthread
-CFLAGS := $(CFLAGS) -I. -I $(C_SRC_DIRC_SRC_DIR)/leveldb/include -fPIC
-CXXFLAGS := $(CXXFLAGS) -I. -I $(C_SRC_DIR)/leveldb/include -fPIC
+CFLAGS := $(CFLAGS) -I. -I $(LEVELDB_SRC)/include -fPIC
+CXXFLAGS := $(CXXFLAGS) -I. -I $(LEVELDB_SRC)/include -fPIC
 TEST_CXXFLAGS := $(CXXFLAGS) -Wno-narrowing
 
 ifeq ($(shell uname -s), Darwin)
@@ -33,25 +33,17 @@ ifeq ($(shell uname -s), Darwin)
 	TEST_CXXFLAGS += -Wno-c++11-narrowing
 endif
 
-get-deps:
-	git config --global --add safe.directory /__w/eleveldb/eleveldb
-	echo "ubuntu-latest image with otp-22, are you happy now?"
-	if [ ! -d leveldb ]; then \
-	    git clone --depth=1 --branch=$(LEVELDB_VSN) https://github.com/basho/leveldb && \
-	    (cd leveldb && git submodule update --depth 1 --init); \
-	fi
-
-compile: get-deps ldb
-	for tool in $(TOOLS); do cp leveldb/$$tool $(TARGET_DIR); done
+compile: ldb
+	for tool in $(TOOLS); do cp $(LEVELDB_SRC)/$$tool $(TARGET_DIR); done
 
 ldb:
 	@echo "Building LevelDB..."
-	$(MAKE) LDFLAGS="" -C leveldb all
-	$(MAKE) LDFLAGS="$(LDFLAGS)" -C leveldb tools
+	$(MAKE) LDFLAGS="" -C $(LEVELDB_SRC) all
+	$(MAKE) LDFLAGS="$(LDFLAGS)" -C $(LEVELDB_SRC) tools
 
 clean:
-	$(MAKE) -C leveldb clean
+	$(MAKE) -C $(LEVELDB_SRC) clean
 	for tool in $(TOOLS); do rm -f $(TARGET_DIR)$$tool; done
 
 test: compile
-	$(MAKE) LDFLAGS="$(LDFLAGS)" CXXFLAGS="$(TEST_CXXFLAGS)" CFLAGS="$(CFLAGS)" -C leveldb test
+	$(MAKE) LDFLAGS="$(LDFLAGS)" CXXFLAGS="$(TEST_CXXFLAGS)" CFLAGS="$(CFLAGS)" -C $(LEVELDB_SRC) test
