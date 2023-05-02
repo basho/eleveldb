@@ -1,1 +1,5 @@
-[].
+[{<<"leveldb">>,
+  {external,{git,"https://github.com/basho/leveldb",{tag,"2.0.38"}},
+            "c_src",
+            [{description,"leveldb: A key-value store"},{vsn,"2.0.38"}]},
+  0}].
