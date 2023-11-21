@@ -41,6 +41,9 @@ jobs:
         with:
           path: ~/.cache/rebar3
           key: ${{runner.os}}-rebar3-cache-${{matrix.otp}}-v2-${{ hashFiles(format('rebar.lock')) }}
+      - name: Setup git
+        run: |
+          git config --global --add safe.directory $(pwd)
       - name: Install dependencies (Linux)
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: |
