@@ -34,8 +34,6 @@ ifeq ($(shell uname -s), Darwin)
 endif
 
 get-deps:
-	git config --global --add safe.directory /__w/eleveldb/eleveldb
-	echo "ubuntu-latest image with otp-22, are you happy now?"
 	if [ ! -d leveldb ]; then \
 	    git clone --depth=1 --branch=$(LEVELDB_VSN) https://github.com/basho/leveldb && \
 	    (cd leveldb && git submodule update --depth 1 --init); \
