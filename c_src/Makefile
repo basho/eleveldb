@@ -1,11 +1,11 @@
-LEVELDB_VSN ?= "2.0.38"
+export LEVELDB_VSN ?= "2.0.38"
 SNAPPY_VSN ?= "1.1.9"
 BASEDIR = $(shell pwd)
 
-LDFLAGS := $(LDFLAGS) -L$(BASEDIR)/system/lib
-LD_LIBRARY_PATH := $(BASEDIR)/system/lib:$(LD_LIBRARY_PATH)
-CFLAGS := $(CFLAGS) -I $(BASEDIR)/system/include -I. -I $(BASEDIR)/leveldb/include -fPIC
-CXXFLAGS := $(CXXFLAGS) -I $(BASEDIR)/system/include -I. -I $(BASEDIR)/leveldb/include -fPIC
+export LDFLAGS := $(LDFLAGS) -L$(BASEDIR)/system/lib
+export LD_LIBRARY_PATH := $(BASEDIR)/system/lib:$(LD_LIBRARY_PATH)
+export CFLAGS := $(CFLAGS) -I $(BASEDIR)/system/include -I. -I $(BASEDIR)/leveldb/include -fPIC
+export CXXFLAGS := $(CXXFLAGS) -I $(BASEDIR)/system/include -I. -I $(BASEDIR)/leveldb/include -fPIC
 
 get-deps:
 	if [ ! -r snappy-$(SNAPPY_VSN).tar.gz ]; then \
